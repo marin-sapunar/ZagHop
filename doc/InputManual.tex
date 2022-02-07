@@ -1,0 +1,248 @@
+\documentclass{report}
+
+
+\usepackage[T1]{fontenc}
+\usepackage{ltablex}
+\usepackage{physics}
+\usepackage[a4paper,margin=1in]{geometry}
+            
+            
+\newcommand{\tabitem}{~~\llap{--}~~}
+
+\title{NAD Input Manual}
+\author{Sapunar, M}
+
+\begin{document}
+\maketitle
+
+Three files are required for running a trajectory. 
+\begin{enumerate} 
+	\item The main input file containing all of the options for the program.
+	\item A file containing the initial geometry.
+	\item A file containing the initial velocity.
+\end{enumerate}
+
+The name of the file is passed to the program through the command line (if no file name is passed, the default input file is dynamics.in). The file is split into sections with options concerning parts of the program. For details on the options, see below. The minimum input is the \$method section which gives the path to a driver program/script which communicates between the dynamics and the electronic structure package. It passes new geometries to the electronic structure package, runs a calculation, and reads the energies, gradients and couplings from the output. In the case of QM/MM dynamics, a second script is used to communicate to the MM package. The QM(MM) driver expects a directory which contains all the input required for a QM(MM) calculation. By default this directory is "qmdir"("mmdir"), but can be changed using the QMDIR(MMDIR) environment variable.
+
+The geometry file (called "geom" by default) contains one line for each atom. Each line contains the atom symbol, atom mass, coordinates and type of atom. The type in the final column is either "q" (for QM atoms) or "m" (for MM atoms). The velocity file contains just the initial velocity vector for each atom.
+
+A stopped or finished trajectory can be restarted by adding the \$restart keyword to the input file. In this case, the backup file is read before restarting the calculation.
+
+%Method section
+\section*{Program options}
+\paragraph{method}
+Section \$method contains paths to the driver programs for running the calculations.  \newline
+\$method
+
+\begin{tabularx}{\textwidth}{ m{2.5cm} X }
+qm				&
+	\textbf{No default.} \newline
+	Path to driver for QM calculation.  \\
+
+mm				&
+	\textbf{No default.} \newline
+	Path to driver for MM calculation.  \\
+
+overlap				&
+    	\textbf{No default.} \newline
+	Command line call for code to calculate the overlap matrix. Run "cis-overlap.exe -h" for command line options.
+%model			&
+%    \textbf{False} \newline
+%    Use internal subroutine for QM part instead of an external electronic structure program. If this option is given, the qm option is ignored.\\
+\end{tabularx}
+
+%System section
+\paragraph{system}
+Section \$system contains information about the dimensions of the system and the initial conditions. \newline
+\$system
+
+\begin{tabularx}{\textwidth}{ m{2.5cm} X }
+nstate \#		&
+\textbf{1} \newline
+Number of states in the QM system.  \\
+
+istate \#		&
+\textbf{nstate} \newline
+Initially populated state. In a FSSH calculation, the initial wave function coefficient of this state will be 1, while others will be 0.  \\
+
+geometry 		&
+\textbf{geom} \newline
+Name of the geometry file, containing the masses and initial positions of the atoms.  \\
+
+velocity		&
+\textbf{veloc} \newline
+Name of the velocity file, containing the initial velocities of the atoms.  \\
+
+ndim \#		&
+\textbf{3} \newline
+Number of dimensions per atom.  \\	
+\end{tabularx}
+
+%Output section
+\paragraph{output}
+Section \$output contains options for program output and backup. \newline
+\$output
+
+\begin{tabularx}{\textwidth}{ m{2.5cm} X }
+results\_dir &
+	\textbf{Results} \newline
+	Name of the main output file. \\
+
+(no)print		&
+	\textbf{1-10} \newline
+	Select which output files to print. \newline
+	\tabitem [1]   energy.dat and mm.dat. \newline
+	\tabitem [2]   trajectory.xyz. \newline
+	\tabitem [3]   geometry, atomic units. \newline
+	\tabitem [4]   velocity, atomic units. \newline
+	\tabitem [5]   gradient, atomic units. \newline
+	\tabitem [6]   cwf.dat, wave function coefficients. \newline
+	\tabitem [7]   overlap, overlap matrix for each step. \newline
+	\tabitem [10]  oscill.dat, QM oscillator strengths. \newline
+	\tabitem [11]  qm\_traj.xyz, XYZ file containing only QM atoms. \\
+
+bufile			& 
+	\textbf{backup.dat} \newline
+	Name of backup file. The current state is read from this file when restarting the program using the \$restart keyword. \\
+	
+buinterval \#	&
+	\textbf{1} \newline
+	The backup file is written every \# steps. \\
+\end{tabularx}
+
+
+%Dynamics section
+\paragraph{dynamics}
+Section \$dynamics contains options for the propagation of the nuclear coordinates. \newline
+\$dynamics
+
+\begin{tabularx}{\textwidth}{ m{3.5cm} X }
+time/max\_time \#	&
+	\textbf{10} \newline
+	Total time (in fs) for the propagation of nuclear coordinates.  \\
+
+tstep \#		&
+	\textbf{0.5} \newline
+	Time step (in fs) for the propagation of nuclear coordinates.  \\
+
+orient \#		&
+	\textbf{0} \newline
+	Select how to handle translation/rotation. \newline
+	\tabitem [0] do nothing. \newline
+	\tabitem [1] keep molecule in center of mass. \newline
+	\tabitem [2] project rotation and translation during dynamics. \\
+
+end\_state \#		&
+	\textbf{0} \newline
+	End dynamics after reaching target state. \\
+
+end\_state\_time \#	&
+	\textbf{0.0} \newline
+	Allow dynamics to run for an additional \# fs after reaching target state. \\
+
+max\_toten\_d \#	&
+	\textbf{1.0} \newline
+	End dynamics if drift in total energy is larger than \# eV. \\
+
+max\_toten\_d\_step \#	&
+	\textbf{0.2} \newline
+	End dynamics if change in total energy during a single step is larger than \# eV. \\
+\end{tabularx}
+
+
+%Constraints section
+\paragraph{constraints}
+Section \$constraints contains constraints to be kept while propagating nuclear coordinates. The section contains 1 line defining each constraint. Currently, only bond lengths can be constrained. \newline
+\$constraints
+
+\begin{tabularx}{\textwidth}{ m{2.5cm} X }
+b \#1 \#2 \#3 \#4		&
+	\textbf{No default} \newline
+	Freeze bond between atoms \#1 and \#2 to value \#3. If present, \#4 is the tolerance for the convergence of the constraint.  \\
+
+\end{tabularx}
+
+
+%Surfhop section
+\paragraph{surfhop}
+Section \$surfhop contains options for the surface hopping procedure and the propagation of the electronic wave function. If the "\$surfhop off" option is given, the rest of the section is not read and dynamics are performed on the initial adiabatic state without hopping. \newline
+\$surfhop (off)
+
+
+\begin{tabularx}{\textwidth}{ m{2.5cm} X }
+lz				&
+	\textbf{off}	\newline
+	Instead of the fewest-switches surface hopping algorithm, use Landau-Zener formula to determine hops between surfaces. Most of the other options in the section are ignored.\\
+	
+fssh			&
+	\textbf{adiabatic}	\newline
+	Use fewest-switches surface hopping algorithm. Possible options: \newline
+	\tabitem [adiabatic] Propagate electronic wave function coefficients in the adiabatic basis. 
+	\tabitem [diabatic] Propagate electronic wave function coefficients in the diabatic basis using local diabatization.\\
+
+tdse\_steps \#	&
+	\textbf{10000}	\newline 
+	Number of substeps for electronic wave function propagation between the nuclear time step at $t$ and at $t + \Delta t$. Energies and couplings are interpolated during the propagation based on the overlap/nadvec and energy options. A hop can occur in any substep of the propagation. Probabilities printed in the main output file are sums of probabilities from each substep. \\
+
+decoherence		&
+	\textbf{nldm}	\newline 
+	Method used for applying a decoherence correction to the electronic wave function. Possible options: \newline				
+	\tabitem [off] No decoherence correction. \newline
+	\tabitem [nldm] Non-linear decay of mixing algorithm. \\
+
+overlap			&
+	\textbf{npi}	\newline
+	Use overlaps between wave functions at the start and end of nuclear time step to calculate time-derivative couplings (TDCs) between states. The TDCs can be interpolated during the propagation between nuclear time steps. Possible options: \newline
+	\tabitem [constant] Use the finite-differences method to calculate TDCs at $ t + \Delta t / 2 $ and use this value for all substeps. \newline
+	\tabitem [linear] Use linear interpolation/extrapolation between the TDCs at $ t - \Delta t / 2 $ and $ t + \Delta t / 2 $. \newline
+	\tabitem [npi] Use the norm preserving interpolation method to calculate the average TDCs during the nuclear time step and use this value for all substeps.\\
+
+phase			&
+	\textbf{2} \newline
+	Method of handling phase of wave functions during dynamics. \newline
+	\tabitem [0] No phase matching. \newline
+	\tabitem [1] Match phase of adiabatic states. \newline
+	\tabitem [2] Match phase of diabatic states (using assignment problem solution). \\
+
+nadvec			&
+	\textbf{linear}		\newline
+	Use nonadiabatic coupling vectors to calculate time-derivative couplings between states.  The TDCs can be interpolated during the propagation between nuclear time steps. Possible options: \newline
+	\tabitem [constant] Use the TDCs at $ t + \Delta t$ for all substeps. \newline
+	\tabitem [linear] Use linear interpolation between the TDCs at $ t $ and $ t + \Delta t $. \\
+	
+energy			&
+	\textbf{linear} \newline
+	Method for interpolation of energies during the propagation between nuclear time steps. \newline
+	\tabitem [constant] Use energies at $ t + \Delta t$ for all substeps. \newline
+	\tabitem [step] Use energies at $ t $ until $ t + \Delta t / 2$ and energies at $ t + \Delta t $ for the second half of the substeps \newline
+	\tabitem [linear] Use linear interpolation between energies at $ t $ and $ t + \Delta t $	\\
+	
+velocity		&
+	\textbf{vel} \newline
+	Method of rescaling velocity to conserve total energy after a hop. \newline
+	\tabitem [off] No phase matching. \newline
+	\tabitem [vel] Uniformly rescale velocity. \newline
+	\tabitem [gdif] Rescale velocity along vector given by difference of gradients on initial and final surface. \newline
+	\tabitem [nadvec] Rescale velocity along nonadiabatic coupling vector. \\
+
+frustrated		&
+	\textbf{reverse} \newline
+	Method of treating frustrated hops (hops rejected due to lack of energy). \newline
+	\tabitem [continue] Continue trajectory along previous state. \newline
+	\tabitem [reverse] Continue trajectory along previous state, but also invert velocity along the direction along which velocity rescaling was attempted. \\
+
+skip\_state		&
+	\textbf{none} \newline
+	Give list of electronic states which will not be included in the calculation of the couplings. (Example: skip\_state 1-2, 5) \\
+	
+seed \# 		&
+	\textbf{-1} \newline
+	Give a seed for the random number generator. If seed is < 0, a seed is generated automatically based on the current time and job ID. \\
+\end{tabularx}
+
+
+
+
+
+
+\end{document}

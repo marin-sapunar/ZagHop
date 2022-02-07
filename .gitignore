@@ -1,0 +1,9 @@
+build
+
+*swp
+
+doc/html
+
+doc/InputManual.aux
+doc/InputManual.log
+doc/InputManual.*gz
