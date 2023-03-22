@@ -1,6 +1,7 @@
 build
 
-*swp
+*.swp
+*.pyc
 
 doc/html
 

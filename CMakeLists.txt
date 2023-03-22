@@ -1,4 +1,4 @@
-cmake_minimum_required (VERSION 2.8)
+cmake_minimum_required (VERSION 2.8.12)
 project (NAD_program)
 enable_language (Fortran)
 
@@ -114,14 +114,14 @@ enable_language (Fortran)
 
 ################################################################################
 # Build                                                                        #
- #add_subdirectory(src/chemutils)
- #include_directories(${CMAKE_BINARY_DIR}/mod_chemutil)
- #file(GLOB SOURCES "src/core/*f90" "src/model/Ferretti.f90")
- #file(GLOB SOURCES "src/core/*f90" "src/model/Phenol.f90" "src/model/util.f90")
- #file(GLOB SOURCES "src/core/*f90" "src/model/Pyrazine.f90")
-  file(GLOB SOURCES "src/core/*f90" "src/model/Ferretti.f90" "src/util/*f90")
+  file(GLOB SOURCES "src/core/*f90" "src/util/*f90")
 
 
   add_executable(nad.exe ${SOURCES})
   target_link_libraries(nad.exe ${LINKLIBS})
- #target_link_libraries(nad.exe chemutils ${LINKLIBS})
+
+  add_custom_command(
+        TARGET nad.exe POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy
+                ${CMAKE_SOURCE_DIR}/interface/*py
+                ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/)
