@@ -32,11 +32,11 @@ contains
         integer :: i, istate
         logical :: err_check
 
-        allocate(sd_converged(t1%nstate), source=.false.)
-        allocate(check(t1%nstate), source=.false.)
-        allocate(gap_sd(t1%nstate))
+        allocate(check(t(1)%nstate), source=.false.)
         if (t(1)%step < 2) return
         if (.not. any(check_gap(t(3), t(2), t(1)))) return
+        allocate(gap_sd(t(1)%nstate))
+        allocate(sd_converged(t(1)%nstate), source=.false.)
 
         istate = t(2)%cstate
         t0 = t(3)
@@ -51,7 +51,7 @@ contains
                 g0 = t0%qe(istate) - t0%qe(i)
                 g1 = t1%qe(istate) - t1%qe(i)
                 g2 = t2%qe(istate) - t2%qe(i)
-                gap_err = (g0 - 2*g1 + g2) / 2
+                gap_err = abs((g0 - 2*g1 + g2) / 2)
                 if (sd_converged(i)) then
                     call lz_prob_interval_gap_only(g1, gap_sd(i), gap_err, ctrl%qm_en_err, prob)
                 else
@@ -76,7 +76,7 @@ contains
                 end if
             end do
             if (.not. need_bisect) exit
-            if (t0%time - t2%time <= ctrl%lz_min_dt) exit
+            if (t0%time - t2%time >= ctrl%lz_min_dt) exit
             call bisect_gap(t0, t1, t2, err_check)
         end do
 
@@ -120,8 +120,6 @@ contains
         do i = 1, t1%nstate
             if (i == cstate) cycle
             if (abs(i-cstate) /= 1) cycle ! Only allow hops to neighbouring states.
-          ! if ((i > cstate) .and. (pstate > cstate)) cycle ! Prevent hopping back up.
-          ! if ((i < cstate) .and. (pstate < cstate)) cycle ! Prevent hopping back down.
             if (i == pstate) cycle ! Prevent hop back to same state after rewinding.
             g0 = t0%qe(cstate) - t0%qe(i)
             g1 = t1%qe(cstate) - t1%qe(i)
@@ -130,8 +128,6 @@ contains
                 check(i) = .true.
             end if
         end do
-
-1002 format (3(f11.5,1x),2x,i3,2x,i3,4f18.10)
     end function check_gap
 
 
@@ -312,7 +308,7 @@ contains
         real(dp), parameter :: tinydp = 1.0e-15_dp
 
         ! Minimum probability
-        err_gap = abs(g1) + tol_err + gap_err
+        err_gap = abs(g1) + tol_err
         prob(1) = lz_prob(err_gap, abs(sd))
 
         ! No error probability
@@ -332,7 +328,7 @@ contains
         real(dp), intent(in) :: gap !< Gap at gap minimum
         real(dp), intent(in) :: sd !< Second derivative at gap minimum
         real(dp) :: prob
-        prob = exp(- pio2 * sqrt( gap**3 / sd ))
+        prob = exp(-pio2 * sqrt(gap**3 / sd))
     end function lz_prob
 
 

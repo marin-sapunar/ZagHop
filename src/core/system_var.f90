@@ -45,10 +45,7 @@ module system_var
         integer :: qnatom = 0 !< Number of QM atoms.
         integer, allocatable :: qind(:) !< Indexes of the QM atoms in the full system.
         integer :: nstate = 0
-        integer :: nspin = 1 !< Number of different spins. 1 or 2 supported.
-        integer :: nstate_spin(2) = 0 !< Number of singlet/triplet states.
         integer :: cstate = 0 !< Current state.
-      ! integer :: cspin = 1 !< Current spin.
         real(dp), allocatable :: qe(:) !< Potential energies of the QM system.
         real(dp), allocatable :: qo(:) !< Oscillator strengths of the QM system.
 
@@ -62,9 +59,8 @@ module system_var
         real(dp), allocatable :: prob(:) !< Probabilities of hopping during current step.
         real(dp), allocatable :: olap(:, :) !< Overlaps between wfs between this and previous step.
         real(dp), allocatable :: nadv(:, :, :) !< Nonadiabatic coupling vectors.
-        real(dp), allocatable :: soc(:, :) !< Spin orbit couplings.
 
-        real(dp) :: pbcbox(6) = 0.0_dp
+        real(dp) :: pbcbox(1:6) = 0.0_dp
     contains
         procedure :: writestep => traj_writestep
         procedure :: writeheader => traj_writeheader
@@ -316,9 +312,7 @@ contains
             write(ounit, *) t(i)%qnatom
             write(ounit, *) allocated(t(i)%qind)
             if (allocated(t(i)%qind)) write(ounit, *) t(i)%qind(:)
-            write(ounit, *) t(i)%nspin
             write(ounit, *) t(i)%nstate
-            write(ounit, *) t(i)%nstate_spin
             write(ounit, *) t(i)%cstate
             write(ounit, *) allocated(t(i)%qe)
             if (allocated(t(i)%qe)) write(ounit, *) t(i)%qe(:)
@@ -336,7 +330,7 @@ contains
             if (allocated(t(i)%olap)) write(ounit, *) t(i)%olap(:, :)
             write(ounit, *) allocated(t(i)%nadv)
             if (allocated(t(i)%nadv)) write(ounit, *) t(i)%nadv(:, :, :)
-            write(ounit, *) t(i)%pbcbox(6)
+            write(ounit, *) t(i)%pbcbox
         end do
         close(ounit)
     end subroutine trajectory_write_backup
@@ -393,9 +387,7 @@ contains
                 allocate(t(i)%qind(t(i)%qnatom))
                 read(iunit, *) t(i)%qind(:)
             end if
-            read(iunit, *) t(i)%nspin
             read(iunit, *) t(i)%nstate
-            read(iunit, *) t(i)%nstate_spin
             read(iunit, *) t(i)%cstate
             read(iunit, *) check
             if (check) then
@@ -404,7 +396,7 @@ contains
             end if
             read(iunit, *) check
             if (check) then
-                allocate(t(i)%qo(t(i)%nstate_spin(1)-1))
+                allocate(t(i)%qo(t(i)%nstate-1))
                 read(iunit, *) t(i)%qo(:)
             end if
             read(iunit, *) t(i)%mnatom
@@ -434,7 +426,7 @@ contains
                 allocate(t(i)%nadv(t(i)%ndim*t(i)%natom, t(i)%nstate, t(i)%nstate))
                 read(iunit, *) t(i)%nadv(:, :, :)
             end if
-            read(iunit, *) t(i)%pbcbox(6)
+            read(iunit, *) t(i)%pbcbox
         end do
         close(iunit)
     end subroutine trajectory_read_backup
