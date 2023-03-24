@@ -9,7 +9,7 @@
             
 \newcommand{\tabitem}{~~\llap{--}~~}
 
-\title{NAD Input Manual}
+\title{ZagHop Input Manual}
 \author{Sapunar, M}
 
 \begin{document}
@@ -37,11 +37,11 @@ Section \$method contains paths to the driver programs for running the calculati
 \begin{tabularx}{\textwidth}{ m{2.5cm} X }
 qm				&
 	\textbf{No default.} \newline
-	Path to driver for QM calculation.  \\
+	Command line call for QM calculation driver.  \\
 
 mm				&
 	\textbf{No default.} \newline
-	Path to driver for MM calculation.  \\
+	Command line call for MM calculation driver.  \\
 
 overlap				&
     	\textbf{No default.} \newline
@@ -220,7 +220,7 @@ energy			&
 velocity		&
 	\textbf{vel} \newline
 	Method of rescaling velocity to conserve total energy after a hop. \newline
-	\tabitem [off] No phase matching. \newline
+	\tabitem [off] No rescaling. \newline
 	\tabitem [vel] Uniformly rescale velocity. \newline
 	\tabitem [gdif] Rescale velocity along vector given by difference of gradients on initial and final surface. \newline
 	\tabitem [nadvec] Rescale velocity along nonadiabatic coupling vector. \\
@@ -231,9 +231,17 @@ frustrated		&
 	\tabitem [continue] Continue trajectory along previous state. \newline
 	\tabitem [reverse] Continue trajectory along previous state, but also invert velocity along the direction along which velocity rescaling was attempted. \\
 
+lz\_prob\_conv	&
+	\textbf{0.05} \newline
+	Attempt to predict uncertainty of the estimated LZ probabilty based on the change in energy when the gap minimum is found and bisect the step until the estimated uncertainty is smaller than the given threshold value. (Set to 1.0 or higher to turn off this behavior.) \\
+
+lz\_min\_dt	&
+	\textbf{0.05} \newline
+    Minimum time step (in fs) for the lz\_prob\_conv procedure. \\
+
 skip\_state		&
 	\textbf{none} \newline
-	Give list of electronic states which will not be included in the calculation of the couplings. (Example: skip\_state 1-2, 5) \\
+	Give list of electronic states which will not be included in the calculation of the couplings. (Example: skip\_state 1-2, 5). Currently ignored. \\
 	
 seed \# 		&
 	\textbf{-1} \newline
@@ -241,7 +249,25 @@ seed \# 		&
 \end{tabularx}
 
 
+\section*{QM drivers}
+The ZagHop dynamics program communicates with electronic structure packages via a file based interface. At every step the program creates three files:
+\begin{tabularx}{\textwidth}{ m{2.5cm} X }
+cstep		& Containing a single integer for the current step in the dynamics. \\
+qm\_state	& Containing a single integer for the currently populated state (for which the gradient needs to be calculated). \\
+qm\_geom	& Containing natom lines with the current geometry of the QM system.
+\end{tabularx}
+After this, the script given in the "qm" keyword of the \$method section is called. This script should use the information from the files above to run an electronic structure calculation and parse its output to create the following files which will be read by ZagHop and used to propagate the trajectory:
+\begin{tabularx}{\textwidth}{ m{2.5cm} X }
+	qm\_energy	& Containing the total energies of all states of the QM system. \\
+	qm\_grad	& Containing natom lines with the gradient of the currently populated state for the current geometry of the QM system. \\
+	qm\_oscill	& If print option 10 is activated, this file should contain the oscillator strengths for the excited states of the QM system.
+\end{tabularx}
 
+A python script with drivers for Turbomole and Bagel is included in the package. As an example, dynamics using the Turbomole ADC(2) method would usually have the following line in the dynamics input file:
+\begin{quote}
+	qm "run.py tm\_adc2 \$QMDIR"
+\end{quote}
+where \$QMDIR is an environment variable pointing to a directory where the Turbomole calculation will run (and which contains the required inputs).
 
 
 

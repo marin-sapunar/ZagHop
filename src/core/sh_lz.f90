@@ -63,11 +63,11 @@ contains
                     end if
                 end if
                 t1%prob(i) = prob(2)
-                if (prob(3) - prob(1) < ctrl%lz_prob_conv) then
+                if (prob(3) - prob(1) > ctrl%lz_prob_conv) then
                     if (sd_converged(i)) then
                         call lz_prob_interval(t0%time, t1%time, t2%time, g0, g1, g2, gap_err,      &
                         &                     0.0_dp, sd, prob)
-                        if (prob(3) - prob(1) < ctrl%lz_prob_conv) then
+                        if (prob(3) - prob(1) > ctrl%lz_prob_conv) then
                             need_bisect = .true.
                         end if
                     else
@@ -76,6 +76,7 @@ contains
                 end if
             end do
             if (.not. need_bisect) exit
+            if (t0%time - t2%time <= ctrl%lz_min_dt) exit
             call bisect_gap(t0, t1, t2, err_check)
         end do
 
@@ -100,6 +101,7 @@ contains
             end if
         end if
     end subroutine lzsh
+
 
     function check_gap(t0, t1, t2) result(check)
       ! use control_var, only : ctrl
@@ -289,6 +291,7 @@ contains
         sd(3) = second_derivative(t0, t1, t2, err_g0, err_g1, err_g2)
         prob(3) = lz_prob(err_gap, abs(sd(3)))
     end subroutine lz_prob_interval
+
 
     !----------------------------------------------------------------------------------------------
     ! FUNCTION: lz_prob_interval_gap_only

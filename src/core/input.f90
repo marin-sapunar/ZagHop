@@ -74,7 +74,7 @@ contains
         ctrl%max_time = 10.0_dp / aut_fs
         ctrl%dt_0 = 0.5_dp / aut_fs
         ctrl%dt = ctrl%dt_0
-        ctrl%lz_min_dt = ctrl%dt_0 / 20.0_dp
+        ctrl%lz_min_dt = 0.05_dp / aut_fs
         ctrl%lz_prob_conv = 0.05_dp
         ctrl%orientlvl = 0
         tol_cns = 0.000000000001_dp ! Default rattle tolerance.
@@ -821,6 +821,9 @@ contains
                 end select
             case('lz_prob_conv')
                 read(readf%args(2)%s, *) ctrl%lz_prob_conv
+            case('lz_min_dt')
+                read(readf%args(2)%s, *) ctrl%lz_min_dt
+                ctrl%lz_min_dt = ctrl%lz_min_dt / aut_fs
             case('s0_ci')
                 read(readf%args(2)%s, *) ctrl%min01gap
                 ctrl%min01gap = ctrl%min01gap / eh_eV
