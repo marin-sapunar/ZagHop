@@ -1,4 +1,4 @@
-""" Interface for running Turbomole ADC(2) calculations. """
+""" Interface for running BAGEL CASPT2 calculations. """
 import subprocess
 import re
 import numpy as np
@@ -54,23 +54,3 @@ def read_gradient(state):
     gfile = "FORCE_" + str(state) + ".out"
     grad = np.loadtxt(gfile, skiprows=1, usecols=[1, 2, 3])
     return grad
-#
-#
-#def read_oscill():
-#    return oscill
-#
-#
-#def read_gradient():
-#    """ Read gradient from STDOUT file. """
-#    gradient = file_utils.search_file(STDOUT, 'o Atom', after=3, col=1)
-#    natom = len(gradient) / 3
-#    gradient = np.array(gradient, dtype=np.float64).reshape(natom, 3)
-#    return gradient
-#
-#
-#def read_energy():
-#    """ Read energies from STDOUT file. """
-#    energy = file_utils.search_file(STDOUT, "MS-CASPT2 energy")
-#    energy = file_utils.split_columns(energy, col=6)
-#    energy = np.array(energy, dtype=np.float64)
-#    return energy

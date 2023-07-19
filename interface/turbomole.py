@@ -45,8 +45,8 @@ class ricc2(Turbomole):
 
     def __init__(self, model, data):
         self.data = data
-        self.model = re.escape(model)
-        self.gs_model = re.escape(model)
+        self.model = model
+        self.gs_model = model
         if model == "adc(2)":
             self.gs_model = "mp2"
         self.results = dict()
@@ -54,14 +54,14 @@ class ricc2(Turbomole):
     def update_state(self):
         """ Update control file to request gradient of self.data["state"]. """
         if self.data["state"] == 1:
-            state_string = r"(x)"
+            state = r"(x)"
         else:
-            state_string = r"(a {})".format(self.data["state"]-1)
-        n_sub = file_utils.replace_inplace("control",
-                                   r"(geoopt +model={} +state=).*".format(self.model),
-                                   r"\1" + state_string)
-        if n_sub < 1:
-            raise ValueError("Expected geoopt section not found in control file.")
+            state = r"(a {})".format(self.data["state"]-1)
+        search_string = r"(geoopt +model={} +state=).*".format(re.escape(self.model))
+        n_sub = file_utils.replace_inplace("control", search_string, r"\1" + state)
+        if n_sub == 0:
+            repl = r"$ricc2\n  geoopt model={} state={}".format(self.model, state)
+            n_sub = file_utils.replace_inplace("control", r"\$ricc2", repl)
 
     def run(self):
         """ Run the calculation, check success and read results. """
@@ -72,7 +72,7 @@ class ricc2(Turbomole):
             actual_check()
 
     def read(self):
-        self.results["energy"] = ricc2_energy(STDOUT, self.gs_model.upper())
+        self.results["energy"] = ricc2_energy(STDOUT, self.gs_model)
         self.results["gradient"] = ricc2_gradient()[self.data["state"]]
         try:
             self.results["oscill"] = ricc2_oscill(STDOUT)
@@ -84,7 +84,7 @@ class mp2(ricc2):
     """ Interface for MP2 ground state calculations. """
 
     def read(self):
-        self.results["energy"] = ricc2_gs_energy(self.gs_model.upper())
+        self.results["energy"] = ricc2_gs_energy(self.gs_model)
         self.results["gradient"] = ricc2_gradient()[1]
 
 
@@ -163,7 +163,7 @@ def tddft_energy(fname):
     try:
         energy = file_utils.search_file(fname, ESCF_EN)
         col = 2
-    except:
+    except ValueError:
         energy = file_utils.search_file(fname, DSCF_EN)
         col = 4
     file_utils.split_columns(energy, col=col, convert=np.float64)
@@ -173,9 +173,9 @@ def tddft_energy(fname):
 def tddft_gradient(fname, target, ri):
     if target == 1:
         if ri:
-            cfile, _ = file_utils.go_to_keyword(fname, RDGRAD_GRAD)
+            cfile = file_utils.go_to_keyword(fname, RDGRAD_GRAD)[0]
         else:
-            cfile, _ = file_utils.go_to_keyword(fname, GRAD_GRAD)
+            cfile = file_utils.go_to_keyword(fname, GRAD_GRAD)[0]
     else:
         cfile = file_utils.open_if_needed(fname)
         while True:
@@ -194,7 +194,8 @@ def tddft_oscill(fname):
 
 
 def ricc2_energy(fname, model):
-    gs_energy = file_utils.search_file(fname, "Final "+model+" energy")
+    search_string = "Final " + re.escape(model.upper()) + " energy"
+    gs_energy = file_utils.search_file(fname, search_string)
     file_utils.split_columns(gs_energy, col=5, convert=np.float64)
     ex_energy = file_utils.search_file(fname, "Energy:")
     ex_energy = file_utils.split_columns(ex_energy, 1, convert=np.float64)
@@ -223,12 +224,12 @@ def ricc2_gradient():
     try:
         cfile = file_utils.go_to_keyword(STDOUT, "GROUND STATE FIRST-ORDER PROPERTIES")[0]
         grads[1] = get_grad_from_stdout(cfile)
-    except:
+    except ValueError:
         pass
     # Try to get excited state gradients.
     try:
         cfile = file_utils.go_to_keyword(STDOUT, "EXCITED STATE PROPERTIES")[0]
-    except:
+    except ValueError:
         return grads
     while True:
         try:
@@ -238,7 +239,7 @@ def ricc2_gradient():
                     close=False, 
                     after=3)
             cstate = int(line[0].split()[4]) + 1
-        except:
+        except ValueError:
             cfile.close()
             break
         try:
@@ -248,7 +249,7 @@ def ricc2_gradient():
                     stop_at=r"\+={73}\+",
                     close=False)
             grads[cstate] = get_grad_from_stdout(cfile)
-        except:
+        except ValueError:
             pass
     return grads
 
@@ -260,7 +261,7 @@ def get_grad_from_gradient(natom):
 
 
 def get_grad_from_stdout(cfile):
-    grad = file_utils.search_file(cfile, r"ATOM", after=3, stop_at=r"resulting FORCE", close=False)
+    grad = file_utils.search_file(cfile, r"^  ATOM", after=3, stop_at=r"resulting FORCE", close=False)
     grad = [line[5:] for line in grad]
     grad = [' '.join(grad[0::3]), ' '.join(grad[1::3]), ' '.join(grad[2::3])]
     grad = [line.split() for line in grad]
