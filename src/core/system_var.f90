@@ -19,6 +19,7 @@ module system_var
     public :: trajectory_rewind
     public :: trajectory_write_backup
     public :: trajectory_read_backup
+    public :: ekin
 
     !----------------------------------------------------------------------------------------------
     ! TYPE: TrajType

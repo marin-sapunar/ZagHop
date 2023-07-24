@@ -70,6 +70,7 @@ contains
     !> @details
     !----------------------------------------------------------------------------------------------
     subroutine sh_rescalevelo(opt, amask, mass, ppe, cpe, pgrd, cgrd, velo, flag)
+        use system_var, only : ekin
         integer, intent(in) :: opt !< Type of momentum correction.
         integer, intent(in) :: amask(:) !< Atoms considered when rescaling.
         real(dp), intent(in) :: mass(:) !< Masses.
@@ -110,23 +111,6 @@ contains
         ! Save changes to velocity array.
         velo(:, amask) = v
     end subroutine sh_rescalevelo
-
-
-    !----------------------------------------------------------------------------------------------
-    ! FUNCTION: EKin
-    !> @brief Calculate the kinetic energy for a set of particles.
-    !----------------------------------------------------------------------------------------------
-    pure function ekin(mass, velo) result (en)
-        real(dp), intent(in) :: mass(:)
-        real(dp), intent(in) :: velo(:, :)
-        real(dp) :: en
-        integer :: i
-
-        en = 0.0_dp
-        do i = 1, size(mass)
-            en = en + mass(i) * dot_product(velo(:, i), velo(:, i)) * 0.5_dp
-        end do
-    end function ekin
 
 
     !----------------------------------------------------------------------------------------------

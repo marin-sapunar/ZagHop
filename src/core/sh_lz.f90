@@ -172,11 +172,9 @@ contains
         write(stdout, '(5x,a,f10.4,a)') ' Computing step at t=', (t0%time+dt) * aut_fs ,'.'
         new_t = t0
         new_t%time = t0%time + dt
-        call dyn_updategeom(dt, t0%mass, t0%geom, t0%grad, t0%velo, new_t%geom, ctrl%cns, &
-        &                   ctrl%orientlvl)
+        call dyn_updategeom(dt, t0%mass, t0%geom, t0%grad, t0%velo, new_t%geom)
         call run_qm(new_t, .false.)
-        call dyn_updatevelo(dt, t0%mass, new_t%geom, t0%grad, new_t%grad, t0%velo, new_t%velo, &
-        &                   ctrl%cns, ctrl%orientlvl)
+        call dyn_updatevelo(dt, t0%mass, new_t%geom, t0%grad, new_t%grad, t0%velo, new_t%velo)
     end subroutine new_step
 
 

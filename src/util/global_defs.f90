@@ -25,6 +25,7 @@ module global_defs
     real(dp), parameter :: num4 = 4.0_dp
     real(dp), parameter :: f1o2 = num1 / num2
     real(dp), parameter :: f1o4 = num1 / num4
+    real(dp), parameter :: f2o3 = num2 / num3
     real(dp), parameter :: f3o4 = num3 / num4
     real(dp), parameter :: sqr2 = sqrt(num2)
     real(dp), parameter :: rsq2 = num1 / sqr2

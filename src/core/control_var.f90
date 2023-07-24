@@ -79,6 +79,16 @@ module control_var
         logical :: pbc !< Signal to use periodic boundary conditions in the MM calculation.
 
         !------------------------------------------------------------------------------------------
+        ! Thermostat options.
+        !------------------------------------------------------------------------------------------
+        integer :: thermostat = 0 !< Thermostat method:
+        !! - 0 - No thermostat.
+        !! - 1 - Berendsen thermostat.
+        !! - 2 - Nose-Hoover thermostat.
+        real(dp) :: target_t = -1.0_dp !< Target temperature for thermostat
+        real(dp) :: tau_t = 16536.54983032_dp !< Parameter for Berendsen thermostat
+
+        !------------------------------------------------------------------------------------------
         ! Surface hopping options.
         !------------------------------------------------------------------------------------------
         logical :: hop !< Signal that a hop occured in the current step.

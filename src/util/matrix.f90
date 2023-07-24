@@ -129,7 +129,6 @@ contains
         real(dp), intent(in) :: a(:, :) !< Input matrix.
         real(dp), allocatable :: a_inv(:, :)
         integer :: ipiv(size(a, 2))
-        integer :: n
         integer :: info
 
         ! Store A in Ainv to prevent it from being overwritten by LAPACK

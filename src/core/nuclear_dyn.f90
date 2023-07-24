@@ -28,7 +28,8 @@ contains
     !! When updating the geometry, the rattle algorithm is called to ensure any constraints are
     !! satisfied.
     !----------------------------------------------------------------------------------------------
-    subroutine dyn_updategeom(dt, mass, geo1, grad, velo, geo2, cnstr, orientlvl)
+    subroutine dyn_updategeom(dt, mass, geo1, grad, velo, geo2)
+        use control_var
         use rattle_mod
         real(dp), intent(in) :: dt
         real(dp), intent(in) :: mass(:)
@@ -36,16 +37,14 @@ contains
         real(dp), intent(in) :: grad(:, :)
         real(dp), intent(in) :: velo(:, :)
         real(dp), intent(out) :: geo2(:, :)
-        type(constraint), allocatable, intent(in) :: cnstr(:)
-        integer, intent(in) :: orientlvl
         real(dp) :: masi(size(mass), size(mass))
         real(dp) :: q(size(geo2, 1), size(geo1, 2))
 
         masi = diagonal_mat(1.0_dp / mass)
         q = velo - dt * matmul(grad, masi) * 0.5_dp
-        if (allocated(cnstr)) call rattle_geom(cnstr, dt, geo1, masi, q)
+        if (allocated(ctrl%cns)) call rattle_geom(ctrl%cns, dt, geo1, masi, q)
         geo2 = geo1 + dt * q
-        select case(orientlvl)
+        select case(ctrl%orientlvl)
         case(1)
             call set_geom_center_of_mass(mass, geo2)
         case(2)
@@ -63,7 +62,8 @@ contains
     !! After updating the velocity, the rattle algorithm is called to ensure any constraints are
     !! satisfied.
     !----------------------------------------------------------------------------------------------
-    subroutine dyn_updatevelo(dt, mass, geom, grd1, grd2, vel1, vel2, cnstr, orientlvl)
+    subroutine dyn_updatevelo(dt, mass, geom, grd1, grd2, vel1, vel2)
+        use control_var
         use rattle_mod
         real(dp), intent(in) :: dt
         real(dp), intent(in) :: mass(:)
@@ -72,14 +72,15 @@ contains
         real(dp), intent(in) :: grd2(:, :)
         real(dp), intent(in) :: vel1(:, :)
         real(dp), intent(out) :: vel2(:, :)
-        type(constraint), allocatable, intent(in) :: cnstr(:)
-        integer, intent(in) :: orientlvl
         real(dp) :: masi(size(mass), size(mass))
 
         masi = diagonal_mat(1.0_dp / mass)
         vel2 = vel1 - dt * matmul(grd1 + grd2, masi) * 0.5_dp
-        if (allocated(cnstr)) call rattle_velo(cnstr, geom, masi, vel2)
-        select case(orientlvl)
+        if (ctrl%thermostat == 1) then
+            call berendsen_thermostat(ctrl%target_t, ctrl%tau_t, dt, mass, vel2)
+        end if
+        if (allocated(ctrl%cns)) call rattle_velo(ctrl%cns, geom, masi, vel2)
+        select case(ctrl%orientlvl)
         case(2)
             call project_translation_rotation_from_velocity(mass, geom, vel2)
         end select
@@ -143,6 +144,22 @@ contains
         end do
         velo = transpose(velocity)
     end subroutine  project_translation_rotation_from_velocity
+
+
+    subroutine berendsen_thermostat(target_t, tau_t, dt, mass, vel)
+        use system_var, only : ekin
+        real(dp), intent(in) :: tau_t
+        real(dp), intent(in) :: target_t
+        real(dp), intent(in) :: dt
+        real(dp), intent(in) :: mass(:)
+        real(dp), intent(inout) :: vel(:, :)
+        real(dp):: bt_lambda
+        real(dp):: current_t
+
+        current_t = 315773.0_dp * f2o3 * ekin(mass, vel) / size(mass)
+        bt_lambda = sqrt(num1 + (dt / tau_t) * ((target_t / current_t) - num1))
+        vel = vel * bt_lambda
+    end subroutine berendsen_thermostat
 
 
 end module nuclear_dyn_mod

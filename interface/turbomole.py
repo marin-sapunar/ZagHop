@@ -206,7 +206,7 @@ def ricc2_energy(fname, model):
 
 def ricc2_gs_energy(model):
     energy = file_utils.search_file(STDOUT, "Total Energy  ")
-    energy = np.float(energy[0].split()[3])
+    energy = np.float64(energy[0].split()[3])
     return np.array([energy])
 
 

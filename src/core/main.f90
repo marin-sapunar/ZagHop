@@ -24,7 +24,7 @@ program zaghop
     ! Import subroutines
     use timing_mod, only : timer
     use random_mod, only : init_random_seed
-    use input_mod, only : readinput
+    use input_mod, only : read_input
     use interface_mod
     use file_mod, only : check_is_dir
     use hopping_mod
@@ -47,7 +47,7 @@ program zaghop
 
     ! Read input file(s)
     allocate(t(memory)) ! Allocate number of previous steps to keep in memory.
-    call readinput()
+    call read_input()
 
     ! Start the random number generator.
     write(stdout, *)
@@ -96,8 +96,7 @@ program zaghop
         write(stdout, '(1x,a,i0)') 'Starting step: ', t(1)%step
 
         ! Get new geometry.
-        call dyn_updategeom(ctrl%dt, t(1)%mass, t(2)%geom, t(2)%grad, t(2)%velo, t(1)%geom,        &
-        &                   ctrl%cns, ctrl%orientlvl)
+        call dyn_updategeom(ctrl%dt, t(1)%mass, t(2)%geom, t(2)%grad, t(2)%velo, t(1)%geom)
 
         ! Get new gradients.
         if (ctrl%mm) call run_mm(t(1))
@@ -105,7 +104,7 @@ program zaghop
 
         ! Get new velocity.
         call dyn_updatevelo(ctrl%dt, t(1)%mass, t(1)%geom, t(2)%grad, t(1)%grad, t(2)%velo,        &
-        &                   t(1)%velo, ctrl%cns, ctrl%orientlvl)
+        &                   t(1)%velo)
 
         ! Integrate TDSE.
         call hopping()

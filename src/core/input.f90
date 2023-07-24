@@ -3,13 +3,13 @@
 !> @author Marin Sapunar, Ruđer Bošković Institute
 !> @date December, 2016
 !
-! DESCRIPTION: 
+! DESCRIPTION:
 !> @brief Input subroutines.
 !> @details
-!! Subroutines for setting default program options, reading command line arguments and reading 
-!! program input files. 
-!! Arrays of dimension natom are allocated in the ReadGeom subroutine. 
-!! Arrays of dimension nstate are allocated in the ReadMainInp subroutine.
+!! Subroutines for setting default program options, reading command line arguments and reading
+!! program input files.
+!! Arrays of dimension natom are allocated in the read_geom subroutine.
+!! Arrays of dimension nstate are allocated in the read_main subroutine.
 !--------------------------------------------------------------------------------------------------
 module input_mod
     use global_defs
@@ -22,7 +22,7 @@ module input_mod
     implicit none
 
     private
-    public :: readinput
+    public :: read_input
 
     character(len=:), allocatable :: maininp !< Name of main input file.
     character(len=:), allocatable :: geominp !< Name of geometry input file.
@@ -92,6 +92,10 @@ contains
         ctrl%fhop = 1
         ctrl%phaselvl = 1
         ctrl%oscill = .false.
+        ! Thermostat
+        ctrl%thermostat = 0
+        ctrl%target_t = -1.0_dp
+        ctrl%tau_t = -1.0_dp
         ! MM options.
         ctrl%mmcut = 10000.0_dp
         ctrl%pbc = .false.
@@ -101,17 +105,17 @@ contains
 
 
     !----------------------------------------------------------------------------------------------
-    ! SUBROUTINE: ReadInput
+    ! SUBROUTINE: read_input
     !
     ! DESCRIPTION:
     !> @brief Read all program input.
-    !> @details 
-    !! Read the command line arguments passed to the program, the main program input file and the 
+    !> @details
+    !! Read the command line arguments passed to the program, the main program input file and the
     !! files containing the initial geometry and velocity of the system.
-    !! At the moment, only the name of the main input file can be passed through the command line 
+    !! At the moment, only the name of the main input file can be passed through the command line
     !! arguments, all other options are set in this file.
     !----------------------------------------------------------------------------------------------
-    subroutine readinput
+    subroutine read_input
         use nuclear_dyn_mod
         integer :: narg
         character(len=1000) :: temp
@@ -134,25 +138,25 @@ contains
          ! Read main input file.
         write(stdout, *)
         write(stdout, '(1x,a,a,a)') 'Reading dynamics input file ', trim(maininp), '.'
-        call readmaininp()
+        call read_main()
 
         ! Set initial directory.
         ctrl%qmdir = 'qmdir'
         call get_environment_variable('QMDIR', temp)
         if (temp /= '') ctrl%qmdir = trim(adjustl(temp))
-        write(stdout, *) 
+        write(stdout, *)
         write(stdout, '(1x,a,a)') "Work directory for QM calculations: ", ctrl%qmdir
         call system('mkdir -p '//ctrl%qmdir)
-       
+
         ! If restarting don't read initial conditions.
         if (ctrl%restart) return
 
         ! Read initial conditions.
         write(stdout, *)
         write(stdout, '(1x,a,a,a)') 'Reading geometry file ', geominp, '.'
-        call readgeom()
+        call read_geom()
         write(stdout, '(1x,a,a,a)') 'Reading velocity file ', veloinp, '.'
-        call readvelo()
+        call read_velo()
 
         ! Reorient the molecule based on orientlvl
         select case(ctrl%orientlvl)
@@ -167,7 +171,7 @@ contains
         ! Read list of partial charges.
         if (ctrl%pcharge) then
             write(stdout, '(1x,a,a,a)') 'Reading partial charges file ', pcinp, '.'
-            call readpc()
+            call read_pc()
         end if
 
         ! Print initial information about the full system.
@@ -199,18 +203,18 @@ contains
             end do
         end if
 
-    end subroutine readinput
+    end subroutine read_input
 
 
     !----------------------------------------------------------------------------------------------
-    ! SUBROUTINE: ReadMainInp
+    ! SUBROUTINE: read_main
     !
     ! DESCRIPTION:
     !> @brief Read the main program control variables.
     !> @details
     !! See manual for details concerning the input.
     !----------------------------------------------------------------------------------------------
-    subroutine readmaininp()
+    subroutine read_main()
         use matrix_mod, only : unit_mat
         logical :: check
         logical :: buffer
@@ -221,23 +225,24 @@ contains
 
         inquire(file=maininp, exist=check)
         if (.not. check) then
-            write(stderr,*) 'Error in Input module, ReadMainInp subroutine.'
+            write(stderr,*) 'Error in Input module, read_main subroutine.'
             write(stderr,*) ' Main input file (', trim(maininp),') not found.'
             stop
         end if
 
         call readf%open(maininp, comment='#')
         ! Mandatory keywords are read first:
-        call readmethod(readf)
-        call readsystem(readf, t(1)%nstate, t(1)%cstate, geominp, veloinp, t(1)%ndim)
+        call read_method(readf)
+        call read_system(readf, t(1)%nstate, t(1)%cstate, geominp, veloinp, t(1)%ndim)
 
         ! Followed by optional keywords.
-        call readdynamics(readf)
-        call readoutput(readf)
-        call readsurfhop(readf, skipstates)
-        call readmm(readf)
-        call readconstraints(readf, tol_cns)
-        call readrestart(readf)
+        call read_dynamics(readf)
+        call read_output(readf)
+        call read_surfhop(readf, skipstates)
+        call read_mm(readf)
+        call read_constraints(readf, tol_cns)
+        call read_thermostat(readf)
+        call read_restart(readf)
         call readf%close()
 
         ! Modify options based on type of calculation.
@@ -258,6 +263,10 @@ contains
                     ctrl%couple(skipstates(i)) = .false.
                 end do
             end if
+        end if
+        if (ctrl%thermostat /= 0) then
+            ctrl%max_tot_en_change = huge(ctrl%max_tot_en_change)
+            ctrl%max_tot_en_change_step = huge(ctrl%max_tot_en_change_step)
         end if
 
         ! Allocate all arrays of size t(1)%nstate.
@@ -282,21 +291,21 @@ contains
         end if
 
 
-    end subroutine readmaininp
+    end subroutine read_main
 
- 
+
     !----------------------------------------------------------------------------------------------
-    ! SUBROUTINE: ReadGeom
+    ! SUBROUTINE: read_geom
     !
     ! DESCRIPTION:
     !> @brief Read the list of symbols, masses and positions of all atoms in the full system.
-    !> @details 
+    !> @details
     !! Read number of atoms in the full system and the QM and MM subsystems. Allocate all arrays
     !! of dimensions natom, qnatom or mnatom. Read the symbol, mass and position arrays for
     !! the full system.
     !! Assign QM and MM pointers to the appropriate sections of the main arrays.
     !----------------------------------------------------------------------------------------------
-    subroutine readgeom()
+    subroutine read_geom()
         logical :: check
         character(len=2) :: tsym
         real(dp) :: tmass
@@ -307,7 +316,7 @@ contains
 
         inquire(file=geominp, exist=check)
         if (.not. check) then
-            write(stderr,*) 'Error in Input module, ReadGeom subroutine.'
+            write(stderr,*) 'Error in Input module, read_geom subroutine.'
             write(stderr,*) ' Geometry file (', trim(geominp),') not found.'
             stop
         end if
@@ -319,11 +328,11 @@ contains
             if (is_iostat_end(readf%iostat)) exit
             call readf%parseline(' ,')
             if (readf%narg < t(1)%ndim + 3) then
-                write(stderr, '(a)') 'Error in Input module, ReadGeom subroutine.'
+                write(stderr, '(a)') 'Error in Input module, read_geom subroutine.'
                 write(stderr, '(a,i0,a)') ' Need ', 3+t(1)%ndim, ' arguments per line:'
                 write(stderr, '(a)') '  symbol mass coords q/m'
                 write(stderr, '(a,a)') '  Line: ', readf%line
-                stop 
+                stop
             end if
             read(readf%args(3+t(1)%ndim)%s, *) part
             select case (tolower(part))
@@ -332,7 +341,7 @@ contains
             case('m')
                 t(1)%mnatom = t(1)%mnatom + 1
             case default
-                write(stderr, *) 'Error in Input module, ReadGeom subroutine.'
+                write(stderr, *) 'Error in Input module, read_geom subroutine.'
                 write(stderr, *) ' Lines should end with "q" for QM atoms or "m" for MM atoms.'
                 stop
             end select
@@ -341,7 +350,7 @@ contains
 
         t(1)%natom = t(1)%qnatom + t(1)%mnatom
         if (t(1)%natom == 0) then
-            write(stderr, *) 'Error in Input module, ReadGeom subroutine.'
+            write(stderr, *) 'Error in Input module, read_geom subroutine.'
             write(stderr, *) ' No atoms found in geometry file!'
             stop
         end if
@@ -402,16 +411,16 @@ contains
             end select
         end do
         call readf%close()
-    end subroutine readgeom
+    end subroutine read_geom
 
- 
+
     !----------------------------------------------------------------------------------------------
-    ! SUBROUTINE: ReadVelo
+    ! SUBROUTINE: read_velo
     !
     ! DESCRIPTION:
     !> @brief Read the velocities of the atoms in the system.
     !----------------------------------------------------------------------------------------------
-    subroutine readvelo()
+    subroutine read_velo()
         logical :: check
         integer :: i
         integer :: d
@@ -419,7 +428,7 @@ contains
 
         inquire(file=veloinp, exist=check)
         if (.not. check) then
-            write(stderr, *) 'Error in Input module, ReadVelo subroutine.'
+            write(stderr, *) 'Error in Input module, read_velo subroutine.'
             write(stderr, *) ' Velocity file (', trim(veloinp),') not found.'
             stop
         end if
@@ -429,7 +438,7 @@ contains
             call readf%next()
             call readf%parseline(' ,')
             if (readf%narg < t(1)%ndim) then
-                write(stderr, *) 'Error in Input module, ReadVelo subroutine.'
+                write(stderr, *) 'Error in Input module, read_velo subroutine.'
                 write(stderr, '(a,i0,a)') ' Premature end of line, expect ', t(1)%ndim, ' arguments.'
                 write(stderr, '(a,a)') ' Line: ', readf%line
                 stop
@@ -439,23 +448,23 @@ contains
             end do
         end do
         call readf%close()
-    end subroutine readvelo
+    end subroutine read_velo
 
 
     !----------------------------------------------------------------------------------------------
-    ! SUBROUTINE: ReadPC
+    ! SUBROUTINE: read_pc
     !
     ! DESCRIPTION:
     !> @brief Read the partial charges of the atoms in the system.
     !----------------------------------------------------------------------------------------------
-    subroutine readpc()
+    subroutine read_pc()
         logical :: check
         integer :: i
         type(reader) :: readf
 
         inquire(file=pcinp, exist=check)
         if (.not. check) then
-            write(stderr, *) 'Error in Input module, ReadPC subroutine.'
+            write(stderr, *) 'Error in Input module, read_pc subroutine.'
             write(stderr, *) ' Point charges file (', trim(pcinp),') not found.'
             stop
         end if
@@ -466,18 +475,18 @@ contains
             read(readf%line, *) t(1)%chrg(i)
         end do
         call readf%close()
-    end subroutine readpc
- 
+    end subroutine read_pc
+
 
     !----------------------------------------------------------------------------------------------
-    ! SUBROUTINE: ReadMethod
+    ! SUBROUTINE: read_method
     !
     ! DESCRIPTION:
     !> @brief Read the $method section of the main input file.
-    !> @details 
+    !> @details
     !! In this section, programs to run the QM and MM calculations are selected.
     !----------------------------------------------------------------------------------------------
-    subroutine readmethod(readf)
+    subroutine read_method(readf)
         type(reader), intent(inout) :: readf
 
         if (.not. allocated(ctrl%qprog)) ctrl%qprog = ''
@@ -486,7 +495,7 @@ contains
         write(stdout, '(3x,a)') 'Reading $method section of the dynamics input file.'
         call readf%rewind()
         call readf%go_to_keyword('$method')
-        do 
+        do
             call readf%next()
             if (index(readf%line, '$') == 1) exit
             call readf%parseline(' ')
@@ -506,18 +515,18 @@ contains
                 read(readf%args(2)%s, *) ctrl%qm_en_err
             end select
         end do
-    end subroutine readmethod
+    end subroutine read_method
 
 
     !----------------------------------------------------------------------------------------------
-    ! SUBROUTINE: ReadSystem
+    ! SUBROUTINE: read_system
     !
     ! DESCRIPTION:
     !> @brief Read information about the system.
     !> @details
     !! See manual for details concerning the input.
     !----------------------------------------------------------------------------------------------
-    subroutine readsystem(readf, nstate, cstate, geominp, veloinp, ndim)
+    subroutine read_system(readf, nstate, cstate, geominp, veloinp, ndim)
         type(reader), intent(inout) :: readf
         integer, intent(inout) :: nstate
         integer, intent(out) :: cstate
@@ -544,35 +553,35 @@ contains
             case('ndim')
                 read(readf%args(2)%s, *) ndim
             case default
-                write(stderr, *) 'Warning in InputSection module, ReadSystem subroutine.' 
-                write(stderr, *) '  Skipping line with unrecognized keyword:' 
+                write(stderr, *) 'Warning in Input module, read_system subroutine.'
+                write(stderr, *) '  Skipping line with unrecognized keyword:'
                 write(stderr, *) readf%line
             end select
         end do
 
         if (nstate == 0) then
-            write(stderr,*) 'Error in InputSection module, ReadSystem subroutine.'
+            write(stderr,*) 'Error in Input module, read_system subroutine.'
             write(stderr,'(a)') ' Number of states not defined.'
             stop
         end if
         if (cstate == 0) then
-            write(stderr,*) 'Warning in InputSection module, ReadSystem subroutine.'
+            write(stderr,*) 'Warning in Input module, read_system subroutine.'
             write(stderr,'(a)') ' Initial state not defined, setting initial state = ', nstate, '.'
             cstate = nstate
         end if
 
-    end subroutine readsystem
+    end subroutine read_system
 
 
     !----------------------------------------------------------------------------------------------
-    ! SUBROUTINE: ReadOutput
+    ! SUBROUTINE: read_output
     !
     ! DESCRIPTION:
     !> @brief Read output options of the program.
     !> @details
     !! See manual for details concerning the input.
     !----------------------------------------------------------------------------------------------
-    subroutine readoutput(readf)
+    subroutine read_output(readf)
         type(reader), intent(inout) :: readf
         integer, allocatable :: printopts(:)
         logical :: check
@@ -605,23 +614,23 @@ contains
             case('buinterval')
                 read(readf%args(2)%s, *) ctrl%buinterval
             case default
-                write(stderr, *) 'Warning in InputSection module, ReadOutput subroutine.' 
-                write(stderr, *) '  Skipping line with unrecognized keyword:' 
+                write(stderr, *) 'Warning in Input module, read_output subroutine.'
+                write(stderr, *) '  Skipping line with unrecognized keyword:'
                 write(stderr, *) readf%line
             end select
-        end do 
-    end subroutine readoutput
+        end do
+    end subroutine read_output
 
 
     !----------------------------------------------------------------------------------------------
-    ! SUBROUTINE: ReadDynamics
+    ! SUBROUTINE: read_dynamics
     !
     ! DESCRIPTION:
     !> @brief Read information about the nuclear dynamics.
     !> @details
     !! See manual for details concerning the input.
     !----------------------------------------------------------------------------------------------
-    subroutine readdynamics(readf)
+    subroutine read_dynamics(readf)
         type(reader), intent(inout) :: readf
         logical :: check
 
@@ -654,23 +663,23 @@ contains
             case('orient')
                 read(readf%args(2)%s, *) ctrl%orientlvl
             case default
-                write(stderr, *) 'Warning in InputSection module, ReadDynamics subroutine.' 
-                write(stderr, *) '  Skipping line with unrecognized keyword:' 
+                write(stderr, *) 'Warning in Input module, read_dynamics subroutine.'
+                write(stderr, *) '  Skipping line with unrecognized keyword:'
                 write(stderr, *) readf%line
             end select
         end do
-    end subroutine readdynamics
+    end subroutine read_dynamics
 
 
     !----------------------------------------------------------------------------------------------
-    ! SUBROUTINE: ReadConstraints
+    ! SUBROUTINE: read_constraints
     !
     ! DESCRIPTION:
     !> @brief Read information about constraints.
     !> @details
     !! See manual for details concerning the input.
     !----------------------------------------------------------------------------------------------
-    subroutine readconstraints(readf, default_tol)
+    subroutine read_constraints(readf, default_tol)
         type(reader), intent(inout) :: readf
         real(dp), intent(in) :: default_tol
         logical :: check
@@ -696,23 +705,23 @@ contains
                 read(readf%args(4)%s, *) ctrl%cns(i)%cval
                 if (readf%narg > 4) read(readf%args(5)%s, *) ctrl%cns(i)%tol
             case default
-                write(stderr, *) 'Error in InputSection module, ReadConstraints subroutine.' 
+                write(stderr, *) 'Error in Input module, read_constraints subroutine.'
                 write(stderr, *) '  Unrecognized constraint type: ', readf%args(1)%s
                 stop
             end select
         end do
-    end subroutine readconstraints
+    end subroutine read_constraints
 
 
     !----------------------------------------------------------------------------------------------
-    ! SUBROUTINE: ReadSurfHop
+    ! SUBROUTINE: read_surfhop
     !
     ! DESCRIPTION:
     !> @brief Read the $surfhop section of the main input file.
     !> @details
     !! See manual for details concerning the input.
     !----------------------------------------------------------------------------------------------
-    subroutine readsurfhop(readf, skipstates)
+    subroutine read_surfhop(readf, skipstates)
         type(reader), intent(inout) :: readf
         integer, allocatable, intent(out) :: skipstates(:)
         logical :: check
@@ -758,7 +767,7 @@ contains
                 case('nldm')
                     ctrl%decohlvl = 1
                 case default
-                    write(stderr, *) 'Error in InputSection module, ReadSurfHop subroutine.'
+                    write(stderr, *) 'Error in Input module, read_surfhop subroutine.'
                     write(stderr, '(2x,a)') '  Unrecognized decoherence method: '
                     write(stderr, '(2x,a)') readf%line
                     stop
@@ -814,7 +823,7 @@ contains
                 case('assigned')
                     ctrl%phaselvl = 2
                 case default
-                    write(stderr, *) 'Error in InputSection module, ReadSurfHop subroutine.'
+                    write(stderr, *) 'Error in Input module, read_surfhop subroutine.'
                     write(stderr, '(2x,a)') '  Unrecognized phase matching algorithm: '
                     write(stderr, '(2x,a)') readf%line
                     stop
@@ -832,22 +841,22 @@ contains
             case('seed')
                 read(readf%args(2)%s, *) ctrl%seed
             case default
-                write(stderr, *) 'Warning in InputSection module, ReadSurfHop subroutine.'
-                write(stderr, *) '  Skipping line with unrecognized keyword:' 
+                write(stderr, *) 'Warning in Input module, read_surfhop subroutine.'
+                write(stderr, *) '  Skipping line with unrecognized keyword:'
                 write(stderr, *) readf%line
             end select
         end do
-    end subroutine readsurfhop
+    end subroutine read_surfhop
 
     !----------------------------------------------------------------------------------------------
-    ! SUBROUTINE: ReadMM
+    ! SUBROUTINE: read_mm
     !
     ! DESCRIPTION:
     !> @brief Read the $mm section of the main input file.
     !> @details
     !! See manual for details concerning the input.
     !----------------------------------------------------------------------------------------------
-    subroutine readmm(readf)
+    subroutine read_mm(readf)
         type(reader), intent(inout) :: readf
         logical :: check
 
@@ -878,30 +887,85 @@ contains
                     read (readf%line, *) t(1)%pbcbox
                 end if
             case default
-                write(stderr, *) 'Warning in InputSection module, ReadMM subroutine.' 
-                write(stderr, *) '  Skipping line with unrecognized keyword:' 
+                write(stderr, *) 'Warning in Input module, read_mm subroutine.'
+                write(stderr, *) '  Skipping line with unrecognized keyword:'
                 write(stderr, *) readf%line
             end select
         end do
-    end subroutine readmm
+    end subroutine read_mm
 
 
     !----------------------------------------------------------------------------------------------
-    ! SUBROUTINE: ReadRestart
+    ! SUBROUTINE: read_thermostat
+    !
+    ! DESCRIPTION:
+    !> @brief Read the $thermostat section of the main input file.
+    !> @details
+    !! See manual for details concerning the input.
+    !----------------------------------------------------------------------------------------------
+    subroutine read_thermostat(readf)
+        type(reader), intent(inout) :: readf
+        logical :: check
+
+        call readf%rewind()
+        call readf%go_to_keyword('$thermostat', found=check)
+        if (.not. check) return
+
+        call readf%parseline(' =')
+        if (readf%narg > 1) then
+            select case(readf%args(2)%s)
+            case('off')
+                ctrl%thermostat = 0
+                return
+            case('berendsen')
+                ctrl%thermostat = 1
+            case default
+                write(stderr, *) 'Warning in Input module, read_thermostat subroutine.'
+                write(stderr, *) '  Unrecognized thermostat option:'
+                write(stderr, *) readf%line
+            end select
+        end if
+
+
+        do
+            call readf%next()
+            if (index(readf%line, '$') == 1) exit
+            call readf%parseline(' =')
+            select case(readf%args(1)%s)
+            case('target_t')
+                read(readf%args(2)%s, *) ctrl%target_t
+            case('tau_t')
+                if (ctrl%thermostat /= 1) then
+                    write(stderr, *) 'Warning in Input module, read_thermostat subroutine.'
+                    write(stderr, *) '  Skipping tau_t, only relevant for Berendsen thermostat.'
+                end if
+                read(readf%args(2)%s, *) ctrl%tau_t
+                ctrl%tau_t = ctrl%tau_t / aut_fs
+            case default
+                write(stderr, *) 'Warning in Input module, read_thermostat subroutine.'
+                write(stderr, *) '  Skipping line with unrecognized keyword:'
+                write(stderr, *) readf%line
+            end select
+        end do
+    end subroutine read_thermostat
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: read_restart
     !
     ! DESCRIPTION:
     !> @brief Check if the $restart keyword is present in the main input file.
     !> @details
     !! See manual for details concerning the input.
     !----------------------------------------------------------------------------------------------
-    subroutine readrestart(readf)
+    subroutine read_restart(readf)
         type(reader), intent(inout) :: readf
         logical :: check
 
         call readf%rewind()
         call readf%go_to_keyword('$restart', found=check)
         if (check) ctrl%restart = .true.
-    end subroutine readrestart
+    end subroutine read_restart
 
- 
+
 end module input_mod
