@@ -147,7 +147,7 @@ class egrad(Turbomole):
 
     def read(self):
         self.results["energy"] = tddft_energy(STDOUT)
-        self.results["gradient"] = get_grad_from_gradient(STDOUT, self.data["natom"])
+        self.results["gradient"] = get_grad_from_gradient(self.data["natom"])
         if self.data["n_ex_state"] > 0:
             self.results["oscill"] = tddft_oscill(STDOUT)
 
