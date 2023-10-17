@@ -36,7 +36,6 @@ contains
         use sh_fssh_mod
         use sh_lz_mod
         use constants
-        logical :: check
         integer :: tst
 
         tst = t(1)%cstate
@@ -80,11 +79,12 @@ contains
         real(dp), intent(in) :: cgrd(:, :) !< Gradient on current state.
         real(dp), intent(inout) :: velo(:, :) !< Velocities.
         integer, intent(out) :: flag !< 0 for successful hop, 1 for rejected hop.
-        real(dp) :: crit !< Available energy for rescaling.
-        real(dp) :: ke !< Kinetic energy.
-        real(dp) :: vscale !< Scaling factor.
         real(dp) :: v(size(velo, 1), size(amask)) !< Temporary velocity array.
         real(dp) :: m(size(amask)) !< Temporary mass array.
+        real(dp) :: rescale_dir(size(velo, 1), size(amask)) !< Direction along which to rescale.
+        real(dp) :: absv_dir !< Speed along rescale direction.
+        real(dp) :: newv_dir !< New speed along rescale direction.
+        real(dp) :: de !< Required change in kinetic energy.
 
         ! Work with temporary arrays.
         v = velo(:, amask)
@@ -94,19 +94,22 @@ contains
         select case(opt)
         case(0) ! No rescaling.
         case(1) ! Rescale along velocity vector.
-            ke = ekin(m, v)
-            crit = ke + ppe - cpe
-            if (crit < 0) return
-            vscale = sqrt(crit / ke)
-            v = v * vscale
-            flag = 0
+            rescale_dir = v
         case(2) ! Rescale along gradient difference vector.
-            !> @todo Add rescaling along gradient difference vector.
-            stop 'gdiff rescale not implemented'
+            rescale_dir = pgrd - cgrd
         case(3) ! Rescale along nonadiabatic coupling vector.
             !> @todo Add rescaling along nonadiabatic coupling vector.
             stop 'nadvec rescale not implemented'
         end select
+
+        ! Rescale velocity
+        de = cpe - ppe
+        rescale_dir = rescale_dir / sqrt(sum(rescale_dir**2))
+        absv_dir = sum(v * rescale_dir)
+        if (de > ekin(m, absv_dir * rescale_dir)) return
+        flag = 0
+        newv_dir = sqrt(absv_dir**2 - 2 * de / sum(spread(mass, 1, 3) * rescale_dir**2))
+        v = v + rescale_dir * (newv_dir - absv_dir)
 
         ! Save changes to velocity array.
         velo(:, amask) = v
