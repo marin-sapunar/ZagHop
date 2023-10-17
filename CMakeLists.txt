@@ -72,6 +72,7 @@ enable_language (Fortran)
     set(F95_LIBS ${F95_LIBS} ${F95ROOT}/lib/intel64/libmkl_lapack95_lp64.a)
     set(LINKLIBS ${LINKLIBS} ${F95_LIBS})
     # MKL libraries.
+    include_directories(${MKLROOT}/include/)
     set(MKL_LIBS "-Wl,--no-as-needed -Wl,--start-group")
     if(CMAKE_Fortran_COMPILER_ID STREQUAL "Intel")
         set(MKL_LIBS ${MKL_LIBS} "-lmkl_intel_lp64 -lmkl_intel_thread")

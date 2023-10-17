@@ -12,7 +12,10 @@ module global_defs
         stdin => input_unit, &
         sp => real32, & 
         dp => real64, & 
-        qp => real128
+        qp => real128, &
+        i4 => int32, &
+        i8 => int64
+
 
     integer, parameter :: j15 = selected_int_kind(15)
     integer :: print_level !< Global print level option for programs.

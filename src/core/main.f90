@@ -45,14 +45,14 @@ program zaghop
     write(stdout, *) 'Program compiled '//__DATE__//' at '//__TIME__//'.'
     write(stdout, *) '-------------------------------------------------------------------------------'
 
-    ! Read input file(s)
-    allocate(t(memory)) ! Allocate number of previous steps to keep in memory.
-    call read_input()
-
     ! Start the random number generator.
     write(stdout, *)
     call init_random_seed(ctrl%seed(1))
     write(stdout, '(a,i0)') 'Random number generator started with seed: ', ctrl%seed
+
+    ! Read input file(s)
+    allocate(t(memory)) ! Allocate number of previous steps to keep in memory.
+    call read_input()
 
     ! Restart old trajectory or open new output file.
     if (ctrl%restart) then

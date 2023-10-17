@@ -29,6 +29,7 @@ module input_mod
     character(len=:), allocatable :: veloinp !< Name of velocity input file.
     character(len=:), allocatable :: pcinp !< Name of partial charges input file.
     real(dp) :: tol_cns
+    real(dp) :: mb_temperature = -1.0_dp
 
 contains
 
@@ -155,8 +156,15 @@ contains
         write(stdout, *)
         write(stdout, '(1x,a,a,a)') 'Reading geometry file ', geominp, '.'
         call read_geom()
-        write(stdout, '(1x,a,a,a)') 'Reading velocity file ', veloinp, '.'
-        call read_velo()
+        select case(veloinp)
+        case('maxwell-boltzmann', 'mb')
+            write(stdout, '(3x,a,a)') 'Generating random velocities following Maxwell-Boltzmann ', &
+                                      'distribution.'
+            call maxwell_boltzmann_velo(t(1)%mass, mb_temperature, t(1)%velo)
+        case default
+            write(stdout, '(1x,a,a,a)') 'Reading velocity file ', veloinp, '.'
+            call read_velo()
+        end select
 
         ! Reorient the molecule based on orientlvl
         select case(ctrl%orientlvl)
@@ -233,7 +241,7 @@ contains
         call readf%open(maininp, comment='#')
         ! Mandatory keywords are read first:
         call read_method(readf)
-        call read_system(readf, t(1)%nstate, t(1)%cstate, geominp, veloinp, t(1)%ndim)
+        call read_system(readf, t(1)%nstate, t(1)%cstate, t(1)%ndim)
 
         ! Followed by optional keywords.
         call read_dynamics(readf)
@@ -526,12 +534,10 @@ contains
     !> @details
     !! See manual for details concerning the input.
     !----------------------------------------------------------------------------------------------
-    subroutine read_system(readf, nstate, cstate, geominp, veloinp, ndim)
+    subroutine read_system(readf, nstate, cstate, ndim)
         type(reader), intent(inout) :: readf
         integer, intent(inout) :: nstate
         integer, intent(out) :: cstate
-        character(len=:), allocatable :: geominp
-        character(len=:), allocatable :: veloinp
         integer, intent(out) :: ndim
 
         call readf%rewind()
@@ -550,6 +556,15 @@ contains
                 geominp = readf%args(2)%s
             case('velocity')
                 veloinp = readf%args(2)%s
+                if (veloinp == 'maxwell-boltzmann' .or. veloinp == 'mb') then
+                    if (readf%narg < 3) then
+                        write(stderr, *) 'Error in Input module, read_system subroutine.'
+                        write(stderr, '(2x,a,a)') 'Maxwell-Boltzmann velocities requested, ', &
+                                                  'but no temperature given'
+                        call abort()
+                    end if
+                    read(readf%args(3)%s, *) mb_temperature
+                end if
             case('ndim')
                 read(readf%args(2)%s, *) ndim
             case default
@@ -966,6 +981,27 @@ contains
         call readf%go_to_keyword('$restart', found=check)
         if (check) ctrl%restart = .true.
     end subroutine read_restart
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: maxwell_boltzmann_velo
+    !
+    ! DESCRIPTION:
+    !> @brief Generate random velocities based on Maxwell Boltzmann distribution
+    !----------------------------------------------------------------------------------------------
+    subroutine maxwell_boltzmann_velo(mass, temperature, veloc)
+        use random_mod, only : random_gaussian
+        real(dp), intent(in) :: mass(:)
+        real(dp), intent(in) :: temperature
+        real(dp), intent(out) :: veloc(:, :)
+        real(dp) :: sigma
+        integer :: i
+
+        do i = 1, size(veloc, 2)
+            sigma = sqrt(num2 * au_boltzmann * temperature / mass(i))
+            call random_gaussian(0.0_dp, sigma, veloc(:, i))
+        end do
+    end subroutine maxwell_boltzmann_velo
 
 
 end module input_mod
