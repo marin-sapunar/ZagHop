@@ -89,7 +89,7 @@ contains
         ctrl%tdc_type = 1
         ctrl%tdc_interpolate = 2
         ctrl%ene_interpolate = 2
-        ctrl%vrescale = 1
+        ctrl%vrescale = 2
         ctrl%fhop = 1
         ctrl%phaselvl = 1
         ctrl%oscill = .false.
