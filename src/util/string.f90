@@ -17,6 +17,7 @@ module string_mod
     public :: read_index_list
     public :: char_is_num
     public :: rmwhite
+    public :: compact
 
     
     type string

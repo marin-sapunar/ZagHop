@@ -239,9 +239,9 @@ lz\_min\_dt	&
 	\textbf{0.05} \newline
     Minimum time step (in fs) for the lz\_prob\_conv procedure. \\
 
-skip\_state		&
+uncouple\_state		&
 	\textbf{none} \newline
-	Give list of electronic states which will not be included in the calculation of the couplings. (Example: skip\_state 1-2, 5). Currently ignored. \\
+	Give list of electronic states which will not be coupled to any others in the surface hopping calculation. When calculating couplings based on overlaps, these states should still be present in the overlap matrix, but all couplings for these states will be set to zero after reading the file. (Example: uncouple\_state 1-2, 5). \\
 	
 seed \# 		&
 	\textbf{-1} \newline

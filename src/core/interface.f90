@@ -104,6 +104,13 @@ contains
                 read(cunit, *) t%olap(i, :)
             end do
             close(cunit)
+
+            do i = 1, t%nstate
+                if (.not. ctrl%couple(i)) then
+                    t%olap(i, :) = 0.0_dp
+                    t%olap(:, i) = 0.0_dp
+                end if
+            end do
         end if
     end subroutine run_qm
 

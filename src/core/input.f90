@@ -227,7 +227,7 @@ contains
         logical :: check
         logical :: buffer
         type(reader) :: readf
-        integer, allocatable :: skipstates(:) !< States for which no couplings are calculated.
+        integer, allocatable :: uncouple_states(:) !< States for which no couplings are calculated.
         integer :: i
         buffer = .false.
 
@@ -246,7 +246,7 @@ contains
         ! Followed by optional keywords.
         call read_dynamics(readf)
         call read_output(readf)
-        call read_surfhop(readf, skipstates)
+        call read_surfhop(readf, uncouple_states)
         call read_mm(readf)
         call read_constraints(readf, tol_cns)
         call read_thermostat(readf)
@@ -265,10 +265,10 @@ contains
             ctrl%print(6:9) = .false.
         else if (ctrl%sh >= 2) then
             allocate(ctrl%couple(t(1)%nstate), source=.true.)
-            if (allocated(skipstates)) then
-                do i = 1, size(skipstates, 1)
-                    if (skipstates(i) > t(1)%nstate) exit
-                    ctrl%couple(skipstates(i)) = .false.
+            if (allocated(uncouple_states)) then
+                do i = 1, size(uncouple_states, 1)
+                    if (uncouple_states(i) > t(1)%nstate) exit
+                    ctrl%couple(uncouple_states(i)) = .false.
                 end do
             end if
         end if
@@ -736,9 +736,9 @@ contains
     !> @details
     !! See manual for details concerning the input.
     !----------------------------------------------------------------------------------------------
-    subroutine read_surfhop(readf, skipstates)
+    subroutine read_surfhop(readf, uncouple_states)
         type(reader), intent(inout) :: readf
-        integer, allocatable, intent(out) :: skipstates(:)
+        integer, allocatable, intent(out) :: uncouple_states(:)
         logical :: check
 
         call readf%rewind()
@@ -851,8 +851,9 @@ contains
             case('s0_ci')
                 read(readf%args(2)%s, *) ctrl%min01gap
                 ctrl%min01gap = ctrl%min01gap / eh_eV
-            case('skip_state')
-                call read_index_list(readf%line(11:), skipstates)
+            case('uncouple_state')
+                call compact(readf%line)
+                call read_index_list(readf%line(15:), uncouple_states)
             case('seed')
                 read(readf%args(2)%s, *) ctrl%seed
             case default
