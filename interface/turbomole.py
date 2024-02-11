@@ -62,6 +62,9 @@ class ricc2(Turbomole):
         if n_sub == 0:
             repl = r"$ricc2\n  geoopt model={} state={}".format(self.model, state)
             n_sub = file_utils.replace_inplace("control", r"\$ricc2", repl)
+        file_utils.replace_inplace("control",
+                                   r"(\s*irrep.*)nexc\s*=\s*\d+(.*)",
+                                   r"\1nexc="+str(self.data["nstate"])+r"\2")
 
     def run(self):
         """ Run the calculation, check success and read results. """
@@ -274,4 +277,4 @@ def actual_check():
     check = subprocess.run("actual", stdout=subprocess.PIPE)
     if check.stdout.startswith(b'fine, there is no data group "$actual step"'):
         return
-    raise RuntimeError("Turbomole calculation failed.")
+    raise RuntimeError("Turbomole calculation failed. Check output in " + os.getcwd() + ".")

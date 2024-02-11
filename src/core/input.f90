@@ -63,8 +63,8 @@ contains
         ! Print options.
         ctrl%print = .false.
         ctrl%print(1:6) = .true.
-        ctrl%print(7:10) = .true.
-        ctrl%print(11) = .true.
+        ctrl%print(7:9) = .true.
+        ctrl%print(10) = .true.
         ! Program flow options.
         ctrl%min01gap = -1.0_dp
         ctrl%max_tot_en_change = 1.0_dp / eh_eV
@@ -256,9 +256,9 @@ contains
         ! Modify options based on type of calculation.
         if (t(1)%nstate == 1) then
             ctrl%sh = 0
-            ctrl%print(11) = .false.
+            ctrl%print(10) = .false.
         end if
-        if (ctrl%print(11)) ctrl%oscill = .true.
+        if (ctrl%print(10)) ctrl%oscill = .true.
         if (ctrl%sh == 0) then
             ctrl%print(6:9) = .false.
         else if (ctrl%sh == 1) then

@@ -43,7 +43,8 @@ def run(args):
     """ Read input files and run the interface. """
     in_data = dict()
     in_data["geom"] = np.loadtxt(FILES["geom"])
-    in_data["state"] = np.loadtxt(FILES["state"], dtype=int).flat[0]
+    in_data["state"] = np.loadtxt(FILES["state"], dtype=int)[0]
+    in_data["nstate"] = np.loadtxt(FILES["state"], dtype=int)[1]
     in_data["natom"] = len(in_data["geom"])
     try:
         in_data["mm_geom"] = np.loadtxt(FILES["mm_geom"])
@@ -60,7 +61,7 @@ def run(args):
     qm_prog.read()
     os.chdir(cwd)
     # Write results.
-    calc_write(qm_prog.results)
+    calc_write(in_data, qm_prog.results)
 
 
 def calc_write(results):

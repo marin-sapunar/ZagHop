@@ -54,7 +54,7 @@ contains
         close(cunit)
 
         open(newunit=cunit, file='qm_state', action='write')
-        write(cunit, *) t%cstate
+        write(cunit, *) t%cstate, t%nstate
         close(cunit)
 
         if (ctrl%mm) then
