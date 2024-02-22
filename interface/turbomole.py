@@ -1,4 +1,4 @@
-""" Interface for running Turbomole ADC(2) calculations. """
+""" Interface for running Turbomole RICC2 or TDDFT calculations. """
 import subprocess
 import re
 import os
@@ -94,40 +94,43 @@ class mp2(ricc2):
 class egrad(Turbomole):
     def __init__(self, data):
         self.data = data
-        try:
-           soes = file_utils.search_file("control",  r"\$soes", after=1)
-           soes = file_utils.split_columns(soes, col=1, convert=int)[0]
-           self.data["n_ex_state"] = soes
-        except:
-            self.data["n_ex_state"] = 0
+        if self.data["nstate"] > 1:
+            # Throw error if $soes is not present
+            file_utils.search_file("control",  r"\$soes")
         try:
             _ = file_utils.search_file("control", r"\$rij")
             self.data["ri"] = True
-        except:
+        except ValueError:
             self.data["ri"] = False
         self.results = dict()
 
 
     def update_state(self):
-        ex_state = self.data["state"] - 1
-        if self.data["n_ex_state"] < ex_state:
-            raise ValueError("Not enough states selected in QM calculation.")
-        if ex_state == 0:
+        n_ex_state = self.data["nstate"] - 1
+        if n_ex_state == 0:
+            return
+        n_sub = file_utils.replace_inplace("control",
+                r"^\s*a\s+\d+\s*$",
+                r" a  {}\n".format(n_ex_state))
+        if n_sub != 1:
+            raise ValueError("Failed to update number of states.")
+        cstate = self.data["state"] - 1
+        if cstate == 0:
             return
         n_sub = file_utils.replace_inplace("control",
                 r"\$exopt.*", 
-                r"$exopt {}".format(ex_state))
+                r"$exopt {}".format(cstate))
         if n_sub == 0:
             file_utils.replace_inplace("control",
                 r"\$end", 
-                r"$exopt {}\n$end".format(ex_state))
+                r"$exopt {}\n$end".format(cstate))
 
 
     def run(self):
         # Remove existing gradient file to avoid the file becoming huge.
         try:
             os.remove("gradient")
-        except:
+        except FileNotFoundError:
             pass
         # Run new calculation.
         with open(STDOUT, "w") as out, open(STDERR, "w") as err:
@@ -141,7 +144,7 @@ class egrad(Turbomole):
                     subprocess.run("rdgrad", stdout=out, stderr=err)
                 else:
                     subprocess.run("grad", stdout=out, stderr=err)
-                if self.data["n_ex_state"] > 0:
+                if self.data["nstate"] > 1:
                     subprocess.run("escf", stdout=out, stderr=err)
             else:
                 subprocess.run("egrad", stdout=out, stderr=err)
@@ -151,7 +154,7 @@ class egrad(Turbomole):
     def read(self):
         self.results["energy"] = tddft_energy(STDOUT)
         self.results["gradient"] = get_grad_from_gradient(self.data["natom"])
-        if self.data["n_ex_state"] > 0:
+        if self.data["nstate"] > 1:
             self.results["oscill"] = tddft_oscill(STDOUT)
 
 

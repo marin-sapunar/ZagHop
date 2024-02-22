@@ -22,16 +22,16 @@ contains
     !
     ! DESCRIPTION:
     !> @brief Apply decoherence correction to electronic wave function.
-    !> @details 
+    !> @details
     !! Method of decoherence correction is chosen based on the value of the ctrl%decohlvl variable.
     !----------------------------------------------------------------------------------------------
     subroutine decoherence()
         use system_var
         use control_var
-   
+
         select case(ctrl%decohlvl)
         case(0) ! No decoherence correction.
-        case(1) ! Enedrgy based decoherence.
+        case(1) ! Energy based decoherence.
             call edc(t(1)%cstate, t(1)%qkine(), t(1)%qe, ctrl%dt, t(1)%cwf)
         end select
     end subroutine decoherence
@@ -42,8 +42,8 @@ contains
     !
     ! DESCRIPTION:
     !> @brief Energy based decoherence scheme.
-    !> @details 
-    !! Decoherence algoritm suggested by Grannuci and Persico based on the prescription of Truhlar 
+    !> @details
+    !! Decoherence algorithm suggested by Grannuci and Persico based on the prescription of Truhlar
     !! and co-workers in the framework of mean field methods.
     !!
     !! Constant C set to 0.1 Hartree

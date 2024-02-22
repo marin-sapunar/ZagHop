@@ -6,12 +6,12 @@
 !> @author Marin Sapunar, Ruđer Bošković Institute
 !> @date November, 2016
 !
-! DESCRIPTION: 
+! DESCRIPTION:
 !> @brief Trajectory surface-hopping nonadiabatic dynamics program.
-!> @details 
-!! Main program file. Calls input and output subroutines and contains the main dynamics loop. 
-!! Interfaces to QM and MM programs are called from within the loop to calculate energies, 
-!! gradients and couplings of the system. Once the calculations are performed, the electronic 
+!> @details
+!! Main program file. Calls input and output subroutines and contains the main dynamics loop.
+!! Interfaces to QM and MM programs are called from within the loop to calculate energies,
+!! gradients and couplings of the system. Once the calculations are performed, the electronic
 !! wavefunction and nuclear coordinates are propagated.
 !--------------------------------------------------------------------------------------------------
 program zaghop
@@ -37,6 +37,7 @@ program zaghop
     type(timer) :: mainclock
     type(timer) :: stepclock
     real(dp), allocatable :: hop_grad(:, :)
+    integer :: i
 
     call mainclock%start()
 
@@ -100,6 +101,16 @@ program zaghop
 
         ! Get new gradients.
         if (ctrl%mm) call run_mm(t(1))
+        if (ctrl%variable_nstate == 1) then
+            do i = t(1)%nstate, max(t(1)%cstate + 2, -1, t(1)%min_nstate), -1
+                ! Remove top states whose contribution to the total wave function is below the
+                ! threshold until the first state which should be kept is reached.
+                if (abs(t(1)%cwf(i)) > 0.01) exit
+                write(stdout, '(3x,a, i0, a)') 'Excluding state ', i, ' from calculation.'
+                t(1)%nstate = i-1
+                t(1)%cwf(i) = 0.0_dp
+            end do
+        end if
         call run_qm(t(1), .false.)
 
         ! Get new velocity.
@@ -115,12 +126,15 @@ program zaghop
             write(stdout, '(5x,a)') 'Running QM gradient calculation for new state.'
             allocate(hop_grad, source=t(1)%grad)
             call run_qm(t(1), .true.)
+            write(stdout, '(5x,a)') 'Ensuring energy conservation.'
             call sh_rescalevelo(ctrl%vrescale, t(1)%qind, t(1)%mass, t(1)%qe(t(2)%cstate),         &
             &                   t(1)%qe(t(1)%cstate), hop_grad, t(1)%grad, t(1)%velo, flag)
-            if (flag == 1) call sh_frustratedhop(ctrl%fhop, hop_grad, t(1)%grad, t(2)%cstate, t(1)%cstate)
+            if (flag == 1) then
+                call sh_frustratedhop(ctrl%fhop, hop_grad, t(1)%grad, t(2)%cstate, t(1)%cstate)
+            end if
             deallocate(hop_grad)
         end if
-        
+
         ! Stop the program after max_time was reached.
         if (t(1)%time >= ctrl%max_time) then
             if (ctrl%target_state == -2) then
@@ -151,7 +165,7 @@ program zaghop
             end if
         end if
 
-        ! Stop the program after reaching the target state. 
+        ! Stop the program after reaching the target state.
         if (t(1)%cstate == ctrl%target_state) then
             if (ctrl%target_state_time == 0.0_dp) then
                 abort_flag = .true.
@@ -164,7 +178,7 @@ program zaghop
                 if (t(1)%time + ctrl%target_state_time < ctrl%max_time) then
                     ctrl%max_time = t(1)%time + ctrl%target_state_time
                     ctrl%target_state = -2 ! Signal max_time was changed because of target state.
-                else 
+                else
                     ctrl%target_state = -1 ! Ignore target_state, trajectory will end anyways.
                 end if
             end if

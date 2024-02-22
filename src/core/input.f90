@@ -54,9 +54,6 @@ contains
         ctrl%buinterval = 1
         ! Method options.
         ctrl%qext = .true.
-        ! Initial state.
-        t(1)%nstate = 1
-        t(1)%cstate = 1
         ! Set start step at 0
         t(1)%step = 0
         t(1)%time = 0.0_dp
@@ -92,6 +89,7 @@ contains
         ctrl%vrescale = 2
         ctrl%fhop = 1
         ctrl%phaselvl = 1
+        ctrl%variable_nstate = 0
         ctrl%oscill = .false.
         ! Thermostat
         ctrl%thermostat = 0
@@ -241,7 +239,7 @@ contains
         call readf%open(maininp, comment='#')
         ! Mandatory keywords are read first:
         call read_method(readf)
-        call read_system(readf, t(1)%nstate, t(1)%cstate, t(1)%ndim)
+        call read_system(readf)
 
         ! Followed by optional keywords.
         call read_dynamics(readf)
@@ -254,50 +252,58 @@ contains
         call readf%close()
 
         ! Modify options based on type of calculation.
-        if (t(1)%nstate == 1) then
+        if (t(1)%max_nstate == 1) then
             ctrl%sh = 0
             ctrl%print(10) = .false.
         end if
         if (ctrl%print(10)) ctrl%oscill = .true.
-        if (ctrl%sh == 0) then
+        select case(ctrl%sh)
+        case(0)
             ctrl%print(6:9) = .false.
-        else if (ctrl%sh == 1) then
+        case(1)
             ctrl%print(6:9) = .false.
-        else if (ctrl%sh >= 2) then
-            allocate(ctrl%couple(t(1)%nstate), source=.true.)
-            if (allocated(uncouple_states)) then
-                do i = 1, size(uncouple_states, 1)
-                    if (uncouple_states(i) > t(1)%nstate) exit
-                    ctrl%couple(uncouple_states(i)) = .false.
-                end do
+        case(2)
+            if (ctrl%tdc_type == 2) then
+                ctrl%print(9) = .false.
             end if
-        end if
+        end select
         if (ctrl%thermostat /= 0) then
             ctrl%max_tot_en_change = huge(ctrl%max_tot_en_change)
             ctrl%max_tot_en_change_step = huge(ctrl%max_tot_en_change_step)
         end if
 
-        ! Allocate all arrays of size t(1)%nstate.
+        ! Allocate all arrays of size t(1)%max_nstate.
         if (.not. ctrl%restart) then
-            allocate(t(1)%qe(t(1)%nstate))
-            if (ctrl%oscill) allocate(t(1)%qo(t(1)%nstate - 1))
-            if (ctrl%sh == 1) then
-                allocate(t(1)%prob(t(1)%nstate), source=0.0_dp)
-            else if (ctrl%sh >= 2) then
-                allocate(t(1)%cwf(t(1)%nstate))
-                allocate(t(1)%prob(t(1)%nstate), source=0.0_dp)
+            allocate(t(1)%qe(t(1)%max_nstate))
+            if (ctrl%oscill) allocate(t(1)%qo(t(1)%max_nstate - 1))
+            select case(ctrl%sh)
+            case(1)
+                allocate(t(1)%prob(t(1)%max_nstate), source=0.0_dp)
+            case(2, 3)
+                allocate(t(1)%cwf(t(1)%max_nstate))
+                allocate(t(1)%prob(t(1)%max_nstate), source=0.0_dp)
+                if (ctrl%phaselvl > 0) allocate(t(1)%phase(t(1)%max_nstate), source=1)
                 select case (ctrl%tdc_type)
                 case(1)
-                    allocate(t(1)%olap(t(1)%nstate, t(1)%nstate))
-                    t(1)%olap = unit_mat(t(1)%nstate)
+                    allocate(t(1)%olap(t(1)%max_nstate, t(1)%max_nstate))
+                    t(1)%olap = unit_mat(t(1)%max_nstate)
                 case(2)
                     ! Nonadiabatic coupling vecotrs are allocated after reading number of atoms.
                 end select
                 t(1)%cwf = cmplx((0.0_dp, 0.0_dp), kind = dp)
                 t(1)%cwf(t(1)%cstate) = cmplx((1.0_dp, 0.0_dp), kind = dp)
-            end if
+            end select
         end if
-
+        select case(ctrl%sh)
+        case(2, 3)
+            allocate(ctrl%couple(t(1)%max_nstate), source=.true.)
+            if (allocated(uncouple_states)) then
+                do i = 1, size(uncouple_states, 1)
+                    if (uncouple_states(i) > t(1)%max_nstate) exit
+                    ctrl%couple(uncouple_states(i)) = .false.
+                end do
+            end if
+        end select
 
     end subroutine read_main
 
@@ -384,7 +390,7 @@ contains
             ctrl%mm = .false.
         end if
         if (ctrl%tdc_type == 2) then
-            allocate(t(1)%nadv(t(1)%ndim*t(1)%natom, t(1)%nstate, t(1)%nstate))
+            allocate(t(1)%nadv(t(1)%ndim*t(1)%natom, t(1)%max_nstate, t(1)%max_nstate))
         end if
 
         ! Second run through the file to read the atom, mass, position and index of each atom.
@@ -534,11 +540,8 @@ contains
     !> @details
     !! See manual for details concerning the input.
     !----------------------------------------------------------------------------------------------
-    subroutine read_system(readf, nstate, cstate, ndim)
+    subroutine read_system(readf)
         type(reader), intent(inout) :: readf
-        integer, intent(inout) :: nstate
-        integer, intent(out) :: cstate
-        integer, intent(out) :: ndim
 
         call readf%rewind()
         call readf%go_to_keyword('$system')
@@ -548,10 +551,15 @@ contains
             call readf%parseline(' =')
             select case(readf%args(1)%s)
             case('nstate')
-                read(readf%args(2)%s, *) nstate
+                read(readf%args(2)%s, *) t(1)%nstate
+            case('variable_nstate')
+                read(readf%args(2)%s, *) ctrl%variable_nstate
+            case('max_nstate')
+                read(readf%args(2)%s, *) t(1)%max_nstate
+            case('min_nstate')
+                read(readf%args(2)%s, *) t(1)%min_nstate
             case('istate')
-                read(readf%args(2)%s, *) cstate
-                cstate = cstate
+                read(readf%args(2)%s, *) t(1)%cstate
             case('geometry')
                 geominp = readf%args(2)%s
             case('velocity')
@@ -566,7 +574,7 @@ contains
                     read(readf%args(3)%s, *) mb_temperature
                 end if
             case('ndim')
-                read(readf%args(2)%s, *) ndim
+                read(readf%args(2)%s, *) t(1)%ndim
             case default
                 write(stderr, *) 'Warning in Input module, read_system subroutine.'
                 write(stderr, *) '  Skipping line with unrecognized keyword:'
@@ -574,15 +582,37 @@ contains
             end select
         end do
 
-        if (nstate == 0) then
-            write(stderr,*) 'Error in Input module, read_system subroutine.'
-            write(stderr,'(a)') ' Number of states not defined.'
-            stop
-        end if
-        if (cstate == 0) then
-            write(stderr,*) 'Warning in Input module, read_system subroutine.'
-            write(stderr,'(a)') ' Initial state not defined, setting initial state = ', nstate, '.'
-            cstate = nstate
+        select case (ctrl%variable_nstate)
+        case(0)
+            if (t(1)%nstate == 0) then
+                write(stderr, *) 'Error in Input module, read_system subroutine.'
+                write(stderr, *) '  Number of states not defined.'
+                stop
+            end if
+            if ((t(1)%max_nstate /= 0) .or. (t(1)%min_nstate /= 0)) then
+                write(stderr, *) 'Warning in Input module, read_system subroutine.'
+                write(stderr, *) '  Options max_nstate and min_nstate are ignored when '//&
+                                'variable_nstate = 0.'
+            end if
+            t(1)%max_nstate = t(1)%nstate
+            t(1)%min_nstate = t(1)%nstate
+        case(1)
+            if ((t(1)%max_nstate == 0) .or. (t(1)%min_nstate == 0)) then
+                write(stderr, *) 'Error in Input module, read_system subroutine.'
+                write(stderr, *) '  Maximum/minimum number of states not defined.'
+                stop
+            end if
+            if (t(1)%nstate == 0) then
+                write(stderr, *) 'Warning in Input module, read_system subroutine.'
+                write(stderr, *) '  Option nstate is ignored when variable_nstate = 1'
+            end if
+            t(1)%nstate = t(1)%max_nstate
+        end select
+        if (t(1)%cstate == 0) then
+            write(stderr, *) 'Warning in Input module, read_system subroutine.'
+            write(stderr, '(3x,a,i0,a)') 'Initial state not defined, setting initial state = ', &
+            &                            t(1)%nstate, '.'
+            t(1)%cstate = t(1)%nstate
         end if
 
     end subroutine read_system
@@ -779,7 +809,7 @@ contains
                 select case(readf%args(2)%s)
                 case('off')
                     ctrl%decohlvl = 0
-                case('nldm')
+                case('edc')
                     ctrl%decohlvl = 1
                 case default
                     write(stderr, *) 'Error in Input module, read_surfhop subroutine.'
@@ -801,7 +831,6 @@ contains
                 end if
             case('nadvec')
                 ctrl%tdc_type = 2
-                ctrl%print(9) = .false. !< @todo Move this.
             case('energy')
                 select case(readf%args(2)%s)
                 case('constant')

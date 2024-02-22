@@ -3,7 +3,7 @@
 !> @author Marin Sapunar, Ruđer Bošković Institute
 !> @date November, 2016
 !
-! DESCRIPTION: 
+! DESCRIPTION:
 !> @brief Module containing program control variables.
 !--------------------------------------------------------------------------------------------------
 module control_var
@@ -40,7 +40,7 @@ module control_var
         !------------------------------------------------------------------------------------------
         ! Program flow control.
         !------------------------------------------------------------------------------------------
-        integer :: seed(1) = [-1] !< Seed for the random number generator. A new value can be given 
+        integer :: seed(1) = [-1] !< Seed for the random number generator. A new value can be given
         !! in the input file. If not, random_seed is called to generate a new seed.
         logical :: restart = .false. !< Restart from backup of previous run.
         real(dp) :: min01gap = -10000.0_dp !< Threshold to stop program in case of S0/S1 CI.
@@ -104,7 +104,7 @@ module control_var
 
         integer :: decohlvl !< Method of decoherence correction during dynamics:
         !!  - 0 - No decoherence correction.
-        !!  - 1 - Non linear decay of mixing (Granucci, Persico; doi: 10.1063/1.2715585).
+        !!  - 1 - Energy based decoherence scheme (Granucci, Persico; doi: 10.1063/1.2715585).
 
         integer :: couplvl !< Method of reduction of the coupling matrix calculation. At each step,
         !! the cmask logical array is created based on the value of this variable:
@@ -150,10 +150,15 @@ module control_var
         real(dp) :: lz_min_dt = 0.0_dp !< Minimum time step when converging LZ probability.
         real(dp) :: qm_en_err = 1.0e-6 !< Estimated error in calculated energies.
 
+        integer :: variable_nstate !< Option for dynamically changing number of states calculated
+        !!                             along the trajectory.
+        !! - 0 - Constant number of states.
+        !! - 1 - Remove states higher than cstate + 1 and min_nstate when the absolute value of
+        !!       their coefficient in the total electronic wave functions drops below 0.01.
         logical :: oscill !< Signal to read oscillator strengths from the QM calculation.
 
     end type control
 
     type(control) :: ctrl
-    
+
 end module control_var

@@ -33,9 +33,10 @@ contains
     !----------------------------------------------------------------------------------------------
     subroutine run_qm(t, hop)
         use system_var, only : trajtype
+        use matrix_mod, only : unit_mat
         type(trajtype), intent(inout) :: t
         logical :: hop
-        integer :: cunit, i, j
+        integer :: cunit, i, d1, d2
         logical :: check1, check2
 
         if ((t%step > 0) .and. (.not. hop)) then
@@ -80,10 +81,12 @@ contains
             stop
         end if
 
+        t%qe = 0.0_dp
         open(newunit=cunit, file='qm_energy', action='read')
-        read(cunit, *) t%qe
+        read(cunit, *) t%qe(1:t%nstate)
         close(cunit)
         
+        t%grad = 0.0_dp
         open(newunit=cunit, file='qm_grad', action='read')
         do i = 1, t%qnatom
             read(cunit, *) t%grad(:, t%qind(i))
@@ -91,21 +94,23 @@ contains
         close(cunit)
 
         if (ctrl%oscill) then
+            t%qo = 0.0_dp
             open(newunit=cunit, file='qm_oscill', action='read')
-            read(cunit, *) t%qo
+            read(cunit, *) t%qo(1:t%nstate-1)
             close(cunit)
         end if
 
         if ((ctrl%tdc_type == 1) .and. (t%step /= 0)) then
             call system(ctrl%oprog)
+            t%olap = unit_mat(t%max_nstate)
             open(newunit=cunit, file='qm_olap', action='read')
-            read(cunit, *) i, j
-            do i = 1, t%nstate
-                read(cunit, *) t%olap(i, :)
+            read(cunit, *) d1, d2
+            do i = 1, min(d1, d2)
+                read(cunit, *) t%olap(i, 1:min(d1, d2))
             end do
             close(cunit)
 
-            do i = 1, t%nstate
+            do i = 1, t%max_nstate
                 if (.not. ctrl%couple(i)) then
                     t%olap(i, :) = 0.0_dp
                     t%olap(:, i) = 0.0_dp

@@ -53,7 +53,7 @@ contains
         case(3)
             call decoherence()
             call phasematch()
-            call sh_diabatic(t(1)%nstate, ctrl%dt, t(2)%qe, t(1)%qe, t(1)%cwf, t(1)%cstate,        &
+            call sh_diabatic(t(1)%max_nstate, ctrl%dt, t(2)%qe, t(1)%qe, t(1)%cwf, t(1)%cstate,    &
             &                t(1)%olap, t(1)%prob)
         end select
 
@@ -106,13 +106,19 @@ contains
         de = cpe - ppe
         rescale_dir = rescale_dir / sqrt(sum(rescale_dir**2))
         absv_dir = sum(v * rescale_dir)
-        if (de > ekin(m, absv_dir * rescale_dir)) return
-        flag = 0
-        newv_dir = sqrt(absv_dir**2 - 2 * de / sum(spread(mass, 1, 3) * rescale_dir**2))
-        v = v + rescale_dir * (newv_dir - absv_dir)
+        if (de < ekin(m, absv_dir * rescale_dir)) then
+            flag = 0
+            newv_dir = sqrt(absv_dir**2 - 2 * de / sum(spread(mass, 1, 3) * rescale_dir**2))
+            v = v + rescale_dir * (newv_dir - absv_dir)
 
-        ! Save changes to velocity array.
-        velo(:, amask) = v
+            ! Save changes to velocity array.
+            velo(:, amask) = v
+        else
+            write(stdout, '(7x,a)') 'Insufficient energy for hop.'
+            write(stdout, '(7x,a,e16.8)') 'Energy difference:', de
+            write(stdout, '(7x,a,e16.8)') 'Available energy:', ekin(m, absv_dir * rescale_dir)
+            return
+        end if
     end subroutine sh_rescalevelo
 
 
@@ -134,7 +140,7 @@ contains
         integer, intent(inout) :: cst !< Current state.
 
         select case(opt)
-        case(1) ! Just return to previous state. 
+        case(1) ! Just return to previous state.
             cgrd = pgrd
             cst = pst
         case(2) ! Invert velocity along rescale direction.
@@ -142,6 +148,6 @@ contains
             stop 'Inversion on frustrated hop not implemented.'
         end select
     end subroutine sh_frustratedhop
- 
+
 
 end module hopping_mod

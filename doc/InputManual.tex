@@ -5,8 +5,7 @@
 \usepackage{ltablex}
 \usepackage{physics}
 \usepackage[a4paper,margin=1in]{geometry}
-            
-            
+
 \newcommand{\tabitem}{~~\llap{--}~~}
 
 \title{ZagHop Input Manual}
@@ -15,21 +14,22 @@
 \begin{document}
 \maketitle
 
-Three files are required for running a trajectory. 
-\begin{enumerate} 
+Three files are required for running a trajectory.
+\begin{enumerate}
 	\item The main input file containing all of the options for the program.
 	\item A file containing the initial geometry.
 	\item A file containing the initial velocity.
 \end{enumerate}
 
-The name of the file is passed to the program through the command line (if no file name is passed, the default input file is dynamics.in). The file is split into sections with options concerning parts of the program. For details on the options, see below. The minimum input is the \$method section which gives the path to a driver program/script which communicates between the dynamics and the electronic structure package. It passes new geometries to the electronic structure package, runs a calculation, and reads the energies, gradients and couplings from the output. In the case of QM/MM dynamics, a second script is used to communicate to the MM package. The QM(MM) driver expects a directory which contains all the input required for a QM(MM) calculation. By default this directory is "qmdir"("mmdir"), but can be changed using the QMDIR(MMDIR) environment variable.
+The name of the main input file is passed to the program through the command line (if no file name is passed, the default input file is dynamics.in). The file is split into sections with options concerning parts of the program. For details on the options, see below. The minimum input is the \$method section which gives the path to an interface script which communicates between the dynamics and the electronic structure package (see section \ref{sec:interface}).
+In the case of QM/MM dynamics, a second script is used to communicate to the MM package. The QM(MM) driver expects a directory which contains all the input required for a QM(MM) calculation. By default this directory is "qmdir"("mmdir"), but can be changed using the QMDIR(MMDIR) environment variables.
 
 The geometry file (called "geom" by default) contains one line for each atom. Each line contains the atom symbol, atom mass, coordinates and type of atom. The type in the final column is either "q" (for QM atoms) or "m" (for MM atoms). The velocity file contains just the initial velocity vector for each atom.
 
-A stopped or finished trajectory can be restarted by adding the \$restart keyword to the input file. In this case, the backup file is read before restarting the calculation.
+A stopped or finished trajectory can be restarted by adding the \$restart keyword to the input file. In this case, a backup file from a previous trajectory is required instead of the geometry and velocity files.
 
 %Method section
-\section*{Program options}
+\section*{Program options} \label{sec:options}
 \paragraph{method}
 Section \$method contains paths to the driver programs for running the calculations.  \newline
 \$method
@@ -58,24 +58,39 @@ Section \$system contains information about the dimensions of the system and the
 
 \begin{tabularx}{\textwidth}{ m{2.5cm} X }
 nstate \#		&
-\textbf{1} \newline
-Number of states in the QM system.  \\
+    \textbf{0} \newline
+    Number of states in the QM system.  \\
 
 istate \#		&
-\textbf{nstate} \newline
-Initially populated state. In a FSSH calculation, the initial wave function coefficient of this state will be 1, while others will be 0.  \\
+    \textbf{nstate} \newline
+    Initially populated state. In a FSSH calculation, the initial wave function coefficient of this state will be 1, while others will be 0.  \\
 
 geometry 		&
-\textbf{geom} \newline
-Name of the geometry file, containing the masses and initial positions of the atoms.  \\
+    \textbf{geom} \newline
+    Name of the geometry file, containing the masses and initial positions of the atoms.  \\
 
 velocity		&
-\textbf{veloc} \newline
-Name of the velocity file, containing the initial velocities of the atoms.  \\
+    \textbf{veloc} \newline
+    Name of the velocity file, containing the initial velocities of the atoms.  \\
 
 ndim \#		&
-\textbf{3} \newline
-Number of dimensions per atom.  \\	
+    \textbf{3} \newline
+    Number of dimensions per atom.  \\	
+
+variable\_nstate \#		&
+    \textbf{0} \newline
+    Option to change number of states included in calculation on-the-fly. \newline
+    \tabitem [0] always use \textbf{nstate} states. \newline
+    \tabitem [1] reduce number of states by removing high lying states from the calculation when the absolute value of the corresponding coefficient in the total wave function drops below 0.01. States higher than $\textbf{min\_nstate}$ and $\textbf{cstate}+1$ can be removed. \\
+
+min\_nstate \#		&
+    \textbf{0} \newline
+    Minimum number of states in the QM system. For $\textbf{variable\_nstate}=1$. \\
+
+max\_nstate \#		&
+    \textbf{0} \newline
+    Maximum number of states in the QM system. For $\textbf{variable\_nstate}=1$.  \\
+
 \end{tabularx}
 
 %Output section
@@ -101,7 +116,7 @@ results\_dir &
 	\tabitem [10]  oscill.dat, QM oscillator strengths. \newline
 	\tabitem [11]  qm\_traj.xyz, XYZ file containing only QM atoms. \\
 
-bufile			& 
+bufile			&
 	\textbf{backup.dat} \newline
 	Name of backup file. The current state is read from this file when restarting the program using the \$restart keyword. \\
 	
@@ -118,7 +133,7 @@ Section \$dynamics contains options for the propagation of the nuclear coordinat
 
 \begin{tabularx}{\textwidth}{ m{3.5cm} X }
 time/max\_time \#	&
-	\textbf{10} \newline
+	\textbf{10.0} \newline
 	Total time (in fs) for the propagation of nuclear coordinates.  \\
 
 tstep \#		&
@@ -177,18 +192,18 @@ lz				&
 fssh			&
 	\textbf{adiabatic}	\newline
 	Use fewest-switches surface hopping algorithm. Possible options: \newline
-	\tabitem [adiabatic] Propagate electronic wave function coefficients in the adiabatic basis. 
+	\tabitem [adiabatic] Propagate electronic wave function coefficients in the adiabatic basis.
 	\tabitem [diabatic] Propagate electronic wave function coefficients in the diabatic basis using local diabatization.\\
 
 tdse\_steps \#	&
-	\textbf{10000}	\newline 
+	\textbf{10000}	\newline
 	Number of substeps for electronic wave function propagation between the nuclear time step at $t$ and at $t + \Delta t$. Energies and couplings are interpolated during the propagation based on the overlap/nadvec and energy options. A hop can occur in any substep of the propagation. Probabilities printed in the main output file are sums of probabilities from each substep. \\
 
 decoherence		&
-	\textbf{nldm}	\newline 
+	\textbf{ebd}	\newline
 	Method used for applying a decoherence correction to the electronic wave function. Possible options: \newline				
 	\tabitem [off] No decoherence correction. \newline
-	\tabitem [nldm] Non-linear decay of mixing algorithm. \\
+	\tabitem [edc] Energy based decoherence scheme. \\
 
 overlap			&
 	\textbf{npi}	\newline
@@ -249,11 +264,11 @@ seed \# 		&
 \end{tabularx}
 
 
-\section*{QM drivers}
+\section*{QM interface} \label{sec:interface}
 The ZagHop dynamics program communicates with electronic structure packages via a file based interface. At every step the program creates three files:
 \begin{tabularx}{\textwidth}{ m{2.5cm} X }
 cstep		& Containing a single integer for the current step in the dynamics. \\
-qm\_state	& Containing a single integer for the currently populated state (for which the gradient needs to be calculated). \\
+qm\_state	& Containing two integers, the currently populated state (for which the gradient needs to be calculated) and the total number of states. \\
 qm\_geom	& Containing natom lines with the current geometry of the QM system.
 \end{tabularx}
 After this, the script given in the "qm" keyword of the \$method section is called. This script should use the information from the files above to run an electronic structure calculation and parse its output to create the following files which will be read by ZagHop and used to propagate the trajectory:

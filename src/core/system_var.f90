@@ -45,7 +45,9 @@ module system_var
         ! QM system:
         integer :: qnatom = 0 !< Number of QM atoms.
         integer, allocatable :: qind(:) !< Indexes of the QM atoms in the full system.
-        integer :: nstate = 0
+        integer :: nstate = 0 !< Number of states included in calculation.
+        integer :: max_nstate = 0 !< Maximum number of states included in calculation.
+        integer :: min_nstate = 0 !< Minimum number of states included in calculation.
         integer :: cstate = 0 !< Current state.
         real(dp), allocatable :: qe(:) !< Potential energies of the QM system.
         real(dp), allocatable :: qo(:) !< Oscillator strengths of the QM system.
@@ -57,6 +59,7 @@ module system_var
 
         ! Surface hopping variables:
         complex(dp), allocatable :: cwf(:) !< Coeffs of the el. states in the total wf.
+        integer, allocatable  :: phase(:) !< Phase of wave functions during previous step.
         real(dp), allocatable :: prob(:) !< Probabilities of hopping during current step.
         real(dp), allocatable :: olap(:, :) !< Overlaps between wfs between this and previous step.
         real(dp), allocatable :: nadv(:, :, :) !< Nonadiabatic coupling vectors.
@@ -256,7 +259,7 @@ contains
             open(newunit=ounit, file=res_dir//'/overlap', action='write', position='append')
             write(ounit, *) 't= ', time_fs, 'fs, state=', t%cstate
             do i = 1, t%nstate
-                write(ounit, 1006) t%olap(i, 1:t%nstate)
+                write(ounit, 1006) t%olap(i, 1:t%max_nstate)
             end do
             close(ounit)
         end if
@@ -313,7 +316,7 @@ contains
             write(ounit, *) t(i)%qnatom
             write(ounit, *) allocated(t(i)%qind)
             if (allocated(t(i)%qind)) write(ounit, *) t(i)%qind(:)
-            write(ounit, *) t(i)%nstate
+            write(ounit, *) t(i)%max_nstate
             write(ounit, *) t(i)%cstate
             write(ounit, *) allocated(t(i)%qe)
             if (allocated(t(i)%qe)) write(ounit, *) t(i)%qe(:)
@@ -332,6 +335,8 @@ contains
             write(ounit, *) allocated(t(i)%nadv)
             if (allocated(t(i)%nadv)) write(ounit, *) t(i)%nadv(:, :, :)
             write(ounit, *) t(i)%pbcbox
+            write(ounit, *) allocated(t(i)%phase)
+            if (allocated(t(i)%phase)) write(ounit, *) t(i)%phase
         end do
         close(ounit)
     end subroutine trajectory_write_backup
@@ -388,16 +393,16 @@ contains
                 allocate(t(i)%qind(t(i)%qnatom))
                 read(iunit, *) t(i)%qind(:)
             end if
-            read(iunit, *) t(i)%nstate
+            read(iunit, *) t(i)%max_nstate
             read(iunit, *) t(i)%cstate
             read(iunit, *) check
             if (check) then
-                allocate(t(i)%qe(t(i)%nstate))
+                allocate(t(i)%qe(t(i)%max_nstate))
                 read(iunit, *) t(i)%qe(:)
             end if
             read(iunit, *) check
             if (check) then
-                allocate(t(i)%qo(t(i)%nstate-1))
+                allocate(t(i)%qo(t(i)%max_nstate-1))
                 read(iunit, *) t(i)%qo(:)
             end if
             read(iunit, *) t(i)%mnatom
@@ -409,25 +414,30 @@ contains
             read(iunit, *) t(i)%me(2)
             read(iunit, *) check
             if (check) then
-                allocate(t(i)%cwf(t(i)%nstate))
+                allocate(t(i)%cwf(t(i)%max_nstate))
                 read(iunit, *) t(i)%cwf(:)
             end if
             read(iunit, *) check
             if (check) then
-                allocate(t(i)%prob(t(i)%nstate))
+                allocate(t(i)%prob(t(i)%max_nstate))
                 read(iunit, *) t(i)%prob(:)
             end if
             read(iunit, *) check
             if (check) then
-                allocate(t(i)%olap(t(i)%nstate, t(i)%nstate))
+                allocate(t(i)%olap(t(i)%max_nstate, t(i)%max_nstate))
                 read(iunit, *) t(i)%olap(:,:)
             end if
             read(iunit, *) check
             if (check) then
-                allocate(t(i)%nadv(t(i)%ndim*t(i)%natom, t(i)%nstate, t(i)%nstate))
+                allocate(t(i)%nadv(t(i)%ndim*t(i)%natom, t(i)%max_nstate, t(i)%max_nstate))
                 read(iunit, *) t(i)%nadv(:, :, :)
             end if
             read(iunit, *) t(i)%pbcbox
+            read(iunit, *) check
+            if (check) then
+                allocate(t(i)%phase(t(i)%max_nstate))
+                read(iunit, *) t(i)%phase(:)
+            end if
         end do
         close(iunit)
     end subroutine trajectory_read_backup

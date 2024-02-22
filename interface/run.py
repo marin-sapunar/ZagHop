@@ -61,7 +61,7 @@ def run(args):
     qm_prog.read()
     os.chdir(cwd)
     # Write results.
-    calc_write(in_data, qm_prog.results)
+    calc_write(qm_prog.results)
 
 
 def calc_write(results):
