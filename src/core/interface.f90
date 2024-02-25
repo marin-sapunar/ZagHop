@@ -36,7 +36,7 @@ contains
         use matrix_mod, only : unit_mat
         type(trajtype), intent(inout) :: t
         logical :: hop
-        integer :: cunit, i, d1, d2
+        integer :: cunit, i, j, d1, d2
         logical :: check1, check2
 
         if ((t%step > 0) .and. (.not. hop)) then

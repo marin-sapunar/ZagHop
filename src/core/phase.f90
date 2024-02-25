@@ -31,13 +31,14 @@ contains
         use control_var
         integer :: st
 
-        ! Swap sign of rows corresponding to states whose sign was changed in the previous step.
-        do st = 1, t(2)%max_nstate
-            t(1)%olap(st, :) = t(1)%olap(st, :) * t(2)%phase(st)
-        end do
-
         select case(ctrl%tdc_type)
         case(1)
+
+            ! Swap sign of rows corresponding to states whose sign was changed in the previous step.
+            do st = 1, t(2)%max_nstate
+                t(1)%olap(st, :) = t(1)%olap(st, :) * t(2)%phase(st)
+            end do
+
             select case(ctrl%phaselvl)
             case(0)
                 ! Do not change overlap matrix.
@@ -50,8 +51,11 @@ contains
                 write(stderr, *) ' Unrecognized method.'
                 stop
             end select
+
         case(2)
+
             !> @todo Do anything for analytic NAD vectors?
+
         end select
     end subroutine phasematch
 
