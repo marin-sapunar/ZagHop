@@ -23,7 +23,6 @@ program zaghop
 
     ! Import subroutines
     use timing_mod, only : timer
-    use random_mod, only : init_random_seed
     use input_mod, only : read_input
     use interface_mod
     use file_mod, only : check_is_dir
@@ -37,6 +36,7 @@ program zaghop
     type(timer) :: mainclock
     type(timer) :: stepclock
     real(dp), allocatable :: hop_grad(:, :)
+    real(dp) :: tinydp = 1.0e-8_dp
     integer :: i
 
     call mainclock%start()
@@ -45,11 +45,6 @@ program zaghop
     write(stdout, *) '                               ZagHop, v0.91                                   '
     write(stdout, *) 'Program compiled '//__DATE__//' at '//__TIME__//'.'
     write(stdout, *) '-------------------------------------------------------------------------------'
-
-    ! Start the random number generator.
-    write(stdout, *)
-    call init_random_seed(ctrl%seed(1))
-    write(stdout, '(a,i0)') 'Random number generator started with seed: ', ctrl%seed
 
     ! Read input file(s)
     allocate(t(memory)) ! Allocate number of previous steps to keep in memory.
@@ -86,6 +81,12 @@ program zaghop
     end if
     ctrl%t0_tot_en = t(1)%tote()
 
+    ! Stop the program if max_time already reached.
+    if (t(1)%time > ctrl%max_time) then
+        write(stdout, *) ' NO STEPS TO BE DONE, ending calculation.'
+        call mainclock%print(stdout, ' Total run time:')
+        stop
+    end if
 
     write(stdout, *)
     write(stdout, *) '-------------------------------------------------------------------------------'
@@ -135,8 +136,8 @@ program zaghop
             deallocate(hop_grad)
         end if
 
-        ! Stop the program after max_time was reached.
-        if (t(1)%time >= ctrl%max_time) then
+        ! Stop the program after max_time was reached. Add tinydp to time for precision.
+        if (t(1)%time + tinydp >= ctrl%max_time) then
             if (ctrl%target_state == -2) then
                 write(stdout, *) 'Target state max_t reached, ending calculation.'
             else

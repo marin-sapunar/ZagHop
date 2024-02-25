@@ -116,6 +116,14 @@ contains
                     t%olap(:, i) = 0.0_dp
                 end if
             end do
+        else if (ctrl%tdc_type == 2) then
+            open(newunit=cunit, file='qm_nadvec', action='read')
+            do i = 1, t%max_nstate
+                do j = 1, t%max_nstate
+                    read(cunit, *) t%nadv(:, i, j)
+                end do
+            end do
+            close(cunit)
         end if
     end subroutine run_qm
 

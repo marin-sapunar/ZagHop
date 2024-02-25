@@ -220,6 +220,7 @@ contains
         real(dp), intent(inout) :: itdc(:, :) !< Time-derivative couplings.
         real(dp), allocatable, save :: prev(:, :) !< TDCs at t0.
         real(dp), allocatable, save :: crnt(:, :) !< TDCs at t0 + dt.
+        integer :: nstate
 
         
         select case(opt)
@@ -228,6 +229,11 @@ contains
             if (i == 1) call nadvec2tdc(nadv2, vel2, itdc)
         ! Linear interpolation using coupling matrix.
         case(2)
+            if (.not. allocated(prev)) then
+               nstate=size(nadv1,2)
+               allocate(prev(nstate,nstate))
+               allocate(crnt(nstate,nstate))
+            endif
             if (i == 1) then
                 call nadvec2tdc(nadv1, vel1, prev)
                 call nadvec2tdc(nadv2, vel2, crnt)

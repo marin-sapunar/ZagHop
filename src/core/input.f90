@@ -116,6 +116,7 @@ contains
     !----------------------------------------------------------------------------------------------
     subroutine read_input
         use nuclear_dyn_mod
+        use random_mod, only : init_random_seed
         integer :: narg
         character(len=1000) :: temp
         integer :: i
@@ -138,6 +139,11 @@ contains
         write(stdout, *)
         write(stdout, '(1x,a,a,a)') 'Reading dynamics input file ', trim(maininp), '.'
         call read_main()
+
+        ! Start the random number generator.
+        write(stdout, *)
+        call init_random_seed(ctrl%seed(1))
+        write(stdout, '(a,i0)') 'Random number generator started with seed: ', ctrl%seed
 
         ! Set initial directory.
         ctrl%qmdir = 'qmdir'
@@ -831,6 +837,14 @@ contains
                 end if
             case('nadvec')
                 ctrl%tdc_type = 2
+                if (readf%narg > 1) then
+                    select case(readf%args(2)%s)
+                    case('constant')
+                        ctrl%tdc_interpolate = 1
+                    case('linear')
+                        ctrl%tdc_interpolate = 2
+                    end select
+                end if
             case('energy')
                 select case(readf%args(2)%s)
                 case('constant')
