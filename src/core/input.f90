@@ -53,7 +53,7 @@ contains
         ctrl%bufile = 'backup.dat'
         ctrl%buinterval = 1
         ! Method options.
-        ctrl%qext = .true.
+        ctrl%qlib = 0
         ! Set start step at 0
         t(1)%step = 0
         t(1)%time = 0.0_dp
@@ -529,12 +529,25 @@ contains
             case('overlap')
                 ctrl%oprog = readf%args(2)%s
                 write(stdout, '(5x,a)') '"'//ctrl%oprog//'" will be used for overlap calculations.'
-            case('model')
-                ctrl%qext = .false.
+            case('qlib')
+                select case(readf%args(2)%s)
+                case('quantics')
+                    ctrl%qlib = 1
+                case default
+                    write(stderr, *) 'Error in Input module, read_method subroutine.'
+                    write(stderr, *) '  Unrecognized qlib keyword: ', readf%args(2)%s
+                    stop
+                end select
             case('qm_en_error')
                 read(readf%args(2)%s, *) ctrl%qm_en_err
             end select
         end do
+
+        if ((ctrl%qlib > 0) .and. (ctrl%qprog /= '')) then
+            write(stderr, *) 'Error in Input module, read_method subroutine.'
+            write(stderr, *) '  Both qlib and qm keywords given in input.'
+            stop
+        end if
     end subroutine read_method
 
 

@@ -32,6 +32,9 @@ contains
     !!   qmnadvec - For the coupling vectors.
     !----------------------------------------------------------------------------------------------
     subroutine run_qm(t, hop)
+#ifdef QUANTICS
+        use shzagreb_inter, only : shzagreb_run
+#endif
         use system_var, only : trajtype
         use matrix_mod, only : unit_mat
         type(trajtype), intent(inout) :: t
@@ -39,92 +42,106 @@ contains
         integer :: cunit, i, j, d1, d2
         logical :: check1, check2
 
-        if ((t%step > 0) .and. (.not. hop)) then
-            call system('rm -rf prevstep')
-            call system('cp -r '//ctrl%qmdir//' prevstep')
-        end if
+        select case (ctrl%qlib)
+        case(0)
+            if ((t%step > 0) .and. (.not. hop)) then
+                call system('rm -rf prevstep')
+                call system('cp -r '//ctrl%qmdir//' prevstep')
+            end if
 
-        open(newunit=cunit, file='cstep', action='write')
-        write(cunit, '(i4.4)') t%step
-        close(cunit)
-
-        open(newunit=cunit, file='qm_geom', action='write')
-        do i = 1, t%qnatom
-            write(cunit, *) t%geom(:, t%qind(i))
-        end do
-        close(cunit)
-
-        open(newunit=cunit, file='qm_state', action='write')
-        write(cunit, *) t%cstate, t%nstate
-        close(cunit)
-
-        if (ctrl%mm) then
-            open(newunit=cunit, file='mm_geom', action='write')
-            do i = 1, t%mnatom
-                write(cunit, *) t%geom(:, t%mind(i))
-            end do
+            open(newunit=cunit, file='cstep', action='write')
+            write(cunit, '(i4.4)') t%step
             close(cunit)
-        end if
 
-        ! Call interface.
-        call system('rm qm_energy qm_grad qm_oscill qm_olap 2> /dev/null')
-        call system(ctrl%qprog)
-
-        ! Check if energy and gradient files were created.
-        inquire(file='qm_energy', exist=check1)
-        if (.not. check1) write(stderr, *) 'Error, qm_energy file not found after QM calculation.'
-        inquire(file='qm_grad', exist=check2)
-        if (.not. check2) write(stderr, *) 'Error, qm_grad file not found after QM calculation.'
-        if ((.not. check1) .or. (.not. check2)) then
-            call system('rm -rf qmdir_error')
-            call system('cp -r '//ctrl%qmdir//' qmdir_error')
-            stop
-        end if
-
-        t%qe = 0.0_dp
-        open(newunit=cunit, file='qm_energy', action='read')
-        read(cunit, *) t%qe(1:t%nstate)
-        close(cunit)
-        
-        t%grad = 0.0_dp
-        open(newunit=cunit, file='qm_grad', action='read')
-        do i = 1, t%qnatom
-            read(cunit, *) t%grad(:, t%qind(i))
-        end do
-        close(cunit)
-
-        if (ctrl%oscill) then
-            t%qo = 0.0_dp
-            open(newunit=cunit, file='qm_oscill', action='read')
-            read(cunit, *) t%qo(1:t%nstate-1)
-            close(cunit)
-        end if
-
-        if ((ctrl%tdc_type == 1) .and. (t%step /= 0)) then
-            call system(ctrl%oprog)
-            t%olap = unit_mat(t%max_nstate)
-            open(newunit=cunit, file='qm_olap', action='read')
-            read(cunit, *) d1, d2
-            do i = 1, min(d1, d2)
-                read(cunit, *) t%olap(i, 1:min(d1, d2))
+            open(newunit=cunit, file='qm_geom', action='write')
+            do i = 1, t%qnatom
+                write(cunit, *) t%geom(:, t%qind(i))
             end do
             close(cunit)
 
-            do i = 1, t%max_nstate
-                if (.not. ctrl%couple(i)) then
-                    t%olap(i, :) = 0.0_dp
-                    t%olap(:, i) = 0.0_dp
-                end if
-            end do
-        else if (ctrl%tdc_type == 2) then
-            open(newunit=cunit, file='qm_nadvec', action='read')
-            do i = 1, t%max_nstate
-                do j = 1, t%max_nstate
-                    read(cunit, *) t%nadv(:, i, j)
+            open(newunit=cunit, file='qm_state', action='write')
+            write(cunit, *) t%cstate, t%nstate
+            close(cunit)
+
+            if (ctrl%mm) then
+                open(newunit=cunit, file='mm_geom', action='write')
+                do i = 1, t%mnatom
+                    write(cunit, *) t%geom(:, t%mind(i))
                 end do
+                close(cunit)
+            end if
+
+            ! Call interface.
+            call system('rm qm_energy qm_grad qm_oscill qm_olap 2> /dev/null')
+            call system(ctrl%qprog)
+
+            ! Check if energy and gradient files were created.
+            inquire(file='qm_energy', exist=check1)
+            if (.not. check1) write(stderr, *) 'Error, qm_energy file not found after QM calculation.'
+            inquire(file='qm_grad', exist=check2)
+            if (.not. check2) write(stderr, *) 'Error, qm_grad file not found after QM calculation.'
+            if ((.not. check1) .or. (.not. check2)) then
+                call system('rm -rf qmdir_error')
+                call system('cp -r '//ctrl%qmdir//' qmdir_error')
+                stop
+            end if
+
+            t%qe = 0.0_dp
+            open(newunit=cunit, file='qm_energy', action='read')
+            read(cunit, *) t%qe(1:t%nstate)
+            close(cunit)
+
+            t%grad = 0.0_dp
+            open(newunit=cunit, file='qm_grad', action='read')
+            do i = 1, t%qnatom
+                read(cunit, *) t%grad(:, t%qind(i))
             end do
             close(cunit)
-        end if
+
+            if (ctrl%oscill) then
+                t%qo = 0.0_dp
+                open(newunit=cunit, file='qm_oscill', action='read')
+                read(cunit, *) t%qo(1:t%nstate-1)
+                close(cunit)
+            end if
+
+            if ((ctrl%tdc_type == 1) .and. (t%step /= 0)) then
+                call system(ctrl%oprog)
+                t%olap = unit_mat(t%max_nstate)
+                open(newunit=cunit, file='qm_olap', action='read')
+                read(cunit, *) d1, d2
+                do i = 1, min(d1, d2)
+                    read(cunit, *) t%olap(i, 1:min(d1, d2))
+                end do
+                close(cunit)
+
+                do i = 1, t%max_nstate
+                    if (.not. ctrl%couple(i)) then
+                        t%olap(i, :) = 0.0_dp
+                        t%olap(:, i) = 0.0_dp
+                    end if
+                end do
+            else if (ctrl%tdc_type == 2) then
+                open(newunit=cunit, file='qm_nadvec', action='read')
+                do i = 1, t%max_nstate
+                    do j = 1, t%max_nstate
+                        read(cunit, *) t%nadv(:, i, j)
+                    end do
+                end do
+                close(cunit)
+            end if
+        case(1)
+#ifdef QUANTICS
+            ! Assume all atoms are QM so no temporary arrays need to be created.
+            call shzagreb_run(t%step, t%geom, t%cstate, t%qe, t%grad, t%nadv)
+#else
+            write(stderr, *) 'Error in run_qm. Code not compiled with quantics interface.'
+            stop
+#endif
+         case default
+             write(stderr, *) 'Error in run_qm. Unrecognized QM interface.'
+             stop
+         end select
     end subroutine run_qm
 
 
@@ -163,7 +180,7 @@ contains
         open(newunit=cunit, file='mm_energy', action='read')
         read(cunit, *) t%me
         close(cunit)
-        
+
         open(newunit=cunit, file='mm_grad', action='read')
         do i = 1, t%natom
             read(cunit, *) t%grad(:, i)
