@@ -429,7 +429,7 @@ contains
             end if
             read(iunit, *) check
             if (check) then
-                allocate(t(i)%nadv(t(i)%ndim*t(i)%natom, t(i)%max_nstate, t(i)%max_nstate))
+                allocate(t(i)%nadv(t(i)%ndim*t(i)%qnatom, t(i)%max_nstate, t(i)%max_nstate))
                 read(iunit, *) t(i)%nadv(:, :, :)
             end if
             read(iunit, *) t(i)%pbcbox

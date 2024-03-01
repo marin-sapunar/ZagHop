@@ -396,7 +396,7 @@ contains
             ctrl%mm = .false.
         end if
         if (ctrl%tdc_type == 2) then
-            allocate(t(1)%nadv(t(1)%ndim*t(1)%natom, t(1)%max_nstate, t(1)%max_nstate))
+            allocate(t(1)%nadv(t(1)%ndim*t(1)%qnatom, t(1)%max_nstate, t(1)%max_nstate))
         end if
 
         ! Second run through the file to read the atom, mass, position and index of each atom.
