@@ -120,7 +120,7 @@ enable_language (Fortran)
     set(QUANTICS_OBJ ${QUANTICS_DIR}/object/${QUANTICS_PLATFORM}/${QUANTICS_COMPILER})
     set(QUANTICS_LIB ${QUANTICS_DIR}/bin/dyn_libs)
     include_directories(${QUANTICS_OBJ}/include)
-    set(LINKLIBS ${LINKLIBS} ${QUANTICS_OBJ}/shzagreb_inter.o)
+    set(QUANTICS_INTER "interface/quantics_inter.f90")
     set(LINKLIBS ${LINKLIBS} ${QUANTICS_OBJ}/versions.o)
     set(LINKLIBS ${LINKLIBS} ${QUANTICS_OBJ}/mctdh.a)
     set(LINKLIBS ${LINKLIBS} ${QUANTICS_OBJ}/propwf.a)
@@ -154,6 +154,9 @@ enable_language (Fortran)
 ################################################################################
 # Build                                                                        #
   file(GLOB SOURCES "src/core/*f90" "src/util/*f90")
+  if(QUANTICS)
+      set(SOURCES ${SOURCES} ${QUANTICS_INTER})
+  endif()
 
 
   add_executable(nad.exe ${SOURCES})
