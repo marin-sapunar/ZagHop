@@ -62,9 +62,10 @@ class ricc2(Turbomole):
         if n_sub == 0:
             repl = r"$ricc2\n  geoopt model={} state={}".format(self.model, state)
             n_sub = file_utils.replace_inplace("control", r"\$ricc2", repl)
+        n_ex_state = self.data["nstate"] - 1
         file_utils.replace_inplace("control",
                                    r"(\s*irrep.*)nexc\s*=\s*\d+(.*)",
-                                   r"\1nexc="+str(self.data["nstate"])+r"\2")
+                                   r"\1nexc="+str(n_ex_state)+r"\2")
 
     def run(self):
         """ Run the calculation, check success and read results. """
