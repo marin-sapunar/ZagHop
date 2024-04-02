@@ -32,7 +32,6 @@ program zaghop
 
     logical :: check
     logical :: abort_flag = .false.
-    integer :: flag
     type(timer) :: mainclock
     type(timer) :: stepclock
     real(dp), allocatable :: hop_grad(:, :)
@@ -128,11 +127,8 @@ program zaghop
             allocate(hop_grad, source=t(1)%grad)
             call run_qm(t(1), .true.)
             write(stdout, '(5x,a)') 'Ensuring energy conservation.'
-            call sh_rescalevelo(ctrl%vrescale, t(1)%qind, t(1)%mass, t(1)%qe(t(2)%cstate),         &
-            &                   t(1)%qe(t(1)%cstate), hop_grad, t(1)%grad, t(1)%velo, flag)
-            if (flag == 1) then
-                call sh_frustratedhop(ctrl%fhop, hop_grad, t(1)%grad, t(2)%cstate, t(1)%cstate)
-            end if
+            call sh_rescalevelo(ctrl%vrescale, ctrl%fhop, t(1)%qind, t(2)%cstate, t(1)%cstate,     &
+            &                   t(1)%mass, t(1)%qe, hop_grad, t(1)%grad, t(1)%nadv, t(1)%velo)
             deallocate(hop_grad)
         end if
 
