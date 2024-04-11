@@ -46,6 +46,7 @@ enable_language (Fortran)
   add_definitions(-DLINALG=1)
   # CMake FindBLAS/FindLAPACK modules don't work for ilp64 version of MKL or for MKL F95 interface.
   # Set everything manually.
+    message(STATUS "LINALG = ${LINALG}")
   if(LINALG STREQUAL "MKL")
     set(MKLROOT "" CACHE PATH "MKL root directory.")
     set(F95ROOT "" CACHE PATH "MKL F95 interface root directory.")
@@ -102,6 +103,10 @@ enable_language (Fortran)
     message(STATUS BLAS found: ${OpenBLAS_LIBRARIES})
     set(LINKLIBS ${LINKLIBS} ${OpenBLAS_LIBRARIES})
     add_definitions(-DOPENBLAS=1)
+  elseif(LINALG STREQUAL "Quantics")
+    message(STATUS Quantics BLAS: $ENV{QUANTICS_DIR})
+    add_definitions(-DQUANTICS=1)
+
   endif()
 
   if(QUANTICS)
@@ -138,7 +143,7 @@ enable_language (Fortran)
     set(LINKLIBS ${LINKLIBS} ${QUANTICS_OBJ}/liblapack.a)
     set(LINKLIBS ${LINKLIBS} ${QUANTICS_OBJ}/libblas.a)
     set(LINKLIBS ${LINKLIBS} ${QUANTICS_OBJ}/libomp.a)
-    set(LINKLIBS ${LINKLIBS} "-lsqlite3 -L ${QUANTICS_DIR}/bin/dyn_libs -lsrf -lusrf -lsqlite3")
+    set(LINKLIBS ${LINKLIBS} "-J ${QUANTICS_OBJ}/include -lsqlite3 -L ${QUANTICS_DIR}/bin/dyn_libs -lsrf -lusrf -lsqlite3")
   endif()
 
   if(OMP)
