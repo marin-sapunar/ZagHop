@@ -71,10 +71,7 @@ contains
       open(ilog,file='quantics.log',status='unknown',position='append')
 
       if (.not. initialized) then
-! get program version from versions module
-      progver = projver+tiny
       macheps = dlamch('P')
-
 
       string='../..'
       ilbl=5
