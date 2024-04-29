@@ -93,39 +93,42 @@ contains
         real(dp), intent(inout) :: cgrd(:, :) !< Gradient on current state.
         real(dp), intent(in) :: nadv(:, :, :) !< Nonadiabatic coupling vectors
         real(dp), intent(inout) :: velo(:, :) !< Velocities.
-        real(dp) :: v(size(velo, 1), size(amask)) !< Temporary velocity array.
-        real(dp) :: m(size(amask)) !< Temporary mass array.
+        real(dp) :: mvel(size(velo, 1), size(amask)) !< Mass weighted velocity.
+        real(dp) :: m(size(velo, 1), size(amask)) !< Temporary mass array.
         real(dp) :: rescale_dir(size(velo, 1), size(amask)) !< Direction along which to rescale.
-        real(dp) :: absv_dir !< Speed along rescale direction.
-        real(dp) :: newv_dir !< New speed along rescale direction.
-        real(dp) :: de !< Required change in kinetic energy.
+        real(dp) :: mvel_dir !< Component of mass weighted velocity along rescale direction.
+        real(dp) :: delta_e !< Required change in kinetic energy.
 
-        ! Work with temporary arrays.
-        v = velo(:, amask)
-        m = mass(amask)
+        ! Work with temporary arrays and use mass-weighted coordinates.
+        m = spread(mass(amask), 1, size(velo, 1))
+        mvel = velo(:, amask) * sqrt(m)
 
         select case(opt_mc)
         case(0) ! No rescaling.
             continue
         case(1) ! Rescale along velocity vector.
-            rescale_dir = v
+            rescale_dir = mvel
         case(2) ! Rescale along gradient difference vector.
-            rescale_dir = pgrd - cgrd
+            rescale_dir = (pgrd - cgrd) / sqrt(m)
         case(3) ! Rescale along nonadiabatic coupling vector.
-            rescale_dir = reshape(nadv(:, pst, cst), shape(v))
+            rescale_dir = reshape(nadv(:, pst, cst), shape(mvel)) / sqrt(m)
         end select
 
         ! Rescale velocity
-        de = poten(cst) - poten(pst)
+        delta_e = poten(cst) - poten(pst)
         rescale_dir = rescale_dir / sqrt(sum(rescale_dir**2))
-        absv_dir = sum(v * rescale_dir)
-        if (de < ekin(m, absv_dir * rescale_dir)) then
-            newv_dir = sqrt(absv_dir**2 - 2 * de / sum(spread(mass, 1, 3) * rescale_dir**2))
-            v = v + rescale_dir * (newv_dir - absv_dir)
+        mvel_dir = sum(rescale_dir * mvel)
+        if (mvel_dir**2 > 2 * delta_e) then
+            ! The sign here is based on the work of Herman (see chapter 6 of 10.1007/0-306-46949-9
+            ! and references within). Choosing the other direction would also work, but this one
+            ! ensures that the change is momentum is as small as possible (but also means that the
+            ! direction of the change doesn't depend on the sign of the vector along which rescaling
+            ! is performed).
+            mvel = mvel + rescale_dir * (sign(sqrt(mvel_dir**2 - 2*delta_e), mvel_dir) - mvel_dir)
         else
             write(stdout, '(7x,a)') 'Insufficient energy for hop.'
-            write(stdout, '(7x,a,e16.8)') 'Energy difference:', de
-            write(stdout, '(7x,a,e16.8)') 'Available energy:', ekin(m, absv_dir * rescale_dir)
+            write(stdout, '(7x,a,e16.8)') 'Energy difference:', delta_e
+            write(stdout, '(7x,a,e16.8)') 'Available energy:', mvel_dir**2 / 2
 
             cgrd = pgrd
             cst = pst
@@ -133,12 +136,12 @@ contains
             case(1) ! Just return to previous state.
                 continue
             case(2) ! Invert velocity along rescale direction.
-                v = v - 2 * absv_dir * v
+                mvel = mvel - 2 * mvel_dir * rescale_dir
             end select
         end if
 
         ! Save changes to velocity array.
-        velo(:, amask) = v
+        velo(:, amask) = mvel / sqrt(m)
     end subroutine sh_rescalevelo
 
 

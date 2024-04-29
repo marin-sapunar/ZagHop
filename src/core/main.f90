@@ -41,7 +41,7 @@ program zaghop
     call mainclock%start()
 
     write(stdout, *) '-------------------------------------------------------------------------------'
-    write(stdout, *) '                               ZagHop, v0.91                                   '
+    write(stdout, *) '                               ZagHop, v0.92                                   '
     write(stdout, *) 'Program compiled '//__DATE__//' at '//__TIME__//'.'
     write(stdout, *) '-------------------------------------------------------------------------------'
 
