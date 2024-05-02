@@ -1,16 +1,23 @@
+
+#if __INTEL_COMPILER
 include 'mkl_vsl.f90'
+#endif
 
 module random_mod
     use global_defs
+#if __INTEL_COMPILER
     use mkl_vsl_type
     use mkl_vsl
+#endif
     implicit none
 
     private
     public :: init_random_seed
     public :: random_gaussian
 
+#if __INTEL_COMPILER
     type(VSL_STREAM_STATE) :: rng_stream
+#endif
 
 
 contains
@@ -57,12 +64,14 @@ use ifport
         ! numbers are almost identical so we move the generator further along.
         call random_number(rnum)
 
+#if __INTEL_COMPILER
         n = vslnewstream(rng_stream, VSL_BRNG_MCG31, tseed)
         if (n /= VSL_STATUS_OK) then
             write(stderr, *) "Error in random_mod, init_random_seed subroutine."
             write(stderr, *) " vslnewstream exit code:", n
             call abort()
         end if
+#endif
     end subroutine init_random_seed
 
 
@@ -77,10 +86,12 @@ use ifport
         real(dp), intent(in) :: mean
         real(dp), intent(in) :: sigma
         real(dp), intent(out) :: rnum(:)
+        complex(dp)           :: gpair
         integer :: method
         integer :: n
         integer(i4) :: err
 
+#if __INTEL_COMPILER
         method = VSL_RNG_METHOD_GAUSSIAN_ICDF
         n = size(rnum)
         err = vdrnggaussian(method, rng_stream, n, rnum, mean, sigma)
@@ -90,6 +101,12 @@ use ifport
             write(stderr, *) " vdrnggaussian exit code:", n
             call abort()
         end if
+#elseif QUANTICS
+       do i=1,n
+          gpair=randgaussian()
+          rnum(i)=mean + sigma*dble(gpair)
+       enddo
+#endif
     end subroutine random_gaussian
 
 

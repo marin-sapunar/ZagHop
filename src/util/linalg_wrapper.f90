@@ -7,6 +7,11 @@ module linalg_wrapper_mod
     implicit none
     public
 
+#ifndef LINALG_F95
+interface gemm
+   module procedure gemm, cgemm
+end interface gemm
+#endif
 
 contains
 
@@ -245,6 +250,28 @@ contains
         end if
     end subroutine getrf
 
+    subroutine getri(a, ipiv, info)
+        real(dp) :: a(:, :)
+        integer  :: ipiv(:)
+        integer, optional :: info
+        integer :: lwrk
+        integer, allocatable :: wrk(:)
+        integer :: n, lda
+        external :: dgetri
+
+        lda = size(a, 1)
+        n = size(a, 2)
+        lwrk = n
+        allocate(wrk(lwrk))
+
+        ! Call DGETRI
+        call  dgetri( n, a, lda, ipiv, wrk, lwrk, info )
+        if (info /= 0) then
+            write(stderr, *) 'Error. GETRI call failed.'
+            write(stderr, '(a, i0)') '        Info: ', info
+            stop
+        end if
+    end subroutine getri
 
     subroutine syev(a, w, jobz, uplo, info)
         real(dp) :: a(:, :)
