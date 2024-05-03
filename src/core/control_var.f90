@@ -45,7 +45,7 @@ module control_var
         integer :: seed(1) = [-1] !< Seed for the random number generator. A new value can be given
         !! in the input file. If not, random_seed is called to generate a new seed.
         logical :: restart = .false. !< Restart from backup of previous run.
-        real(dp) :: min01gap = -10000.0_dp !< Threshold to stop program in case of S0/S1 CI.
+        real(dp) :: stop_s0s1_ci = -10000.0_dp !< Threshold to stop program in case of S0/S1 CI.
         integer :: target_state = -1 !< Stop dynamics after reaching target state.
         real(dp) :: target_state_time = 0.0_dp !< Additional time to propagate after reaching the
         !! target state.

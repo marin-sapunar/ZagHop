@@ -155,7 +155,7 @@ program zaghop
 
         ! Stop the program at S0/S1 conical intersection.
         if (t(1)%nstate > 1) then
-            if (t(1)%qe(2) - t(1)%qe(1) < ctrl%min01gap) then
+            if (t(1)%qe(2) - t(1)%qe(1) < ctrl%stop_s0s1_ci) then
                 write(stdout, *) 'Intersection with ground state detected, ending calculation.'
                 write(stdout, *)
                 abort_flag = .true.

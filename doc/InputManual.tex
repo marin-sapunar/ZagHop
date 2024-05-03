@@ -257,8 +257,12 @@ lz\_min\_dt	&
 uncouple\_state		&
 	\textbf{none} \newline
 	Give list of electronic states which will not be coupled to any others in the surface hopping calculation. When calculating couplings based on overlaps, these states should still be present in the overlap matrix, but all couplings for these states will be set to zero after reading the file. (Example: uncouple\_state 1-2, 5). \\
+
+stop\_s0s1\_ci &
+    \textbf{-1.0} \newline
+    Stop the trajectory if it reaches a region close to the S$_0$/S$_1$ conical intersection. The trajectory is stopped when $E_1 - E_0 < E_{thr}$ where $E_{thr}$ is given (in eV) by this option. This option is used when potential energies are calculated using single reference methods which give qualitatively wrong results in the S$_0$/S$_1$ CI region. \\
 	
-seed \# 		&
+seed \# &
 	\textbf{-1} \newline
 	Give a seed for the random number generator. If seed is < 0, a seed is generated automatically based on the current time and job ID. \\
 \end{tabularx}
