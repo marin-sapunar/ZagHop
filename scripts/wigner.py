@@ -55,7 +55,7 @@ def main():
             os.mkdir("GEOM_" + str(i + 1))
             os.chdir(os.path.join(cwd, "GEOM_" + str(i + 1)))
             write_coord("coord", nm.to_xyz(sample[0][i]), nm.atoms)
-            write_veloc("veloc", sample[1][i], len(nm.atoms))
+            write_veloc("veloc", nm.to_xyz(sample[1][i],reshape=True, displacement=True))
             os.chdir(cwd)
     if args.in_format == "turbomole":
         nm = NormalModes.from_turbomole(args.file_name)
@@ -65,7 +65,7 @@ def main():
             os.mkdir("GEOM_" + str(i + 1))
             os.chdir(os.path.join(cwd, "GEOM_" + str(i + 1)))
             write_coord("coord", nm.to_xyz(sample[0][i]), nm.atoms)
-            write_veloc("veloc", sample[1][i], len(nm.atoms))
+            write_veloc("veloc", nm.to_xyz(sample[1][i],reshape=True, displacement=True))
             os.chdir(cwd)
     if args.in_format == "orca":
         nm = NormalModes.from_orca(args.file_name)
@@ -75,7 +75,7 @@ def main():
             os.mkdir("GEOM_" + str(i + 1))
             os.chdir(os.path.join(cwd, "GEOM_" + str(i + 1)))
             write_coord("coord", nm.to_xyz(sample[0][i]), nm.atoms)
-            write_veloc("veloc", sample[1][i], len(nm.atoms))
+            write_veloc("veloc", nm.to_xyz(sample[1][i],reshape=True, displacement=True))
             os.chdir(cwd)
     if args.in_format == "gaussian":
         if args.log_file != None:
@@ -86,7 +86,7 @@ def main():
                 os.mkdir("GEOM_" + str(i + 1))
                 os.chdir(os.path.join(cwd, "GEOM_" + str(i + 1)))
                 write_coord("coord", nm.to_xyz(sample[0][i]), nm.atoms)
-                write_veloc("veloc", sample[1][i], len(nm.atoms))
+                write_veloc("veloc", nm.to_xyz(sample[1][i],reshape=True, displacement=True))
                 os.chdir(cwd)
         else:
             print("ERROR: .log file not provided!")
@@ -136,9 +136,10 @@ def write_coord(fname, geom, atoms):
             ofile.write(gformat.format(*xyz, at))
         ofile.write('$end\n')
 
-def write_veloc(fname, veloc, natom):
+def write_veloc(fname, veloc):
     file = open("veloc", "w")
-    np.savetxt(fname, veloc.reshape(natom-2,3))
+    np.savetxt(fname, veloc)
+    file.close()
 
 
 
