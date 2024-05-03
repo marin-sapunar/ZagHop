@@ -63,7 +63,7 @@ contains
         ctrl%print(7:9) = .true.
         ctrl%print(10) = .true.
         ! Program flow options.
-        ctrl%min01gap = -1.0_dp
+        ctrl%stop_s0s1_ci = -1.0_dp
         ctrl%max_tot_en_change = 1.0_dp / eh_eV
         ctrl%max_tot_en_change_step = 0.2_dp / eh_eV
         ctrl%target_state = 0
@@ -904,9 +904,9 @@ contains
             case('lz_min_dt')
                 read(readf%args(2)%s, *) ctrl%lz_min_dt
                 ctrl%lz_min_dt = ctrl%lz_min_dt / aut_fs
-            case('s0_ci')
-                read(readf%args(2)%s, *) ctrl%min01gap
-                ctrl%min01gap = ctrl%min01gap / eh_eV
+            case('stop_s0s1_ci')
+                read(readf%args(2)%s, *) ctrl%stop_s0s1_ci
+                ctrl%stop_s0s1_ci = ctrl%stop_s0s1_ci / eh_eV
             case('uncouple_state')
                 call compact(readf%line)
                 call read_index_list(readf%line(15:), uncouple_states)
