@@ -83,7 +83,7 @@ class NormalModes():
             nmode = cls(coord, vib, freq, atoms, mass_weighted=False)
         return nmode
     @classmethod
-    def from_turbomole(cls, hess_file_name):
+    def from_turbomole(cls, hess_file_name, coord_file = "coord"):
         """ Create instance of NormalMode class from turbomole files.
 
         Arguments:
@@ -106,7 +106,11 @@ class NormalModes():
                 hessian_matrix.append(float(d[j]))
         hessian_matrix = np.array(hessian_matrix).reshape(3*n_atom,3*n_atom)
         # Reads atoms from "coord" file in order to create a mass weighted matrix
-        a=open("coord","r")
+        try:
+            a=open(coord_file,"r")
+        except:
+            print("coord file not found!")
+            return exit()
         c=a.readlines()
         a.close()
         coord = []

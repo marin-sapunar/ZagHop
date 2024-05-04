@@ -7,7 +7,7 @@ def main():
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         description=
-        "Read geometries and Hessians from Orca, Molden, Turbomole or Gaussian and generate initial geometries and velocities from Wigner distribution",
+        "Read geometries and Hessians from Orca, Molden, Turbomole or Gaussian and generate initial geometries and velocities from Wigner distribution. For Molden and Orca, only the file containing Hessian/normal modes needs to be provided. For Turbomole, a 'coord' file containing ground state geometry is needed. For Gaussian, one needs to specify .log file's name using -l option.",
         epilog=
         ".")
     parser.add_argument(
@@ -46,6 +46,13 @@ def main():
         metavar=("file.log"),
         default=None,
         help="Name of the .log file. Only needed for Gaussian, along with .fchk file.")
+    parser.add_argument(
+        "-c",
+        "--coord_file",
+        type=str,
+        metavar=("coord"),
+        default=None,
+        help="Location of the coord file containing optimized ground state geometry. Only needed for Turbomole.")
     args = parser.parse_args()
     if args.in_format == "molden":
         nm = NormalModes.from_molden(args.file_name)
@@ -58,7 +65,7 @@ def main():
             write_veloc("veloc", nm.to_xyz(sample[1][i],reshape=True, displacement=True))
             os.chdir(cwd)
     if args.in_format == "turbomole":
-        nm = NormalModes.from_turbomole(args.file_name)
+        nm = NormalModes.from_turbomole(args.file_name, args.coord_file)
         sample = sample_wigner(nm.freq, args.temperature, args.npoint)
         cwd = os.getcwd() # Current directory, from where the program was called
         for i in range(args.npoint):
