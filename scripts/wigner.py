@@ -10,7 +10,7 @@ def main():
         description=
         "Read geometries and Hessians from Orca, Molden, Turbomole or Gaussian and generate initial geometries and velocities from Wigner distribution. For Molden and Orca, only the file containing Hessian/normal modes needs to be provided. For Turbomole, a 'coord' file containing ground state geometry is needed. For Gaussian, one needs to specify .log file's name using -l option.",
         epilog=
-        ".")
+        "")
     parser.add_argument(
         "-f",
         "--in_format",
@@ -149,7 +149,7 @@ def read_coord(fname, natom):
                     rgeom[3*i:3*i+3] = xyz
     return atoms, rgeom
 
-def refined_modes(omega, ignore_list):# Normal modes frequencies after certain modes were ignored
+def refined_modes(omega, ignore_list):# Normal mode frequencies after certain modes were ignored
     if ignore_list != None:
         for i in ignore_list.split():
             omega[int(i)-1] = 0

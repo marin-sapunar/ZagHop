@@ -92,7 +92,10 @@ class NormalModes():
             nmode : New instance of NormalMode class.
         """                                                           
         # Reads elements from Turbomole Hessian file
-        a=open(hess_file_name, 'r')
+        try:
+            a=open(hess_file_name, 'r')
+        except:
+            print(hess_dile_name + " file not found")
         c=a.readlines()
         a.close()
         first_index = c.index("$hessian (projected)\n") # First line of the projected Hessian is the one after the line that contains $hessian (projected)
@@ -109,7 +112,7 @@ class NormalModes():
         try:
             a=open(coord_file,"r")
         except:
-            print("coord file not found!")
+            print(coord_file + " not found!")
             return exit()
         c=a.readlines()
         a.close()
@@ -138,10 +141,18 @@ class NormalModes():
         return nmode    
     @classmethod
     def from_orca(cls, hess_file_name):
-        a = open(hess_file_name, 'r')
+        try:
+            a = open(hess_file_name, 'r')
+        except:
+            print("ERROR: File not found!")
+            exit()
         orca_out = a.readlines()# List that contains all the lines from .hess file
         a.close()
-        hessian_index = orca_out.index("$hessian\n")# index of the line that contains $hessian, a reference point for defining ranges
+        try:
+            hessian_index = orca_out.index("$hessian\n")# index of the line that contains $hessian, a reference point for defining ranges
+        except:
+            print("ERROR: $hessian not found! .hess file containing '$hessian' line needs to be provided")
+            exit()
         atom_index = orca_out.index("$atoms\n")# for finding atoms, and the number of atoms
         n_atom = int(orca_out[atom_index+1].split()[0])
         # Number of atoms is contained in a line after "$atom", .split()[0] transforms  
@@ -197,8 +208,10 @@ class NormalModes():
         # hess_ file_name is fch file name, generated with Right Click > Results > View/Edit file in .chk opened in GaussView on Windows.
         # log_file_name is the standard .log file. Rename them to default values ("gaussian.fch.txt" and "STRUCTURE.LOG") or call the
         # function with from_gaussian("custom_name1", "custom_name2")
-
-        a = open(gauss_file_name, "r")
+        try:
+            a = open(gauss_file_name, "r")
+        except:
+            print("ERROR: Formatted checkpoint file not found!")
         gauss_out = a.readlines()
         a.close()
 
