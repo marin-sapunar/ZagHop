@@ -1,3 +1,4 @@
+#!/bin/env python3
 import numpy as np
 import argparse
 from normalmode import NormalModes
@@ -53,54 +54,37 @@ def main():
         metavar=("coord"),
         default=None,
         help="Location of the coord file containing optimized ground state geometry. Only needed for Turbomole.")
+    parser.add_argument(
+        "-ign",
+        "--ignore_modes",
+        type=str,
+        metavar=("mode_list"),
+        default=None,
+        help="Indices of normal modes to be ignored. Example: -ign '1 3' will ignore first and third normal mode.")
+
     args = parser.parse_args()
     if args.in_format == "molden":
         nm = NormalModes.from_molden(args.file_name)
-        sample = sample_wigner(nm.freq, args.temperature, args.npoint)
-        cwd = os.getcwd() # Current directory, from where the program was called
-        for i in range(args.npoint):
-            os.mkdir("GEOM_" + str(i + 1))
-            os.chdir(os.path.join(cwd, "GEOM_" + str(i + 1)))
-            write_coord("coord", nm.to_xyz(sample[0][i]), nm.atoms)
-            write_veloc("veloc", nm.to_xyz(sample[1][i],reshape=True, displacement=True))
-            os.chdir(cwd)
-    if args.in_format == "turbomole":
+    elif args.in_format == "turbomole":
         nm = NormalModes.from_turbomole(args.file_name, args.coord_file)
-        sample = sample_wigner(nm.freq, args.temperature, args.npoint)
-        cwd = os.getcwd() # Current directory, from where the program was called
-        for i in range(args.npoint):
-            os.mkdir("GEOM_" + str(i + 1))
-            os.chdir(os.path.join(cwd, "GEOM_" + str(i + 1)))
-            write_coord("coord", nm.to_xyz(sample[0][i]), nm.atoms)
-            write_veloc("veloc", nm.to_xyz(sample[1][i],reshape=True, displacement=True))
-            os.chdir(cwd)
-    if args.in_format == "orca":
+    elif args.in_format == "orca":
         nm = NormalModes.from_orca(args.file_name)
-        sample = sample_wigner(nm.freq, args.temperature, args.npoint)
-        cwd = os.getcwd() # Current directory, from where the program was called
-        for i in range(args.npoint):
-            os.mkdir("GEOM_" + str(i + 1))
-            os.chdir(os.path.join(cwd, "GEOM_" + str(i + 1)))
-            write_coord("coord", nm.to_xyz(sample[0][i]), nm.atoms)
-            write_veloc("veloc", nm.to_xyz(sample[1][i],reshape=True, displacement=True))
-            os.chdir(cwd)
-    if args.in_format == "gaussian":
+    elif args.in_format == "gaussian":
         if args.log_file != None:
-            nm = NormalModes.from_gaussian(args.file_name, args.log_file)
-            sample = sample_wigner(nm.freq, args.temperature, args.npoint)
-            cwd = os.getcwd() # Current directory, from where the program was called
-            for i in range(args.npoint):
-                os.mkdir("GEOM_" + str(i + 1))
-                os.chdir(os.path.join(cwd, "GEOM_" + str(i + 1)))
-                write_coord("coord", nm.to_xyz(sample[0][i]), nm.atoms)
-                write_veloc("veloc", nm.to_xyz(sample[1][i],reshape=True, displacement=True))
-                os.chdir(cwd)
+            nm = NormalModes.from_gaussian(args.file_name, args.log_file)    
         else:
             print("ERROR: .log file not provided!")
+
+    sample = sample_wigner(nm.freq, args.temperature, args.npoint)
+    cwd = os.getcwd() # Current directory, from where the program was called
+    for i in range(args.npoint):
+        os.mkdir("GEOM_" + str(i + 1))
+        os.chdir(os.path.join(cwd, "GEOM_" + str(i + 1)))
+        write_coord("coord", nm.to_xyz(refined_modes(sample[0][i], args.ignore_modes)), nm.atoms)
+        write_veloc("veloc", nm.to_xyz(refined_modes(sample[1][i], args.ignore_modes),reshape=True, displacement=True))
+        write_energy(nm.harmonic_potential_energy(refined_modes(sample[0][i], args.ignore_modes)))
+        os.chdir(cwd)
     return
-
-
-
 
 
 
@@ -165,6 +149,18 @@ def read_coord(fname, natom):
                     rgeom[3*i:3*i+3] = xyz
     return atoms, rgeom
 
-
+def refined_modes(omega, ignore_list):# Normal modes frequencies after certain modes were ignored
+    if ignore_list != None:
+        for i in ignore_list.split():
+            omega[int(i)-1] = 0
+    return omega
+def write_energy(energy_vector):
+    energy = 0
+    for i in energy_vector:
+        energy += i
+    file = open("harmonic_energy", "w")
+    file.write(str(energy))
+    file.close()
+    return
 if __name__ == "__main__":
     main()  
