@@ -95,12 +95,12 @@ class NormalModes():
         try:
             a=open(hess_file_name, 'r')
         except:
-            print(hess_dile_name + " file not found")
+            print(hess_file_name + " file not found")
         c=a.readlines()
         a.close()
         first_index = c.index("$hessian (projected)\n") # First line of the projected Hessian is the one after the line that contains $hessian (projected)
-        n_atom=int(int(c[first_index-1].split()[0])/3) # Number of atoms, first element of last row divided by 3
         final_index = c.index("$end\n")
+        n_atom=int(int(c[final_index-1].split()[0])/3) # Number of atoms, first element of last row divided by 3
         # This block creates a Hessian matrix as a numpy array
         hessian_matrix = []
         for i in c[first_index:final_index]:
