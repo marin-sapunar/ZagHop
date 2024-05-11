@@ -25,7 +25,7 @@ def main():
         metavar=("bandwidth"),
         help="Give the value of the bandwith of Gaussian functions.")
     parser.add_argument(
-        "-eu",
+        "-unit",
         "--energy-unit",
         choices=["eV", "nm"],
         type=str,
@@ -35,24 +35,25 @@ def main():
     parser.add_argument(
         "-n",
         "--normalization",
-        action='store_true',
+        action=argparse.BooleanOptionalAction,
+        default = True,
         help="Create the spectrum with intensities relative to the maximum peak which is set to have the value of 1.")
     parser.add_argument(
-        "-sv",
+        "-start",
         "--start-value",
         type=float,
         metavar=("start_value"),
         default=1.0,
         help="Set the start value of energy on the x-axis to be displayed.")
     parser.add_argument(
-        "-ev",
+        "-end",
         "--end-value",
         type=float,
         metavar=("end_value"),
         default=10.0,
         help="Set the end value of energy on the x-axis to be displayed.")
     parser.add_argument(
-        "-s",
+        "-step",
         "--step",
         type=float,
         metavar=("step"),
@@ -63,12 +64,14 @@ def main():
     args = parser.parse_args()
 
     input_file = args.input_file
+
     bandwidth = args.bandwidth
-    x = args.start_value
 
-    y = args.end_value
+    start = args.start_value
 
-    z = args.step
+    end = args.end_value
+
+    step = args.step
 
     all_os = []
     all_excited = []
@@ -93,40 +96,55 @@ def main():
                 if args.energy_unit == "eV":
                     intensity +=  1/bandwidth * float(all_os[i][j]) * float(all_excited[i][j]) * np.exp(-1/2 *((en - float(all_excited[i][j]))/bandwidth) **2)
         return float(intensity)
-        
+   
 
     f = np.vectorize(nea_spect)
 
-    en = np.arange(x, y, z)
+    en = np.arange(start, end, step)
 
-    plt.plot(en, f(en))
+    max_value = f(en).max()
 
-    plt.show()
+    def nea_spect_norm(en):
+        intensity = 0
+        for i in range(len(all_os)):
+            for j in range(len(all_os[0])):
+                if args.energy_unit == "nm":
+                    intensity += 1/max_value* (1/bandwidth * float(all_os[i][j]) * 1239.8/float(all_excited[i][j]) * np.exp(-1/2 *((1239.8/en - 1239.8/float(all_excited[i][j]))/bandwidth) **2))
+                if args.energy_unit == "eV":
+                    intensity += 1/max_value*(1/bandwidth * float(all_os[i][j]) * float(all_excited[i][j]) * np.exp(-1/2 *((en - float(all_excited[i][j]))/bandwidth) **2))
+        return float(intensity)
 
-    return
+    g = np.vectorize(nea_spect_norm)
+
+    if args.normalization:
+        plt.plot(en, g(en))
+        plt.show()
+
+    else:
+        plt.plot(en, f(en))
+        plt.show()
+
 
 
 def read_en_from_ricc2out(fname):
     with open(fname, "r") as ifile:
         list_lines = []
         lines = ifile.readlines()
-    for line in lines:
-        if re.search(r"frequency :", line):
-            line_split = line.split()[5]
-            list_lines.append(line_split)
+        for line in lines:
+            if re.search(r"frequency :", line):
+                line_split = line.split()[5]
+                list_lines.append(line_split)
     return list_lines
 
 def read_os_from_ricc2out(fname):
     with open(fname, "r") as ifile:
         lines = ifile.readlines()
         list_os = []
-    for line in lines:
-        if re.search(r"oscillator strength", line):
-            line_split = line.split()[5]
-            list_os.append(line_split)
+        for line in lines:
+            if re.search(r"oscillator strength", line):
+                line_split = line.split()[5]
+                list_os.append(line_split)
     return list_os
-
-
 
 if __name__ == "__main__":
     main()
