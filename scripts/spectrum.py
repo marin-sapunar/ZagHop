@@ -25,31 +25,50 @@ def main():
         metavar=("bandwidth"),
         help="Give the value of the bandwith of Gaussian functions.")
     parser.add_argument(
-            "-eu",
-            "--energy-unit",
-            choices=["eV", "nm"],
-            type=str,
-            metavar=("energy_unit"),
-            default="eV",
-            help="Choose the units to express the energy on the x-axis of the spectrum. Available options are eV and nm.")
+        "-eu",
+        "--energy-unit",
+        choices=["eV", "nm"],
+        type=str,
+        metavar=("energy_unit"),
+        default="eV",
+        help="Choose the units to express the energy on the x-axis of the spectrum. Available options are eV and nm.")
     parser.add_argument(
         "-n",
         "--normalization",
         action='store_true',
         help="Create the spectrum with intensities relative to the maximum peak which is set to have the value of 1.")
     parser.add_argument(
-            "-s",
-            "--start_value",
-            type=float,
-            metavar=("Set the start value of energy on the x-axis to be displayed."),
-            help= 
+        "-sv",
+        "--start-value",
+        type=float,
+        metavar=("start_value"),
+        default=1.0,
+        help="Set the start value of energy on the x-axis to be displayed.")
+    parser.add_argument(
+        "-ev",
+        "--end-value",
+        type=float,
+        metavar=("end_value"),
+        default=10.0,
+        help="Set the end value of energy on the x-axis to be displayed.")
+    parser.add_argument(
+        "-s",
+        "--step",
+        type=float,
+        metavar=("step"),
+        default=0.01,
+        help="Set the step of energy units on the x-axis to be displayed.")
 
 
     args = parser.parse_args()
 
     input_file = args.input_file
     bandwidth = args.bandwidth
-   ,
+    x = args.start_value
+
+    y = args.end_value
+
+    z = args.step
 
     all_os = []
     all_excited = []
@@ -63,22 +82,28 @@ def main():
     for file in files_out:
         excited = read_en_from_ricc2out(file)
         all_excited.append(excited)
-        
+
+
     def nea_spect(en):
         intensity = 0
         for i in range(len(all_os)):
             for j in range(len(all_os[0])):
-               #intensity += 1.22 * 10**(-44)* 1/bandwidth * 1/100 * float(all_os[i][j]) * float(all_excited[i][j]) * np.exp(-1/2 *((en - float(all_excited[i][j]))/bandwidth) **2)
-                intensity +=  1/bandwidth * float(all_os[i][j]) * float(all_excited[i][j]) * np.exp(-1/2 *((en - float(all_excited[i][j]))/bandwidth) **2)
+                if args.energy_unit == "nm":
+                    intensity +=  1/bandwidth * float(all_os[i][j]) * 1239.8/float(all_excited[i][j]) * np.exp(-1/2 *((1239.8/en - 1239.8/float(all_excited[i][j]))/bandwidth) **2)
+                if args.energy_unit == "eV":
+                    intensity +=  1/bandwidth * float(all_os[i][j]) * float(all_excited[i][j]) * np.exp(-1/2 *((en - float(all_excited[i][j]))/bandwidth) **2)
         return float(intensity)
+        
 
     f = np.vectorize(nea_spect)
 
-    en = np.arange(3, 8, 0.1)
+    en = np.arange(x, y, z)
 
     plt.plot(en, f(en))
 
     plt.show()
+
+    return
 
 
 def read_en_from_ricc2out(fname):
