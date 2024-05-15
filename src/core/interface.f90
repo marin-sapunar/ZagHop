@@ -138,10 +138,10 @@ contains
             write(stderr, *) 'Error in run_qm. Code not compiled with quantics interface.'
             stop
 #endif
-         case default
-             write(stderr, *) 'Error in run_qm. Unrecognized QM interface.'
-             stop
-         end select
+        case default
+            write(stderr, *) 'Error in run_qm. Unrecognized QM interface.'
+            stop
+        end select
     end subroutine run_qm
 
 
