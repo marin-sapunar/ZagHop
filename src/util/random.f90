@@ -1,13 +1,17 @@
-
-#if __INTEL_COMPILER
+#if MKL
 include 'mkl_vsl.f90'
 #endif
 
 module random_mod
     use global_defs
-#if __INTEL_COMPILER
+#if MKL
     use mkl_vsl_type
     use mkl_vsl
+#elif LINALG_QUANTICS
+    use randommod, only: randgaussian
+#endif
+#if __INTEL_COMPILER
+    use ifport
 #endif
     implicit none
 
@@ -15,7 +19,7 @@ module random_mod
     public :: init_random_seed
     public :: random_gaussian
 
-#if __INTEL_COMPILER
+#if MKL
     type(VSL_STREAM_STATE) :: rng_stream
 #endif
 
@@ -36,9 +40,6 @@ contains
     !! this is set using the -fpp flag.
     !----------------------------------------------------------------------------------------------
     subroutine init_random_seed(tseed)
-#if __INTEL_COMPILER
-use ifport
-#endif
         integer, intent(inout) :: tseed !< Seed used for the initialization. 
         integer :: tclock
         integer, allocatable :: aseed(:)
@@ -64,12 +65,10 @@ use ifport
         ! numbers are almost identical so we move the generator further along.
         call random_number(rnum)
 
-#if __INTEL_COMPILER
+#if MKL
         n = vslnewstream(rng_stream, VSL_BRNG_MCG31, tseed)
         if (n /= VSL_STATUS_OK) then
-            write(stderr, *) "Error in random_mod, init_random_seed subroutine."
-            write(stderr, *) " vslnewstream exit code:", n
-            call abort()
+            call errstop("init_random_seed", "Error code returned by vslnewstream.", n)
         end if
 #endif
     end subroutine init_random_seed
@@ -86,22 +85,21 @@ use ifport
         real(dp), intent(in) :: mean
         real(dp), intent(in) :: sigma
         real(dp), intent(out) :: rnum(:)
-        complex(dp)           :: gpair
+        complex(dp) :: gpair
         integer :: method
         integer :: n
+        integer :: i
         integer(i4) :: err
 
-#if __INTEL_COMPILER
+#if MKL
         method = VSL_RNG_METHOD_GAUSSIAN_ICDF
         n = size(rnum)
         err = vdrnggaussian(method, rng_stream, n, rnum, mean, sigma)
 
         if (err /= VSL_STATUS_OK) then
-            write(stderr, *) "Error in random_mod, rnggaussian subroutine."
-            write(stderr, *) " vdrnggaussian exit code:", n
-            call abort()
+            call errstop("random_gaussian", "Error code returned by vdrnggaussian.", err)
         end if
-#elseif QUANTICS
+#elif LINALG_QUANTICS
        do i=1,n
           gpair=randgaussian()
           rnum(i)=mean + sigma*dble(gpair)
