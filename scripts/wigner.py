@@ -78,11 +78,13 @@ def main():
     sample = sample_wigner(nm.freq, args.temperature, args.npoint)
     cwd = os.getcwd() # Current directory, from where the program was called
     for i in range(args.npoint):
-        os.mkdir("GEOM_" + str(i + 1))
-        os.chdir(os.path.join(cwd, "GEOM_" + str(i + 1)))
-        write_coord("coord", nm.to_xyz(refined_modes(sample[0][i], args.ignore_modes)), nm.atoms)
+        os.mkdir("point" + str(i + 1).zfill(len(str(args.npoint))))
+        os.chdir(os.path.join(cwd, "point" + str(i + 1).zfill(len(str(args.npoint)))))
         write_veloc("veloc", nm.to_xyz(refined_modes(sample[1][i], args.ignore_modes),reshape=True, displacement=True))
-        write_energy(nm.harmonic_potential_energy(refined_modes(sample[0][i], args.ignore_modes)))
+        write_geom("geom", nm.to_xyz(refined_modes(sample[0][i], args.ignore_modes)), nm.atoms, nm.at_mass)
+        os.mkdir("qmdir")
+        os.chdir("qmdir")
+        write_coord("coord", nm.to_xyz(refined_modes(sample[0][i], args.ignore_modes)), nm.atoms)
         os.chdir(cwd)
     return
 
@@ -124,7 +126,7 @@ def write_coord(fname, geom, atoms):
     with open(fname, 'w') as ofile:
         ofile.write('$coord\n')
         for at, xyz in zip(atoms, geom.reshape([natom, 3])):
-            ofile.write(gformat.format(*xyz, at))
+            ofile.write(gformat.format(*xyz, at.lower()))
         ofile.write('$end\n')
 
 def write_veloc(fname, veloc):
@@ -132,8 +134,12 @@ def write_veloc(fname, veloc):
     np.savetxt(fname, veloc)
     file.close()
 
-
-
+def write_geom(fname, geom, atoms, at_mass):
+    natom = int(geom.shape[0] / 3)
+    gformat = '{} ' + '{} ' + 3*'{:.13f} ' + 'q\n'
+    with open(fname, 'w') as ofile:
+        for at, m_at, xyz in zip(atoms, at_mass, geom.reshape([natom, 3])):
+            ofile.write(gformat.format(at.lower(), m_at, *xyz))
 
 def read_coord(fname, natom):
     rgeom = np.zeros(3*natom)
@@ -154,13 +160,5 @@ def refined_modes(omega, ignore_list):# Normal mode frequencies after certain mo
         for i in ignore_list.split():
             omega[int(i)-1] = 0
     return omega
-def write_energy(energy_vector):
-    energy = 0
-    for i in energy_vector:
-        energy += i
-    file = open("harmonic_energy", "w")
-    file.write(str(energy))
-    file.close()
-    return
 if __name__ == "__main__":
     main()  

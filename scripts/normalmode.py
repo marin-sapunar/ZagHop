@@ -40,6 +40,7 @@ class NormalModes():
         if len(freq) != nfreq:
             raise ValueError('Dimension mismatch between freq and nmode.')
         at_mass = [MASS[atom.title()] for atom in atoms]
+        self.at_mass = at_mass#average atomic mass of elements
         self.mass = np.repeat(at_mass, 3) * MASS_UNIT
         self.atoms = atoms
         if mass_weighted:
