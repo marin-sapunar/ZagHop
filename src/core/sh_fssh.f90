@@ -2,6 +2,9 @@
 ! MODULE: sh_fssh_mod
 !> @author Marin Sapunar, Ruđer Bošković Institute
 !> @date November, 2016
+!> @author Cristina Sanz, Autonoma University Madrid
+!> @date May, 2024: sh_sosh and sh_interpolate_sovec added for the Fewest Switches Surface 
+!! Hopping method using spin-orbit couplings
 !
 ! DESCRIPTION:
 !> @brief Surface hopping algorithm.
@@ -15,7 +18,6 @@ module sh_fssh_mod
 
 
 contains
-
 
     !----------------------------------------------------------------------------------------------
     ! SUBROUTINE: SH_Adiabatic
@@ -116,8 +118,7 @@ contains
     !! The nuclear time step (dt) is split into smaller time steps for which the coefficients and
     !! hopping probabilities are calculated.
     !----------------------------------------------------------------------------------------------
-    subroutine sh_sosh(opt_inte, opt_intv, dt, nstep, qe1, qe2, cwf,   &
-    &                         tst, olp1, olp2, sov1, sov2, fprob)
+    subroutine sh_sosh(opt_inte, opt_intv, dt, nstep, qe1, qe2, cwf, tst, sov1, sov2, fprob)
         use ode_call_mod ! Interface to Shampine/Gordon ODE solver.
         integer, intent(in) :: opt_inte !< Method for interpolating energies during the time step.
         integer, intent(in) :: opt_intv !< Method for interpolating nad vecs during the time step.
@@ -127,8 +128,6 @@ contains
         real(dp), intent(in) :: qe2(:) !< Energies at t0 + dt.
         complex(dp), intent(inout) :: cwf(:) !< WF coefficients.
         integer, intent(inout) :: tst !< Current state.
-        real(dp), intent(in) :: olp1(:, :) !< Overlap matrix between wfs at t0 - dt and t0.
-        real(dp), intent(in) :: olp2(:, :) !< Overlap matrix between wfs at t0 and t0 + dt.
         real(dp), intent(in) :: sov1(:, :) !< spin-orbit coupling vectors at t0.
         real(dp), intent(in) :: sov2(:, :) !< spin-orbit coupling vectors at t0 + dt.
         real(dp), intent(out) :: fprob(:) !< Final probability for each state.

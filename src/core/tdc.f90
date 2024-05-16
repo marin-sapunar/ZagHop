@@ -2,6 +2,8 @@
 ! MODULE: tdc_mod
 !> @author Marin Sapunar, Ruđer Bošković Institute
 !> @date December, 2017
+!> @author Cristina Sanz, Autonoma University Madrid
+!> @date May, 2024: sovec2tdc added for the time derivative couplings using spin-orbit couplings
 !
 ! DESCRIPTION: 
 !> @brief Contains subroutines for calculating the time-derivative couplings.
