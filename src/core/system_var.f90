@@ -62,7 +62,8 @@ module system_var
         integer, allocatable  :: phase(:) !< Phase of wave functions during previous step.
         real(dp), allocatable :: prob(:) !< Probabilities of hopping during current step.
         real(dp), allocatable :: olap(:, :) !< Overlaps between wfs between this and previous step.
-        real(dp), allocatable :: nadv(:, :, :) !< Nonadiabatic coupling vectors.
+        real(dp), allocatable :: nadv(:, :, :) !< Nonadiabatic coupling vectors.        
+        real(dp), allocatable :: sov(:, :) !< spin-orbit coupling vectors.
 
         real(dp) :: pbcbox(1:6) = 0.0_dp
     contains
@@ -172,6 +173,7 @@ contains
             if (allocated(t(i)%grad)) deallocate(t(i)%grad)
             if (allocated(t(i)%olap)) deallocate(t(i)%olap)
             if (allocated(t(i)%nadv)) deallocate(t(i)%nadv)
+            if (allocated(t(i)%sov)) deallocate(t(i)%sov)
         end do
         if (increment_step) t(1)%step = step
     end subroutine trajectory_rewind
@@ -334,6 +336,8 @@ contains
             if (allocated(t(i)%olap)) write(ounit, *) t(i)%olap(:, :)
             write(ounit, *) allocated(t(i)%nadv)
             if (allocated(t(i)%nadv)) write(ounit, *) t(i)%nadv(:, :, :)
+            write(ounit, *) allocated(t(i)%sov)
+            if (allocated(t(i)%sov)) write(ounit, *) t(i)%sov(:, :)
             write(ounit, *) t(i)%pbcbox
             write(ounit, *) allocated(t(i)%phase)
             if (allocated(t(i)%phase)) write(ounit, *) t(i)%phase
@@ -431,6 +435,10 @@ contains
             if (check) then
                 allocate(t(i)%nadv(t(i)%ndim*t(i)%qnatom, t(i)%max_nstate, t(i)%max_nstate))
                 read(iunit, *) t(i)%nadv(:, :, :)
+            end if
+            if (check) then
+                allocate(t(i)%sov(t(i)%max_nstate, t(i)%max_nstate))
+                read(iunit, *) t(i)%sov(:, :)
             end if
             read(iunit, *) t(i)%pbcbox
             read(iunit, *) check
