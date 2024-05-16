@@ -116,12 +116,10 @@ contains
     !! The nuclear time step (dt) is split into smaller time steps for which the coefficients and
     !! hopping probabilities are calculated.
     !----------------------------------------------------------------------------------------------
-    subroutine sh_adiabatic(opt_clvl, opt_inte, opt_into, opt_intv, dt, nstep, qe1, qe2, cwf,   &
-    &                         tst, olp1, olp2, nadv1, nadv2, vel1, vel2, fprob)
+    subroutine sh_sosh(opt_inte, opt_intv, dt, nstep, qe1, qe2, cwf,   &
+    &                         tst, olp1, olp2, sov1, sov2, fprob)
         use ode_call_mod ! Interface to Shampine/Gordon ODE solver.
-        integer, intent(in) :: opt_clvl !< Method for calculating time-derivative couplings.
         integer, intent(in) :: opt_inte !< Method for interpolating energies during the time step.
-        integer, intent(in) :: opt_into !< Method for interpolating overlaps during the time step.
         integer, intent(in) :: opt_intv !< Method for interpolating nad vecs during the time step.
         real(dp), intent(in) :: dt !< Nuclear dynamics time step.
         integer, intent(in) :: nstep !< Number of substeps.
@@ -131,10 +129,8 @@ contains
         integer, intent(inout) :: tst !< Current state.
         real(dp), intent(in) :: olp1(:, :) !< Overlap matrix between wfs at t0 - dt and t0.
         real(dp), intent(in) :: olp2(:, :) !< Overlap matrix between wfs at t0 and t0 + dt.
-        real(dp), intent(in) :: nadv1(:, :, :) !< Nonadiabatic coupling vectors at t0.
-        real(dp), intent(in) :: nadv2(:, :, :) !< Nonadiabatic coupling vectors at t0 + dt.
-        real(dp), intent(in) :: vel1(:, :) !< Velocities at t0.
-        real(dp), intent(in) :: vel2(:, :) !< Velocities at t0 + dt.
+        real(dp), intent(in) :: sov1(:, :) !< spin-orbit coupling vectors at t0.
+        real(dp), intent(in) :: sov2(:, :) !< spin-orbit coupling vectors at t0 + dt.
         real(dp), intent(out) :: fprob(:) !< Final probability for each state.
         real(dp) :: edt !< Time step for the propagation of the electronic WF.
         real(dp) :: tt !< Current time during propagation.
@@ -159,12 +155,8 @@ contains
         do i = 1, nstep
             ! Get energies and TDCs for current substep.
             call sh_interpolate_energy(opt_inte, nstep, i, qe1, qe2, odeen)
-            select case(opt_clvl)
-            case(1)
-                call sh_interpolate_overlap(opt_into, nstep, i, dt, olp1, olp2, odecmat)
-            case(2)
-                call sh_interpolate_nadvec(opt_intv, nstep, i, dt, nadv1, nadv2, vel1, vel2, odecmat)
-            end select
+           
+            call sh_interpolate_sovec(opt_intv, nstep, i, dt, sov1, sov2, odecmat)
 
             ! Propagate wf coefficients.
             call callode(odens, cwf, tt, edt, de_flag)
@@ -174,7 +166,7 @@ contains
             cprob = 0.0_dp
             hop: do st = 1, odens
                 if (st == tst) cycle
-                prob = - 2 * edt * odecmat(st, tst) * real(conjg(cwf(st)) * cwf(tst)) / &
+                prob = - 2 * edt * aimag( odecmat(tst, st) * (conjg(cwf(tst)) * cwf(st)) ) / &
                      & (abs(cwf(tst))**2)
                 if (prob > 0.0_dp) then ! Not actual probability, can be negative.
                     cprob = cprob + prob
@@ -328,5 +320,53 @@ contains
         end select
     end subroutine sh_interpolate_nadvec
 
+ !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: SH_Interpolate_SOVec
+    !
+    ! DESCRIPTION:
+    !> @brief TDC interpolation during single nuclear time step in surface hopping.
+    !> @details
+    !! Returns time-derivative couplings during the propagation of wave function coefficients in a
+    !! surface hopping calculation. The interpolation is done based on the nonadiabatic coupling 
+    !! vectors at the beginning and end of the nuclear time step.
+    !!
+    !! The behaviour of the subroutine is determined by the value of opt:
+    !! - 1 - Constant TDCs at t0 + dt.
+    !! - 2 - Linear interpolation between TDCs at t0 and at t0 + dt.
+    !----------------------------------------------------------------------------------------------
+    subroutine sh_interpolate_sovec(opt, ni, i, dt, sov1, sov2, itdc)
+        use tdc_mod
+        integer, intent(in) :: opt !< Type of interpolation.
+        integer, intent(in) :: ni !< Number of electronic time steps.
+        integer, intent(in) :: i !< Current electronic time step.
+        real(dp), intent(in) :: dt !< Nuclear time step.
+        real(dp), intent(in) :: sov1(:, :) !< Coupling vectors at t0.
+        real(dp), intent(in) :: sov2(:, :) !< Coupling vectors at t0 + dt.
+        real(dp), intent(inout) :: itdc(:, :) !< Time-derivative couplings.
+        real(dp), allocatable, save :: prev(:, :) !< TDCs at t0.
+        real(dp), allocatable, save :: crnt(:, :) !< TDCs at t0 + dt.
+        integer :: nstate
+
+        
+        select case(opt)
+        ! Constant value.
+        case(1)
+            if (i == 1) call sovec2tdc(sov2, itdc)
+        ! Linear interpolation using coupling matrix.
+        case(2)
+            if (.not. allocated(prev)) then
+               nstate=size(sov1,2)
+               allocate(prev(nstate,nstate))
+               allocate(crnt(nstate,nstate))
+            endif
+            if (i == 1) then
+                call sovec2tdc(sov1, prev)
+                call sovec2tdc(sov2, crnt)
+            end if
+            itdc = prev + (crnt - prev) * (i - 1) / ni
+        end select
+    end subroutine sh_interpolate_sovec
+
+ 
  
 end module sh_fssh_mod

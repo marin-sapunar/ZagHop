@@ -14,7 +14,7 @@ module tdc_mod
     private
     public :: npi_tdc_integrated
     public :: overlap2tdc
-    public :: nadvec2tdc
+    public :: nadvec2tdc, sovec2tdc
 
 contains
 
@@ -95,5 +95,33 @@ contains
         end do
     end subroutine nadvec2tdc
 
+!----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: SOVec2TDC
+    !
+    ! DESCRIPTION:
+    !> @brief Calculate the time-derivative couplings using the spin-orbit coupling vectors.
+    !> @details
+    !! The coupling between states i and j is calculated as a scalar product between the
+    !! spin-orbit coupling vector.
+    !----------------------------------------------------------------------------------------------
+    subroutine sovec2tdc(sovec, cmat)
+        real(dp), intent(in) :: sovec(:, :) !< spin-orbit coupling vectors.
+        real(dp), intent(out) :: cmat(:, :) !< Time-derivative couplings.
+        integer :: nstate
+        integer :: i
+        integer :: j
+        integer :: k
+        integer :: d
+        integer :: c
+
+        nstate = size(cmat,1)
+
+        cmat = 0.0_dp
+        do i = 1, nstate
+        do j = 1, nstate           
+           cmat(i, j) = cmat(i, j) + sovec(i, j) 
+        end do
+        end do
+    end subroutine sovec2tdc
 
 end module tdc_mod
