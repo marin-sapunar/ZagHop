@@ -8,9 +8,9 @@ module linalg_wrapper_mod
     public
 
 #ifndef LINALG_F95
-interface gemm
-   module procedure gemm, cgemm
-end interface gemm
+    interface gemm
+        module procedure gemm_d, gemm_z
+    end interface gemm
 #endif
 
 contains
@@ -49,8 +49,7 @@ contains
     end subroutine gemv
 
 
-    subroutine gemm(a, b, c, transa, transb, alpha, beta)
-        !> @todo add complex version
+    subroutine gemm_d(a, b, c, transa, transb, alpha, beta)
         real(dp) :: a(:, :)
         real(dp) :: b(:, :)
         real(dp) :: c(:, :)
@@ -85,10 +84,10 @@ contains
             k = size(a, 2)
         end if
         call dgemm(wrk_transa, wrk_transb, m, n, k, wrk_alpha, a, lda, b, ldb, wrk_beta, c, ldc)
-    end subroutine gemm
+    end subroutine gemm_d
 
 
-    subroutine cgemm(a, b, c, transa, transb, alpha, beta)
+    subroutine gemm_z(a, b, c, transa, transb, alpha, beta)
         complex(dp) :: a(:, :)
         complex(dp) :: b(:, :)
         complex(dp) :: c(:, :)
@@ -115,7 +114,7 @@ contains
         wrk_beta = cmplx(num0, num0, dp)
         if (present(beta)) wrk_beta = beta
         m = lda
-        if (transa /= 'N') then
+        if (wrk_transa /= 'N') then
             m = size(a, 2)
             k = lda
         else
@@ -123,7 +122,7 @@ contains
             k = size(a, 2)
         end if
         call zgemm(wrk_transa, wrk_transb, m, n, k, wrk_alpha, a, lda, b, ldb, wrk_beta, c, ldc)
-    end subroutine cgemm
+    end subroutine gemm_z
 
 
     subroutine ger(a, x, y, alpha)
