@@ -121,7 +121,7 @@ contains
     subroutine sh_sosh(opt_inte, opt_intv, dt, nstep, qe1, qe2, cwf, tst, sov1, sov2, fprob)
         use ode_call_mod ! Interface to Shampine/Gordon ODE solver.
         integer, intent(in) :: opt_inte !< Method for interpolating energies during the time step.
-        integer, intent(in) :: opt_intv !< Method for interpolating nad vecs during the time step.
+        integer, intent(in) :: opt_intv !< Method for interpolating spin-orbit vecs during the time step.
         real(dp), intent(in) :: dt !< Nuclear dynamics time step.
         integer, intent(in) :: nstep !< Number of substeps.
         real(dp), intent(in) :: qe1(:) !< Energies at t0.

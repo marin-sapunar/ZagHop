@@ -44,7 +44,7 @@ module shzagreb_inter
 
 contains
 
-      subroutine shzagreb_run(step, xyz0, cstate, en, gra, nadvec)
+      subroutine shzagreb_run(step, xyz0, cstate, en, gra, nadvec, sovec)
 
       
       integer, intent(in) :: step
@@ -52,7 +52,8 @@ contains
       integer, intent(in) :: cstate
       real(dop), intent(out) :: gra(:, :)
       real(dop), intent(out) :: en(:)
-      real(dop), intent(out) :: nadvec(:, :, :)
+      real(dop), intent(out) :: nadvec(:, :, :)      
+      complex(dop), intent(out) :: sovec(:, :)
     
 
       integer :: i,j,ilbl,jlbl,chkdvr,chkgrd,chkpsi,chkprp,n,f,f1,m
@@ -333,6 +334,9 @@ contains
          call extrgra(cstate,en,gra,nadvec,derad)
    !   endif
 
+! Cris: a subrotine must be added to extract the spin-orbit vector somehow
+         sovec(:,:)=cmplx(0.d0,0.d0)
+   
       close(ilog)
 
       end subroutine shzagreb_run
