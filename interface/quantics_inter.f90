@@ -53,7 +53,7 @@ contains
       real(dop), intent(out) :: gra(:, :)
       real(dop), intent(out) :: en(:)
       real(dop), intent(out) :: nadvec(:, :, :)      
-      complex(dop), intent(out) :: sovec(:, :)
+      real(dop), intent(out) :: sovec(:, :)
     
 
       integer :: i,j,ilbl,jlbl,chkdvr,chkgrd,chkpsi,chkprp,n,f,f1,m
