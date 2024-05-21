@@ -41,10 +41,10 @@ module shzagreb_inter
       integer(long), allocatable :: point(:)
       real(dop), allocatable :: hops(:)
       integer :: gdof
-
+, intent(in) 
 contains
 
-      subroutine shzagreb_run(step, xyz0, cstate, en, gra, nadvec)
+      subroutine shzagreb_run(step, xyz0, cstate, en, gra, nadvec, sovec)
 
       
       integer, intent(in) :: step
@@ -54,8 +54,8 @@ contains
       real(dop), intent(out) :: en(:)
       real(dop), intent(out) :: nadvec(:, :, :)
 ! GW: NEED TO PASS DSOC FROM ZAGHOP
-!      real(dop), intent(out) :: dsoc(:, :)
-      real(dop) :: dsoc(1,1)
+!      real(dop), intent(out) :: sovec(:, :)
+      real(dop) :: sovec(1,1)
 
       integer :: i,j,ilbl,jlbl,chkdvr,chkgrd,chkpsi,chkprp,n,f,f1,m
       logical(kind=4) :: linwf
@@ -328,7 +328,7 @@ contains
       call extrgra(cstate,en,gra,nadvec,derad)
 
 ! extract SOC from diabatic energy matrix
-      if (nsmult .gt. 1) call extrsoc(pesdia,rotmatz,dsoc)
+      if (nsmult .gt. 1) call extrsoc(pesdia,rotmatz,sovec)
 
       close(ilog)
 
@@ -336,14 +336,15 @@ contains
 
 !#######################################################################
 
-      subroutine extrsoc(pesdia,rotmatz,dsoc)
+      subroutine extrsoc(pesdia,rotmatz,sovec)
 
       implicit none
 
       integer(long)              :: s,s1,f,f1,n,m
-      real(dop), dimension(nddstate,nddstate), intent(out) :: dsoc
+      real(dop), dimension(nddstate,nddstate), intent(out) :: sovec
       real(dop), dimension(maxsta,maxsta), intent(in)      :: pesdia
-      complex(dop), dimension(maxsta,maxsta), intent(in)   :: rotmatz
+      complex(dop), dimension(maxsta,maxsta), intent(in)   :: rotmatz      
+      real(dop), dimension(maxsta,maxsta) :: rotmat
 
       do s=1,nddstate
          do s1=1,nddstate                                 
@@ -351,13 +352,13 @@ contains
          enddo                                               
       enddo
       call simtranbd(pesdia(1:nddstate,1:nddstate),rotmat(1:nddstate,1:nddstate),&
-           dsoc(1:nddstate,1:nddstate),nddstate)
+           sovec(1:nddstate,1:nddstate),nddstate)
 
 ! Keep only values between different multiplicities
       do s=1,nddstate
          do s1=1,nddstate
             if (imultmap(s) .eq. imultmap(s1)) then
-               dsoc(s1,s) = 0.0_dop
+               sovec(s1,s) = 0.0_dop
             endif
          enddo
       enddo
