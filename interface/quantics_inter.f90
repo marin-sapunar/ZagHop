@@ -23,6 +23,7 @@ module shzagreb_inter
       use potevalmod, only: calcdiab,calcdiabder
       use psidef, only: qcentdim,gwpdim,zcent,vdimgp,dimgp,ndimgp,zgp,nsgp,totgp
       use openmpmod, only: lompqc
+      use lalib, only: simtranbd
       
       use dd_db, only: ddq2x, ddx2q, ddf2x, dddb_gp, ddf2q
       use channels
@@ -41,7 +42,7 @@ module shzagreb_inter
       integer(long), allocatable :: point(:)
       real(dop), allocatable :: hops(:)
       integer :: gdof
-, intent(in) 
+      
 contains
 
       subroutine shzagreb_run(step, xyz0, cstate, en, gra, nadvec, sovec)
@@ -53,7 +54,7 @@ contains
       real(dop), intent(out) :: gra(:, :)
       real(dop), intent(out) :: en(:)
       real(dop), intent(out) :: nadvec(:, :, :)
-! GW: NEED TO PASS DSOC FROM ZAGHOP
+! GW: NEED TO PASS SOVEC FROM ZAGHOP
 !      real(dop), intent(out) :: sovec(:, :)
       real(dop) :: sovec(1,1)
 

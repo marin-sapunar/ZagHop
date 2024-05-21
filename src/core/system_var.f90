@@ -63,7 +63,7 @@ module system_var
         real(dp), allocatable :: prob(:) !< Probabilities of hopping during current step.
         real(dp), allocatable :: olap(:, :) !< Overlaps between wfs between this and previous step.
         real(dp), allocatable :: nadv(:, :, :) !< Nonadiabatic coupling vectors.        
-        complex(dp), allocatable :: sov(:, :) !< spin-orbit coupling vectors.
+        real(dp), allocatable :: sov(:, :) !< spin-orbit coupling vectors. So far real.
 
         real(dp) :: pbcbox(1:6) = 0.0_dp
     contains
