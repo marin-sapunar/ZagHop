@@ -44,7 +44,7 @@ module shzagreb_inter
 
 contains
 
-      subroutine shzagreb_run(step, xyz0, cstate, en, gra, nadvec, sovec)
+      subroutine shzagreb_run(step, xyz0, cstate, en, gra, nadvec)
 
       
       integer, intent(in) :: step
@@ -52,9 +52,10 @@ contains
       integer, intent(in) :: cstate
       real(dop), intent(out) :: gra(:, :)
       real(dop), intent(out) :: en(:)
-      real(dop), intent(out) :: nadvec(:, :, :)      
-      real(dop), intent(out) :: sovec(:, :)
-    
+      real(dop), intent(out) :: nadvec(:, :, :)
+! GW: NEED TO PASS DSOC FROM ZAGHOP
+!      real(dop), intent(out) :: dsoc(:, :)
+      real(dop) :: dsoc(1,1)
 
       integer :: i,j,ilbl,jlbl,chkdvr,chkgrd,chkpsi,chkprp,n,f,f1,m
       logical(kind=4) :: linwf
@@ -316,30 +317,52 @@ contains
       time=0.0d0
       if (ldd) call getddpes(time,qcoo,1,1)   
 
-    !  if (dddiab .eq. 0) then
-! Extract energies, gradients, nacts from adiabatic data
-    !     call extradgra(cstate,en,gra,nadvec, &
-    !          dbener(1:nddstate,1:nddstate,1), &
-    !          dbgrad(1:ndofddpes,1:nddstate,1:nddstate,1), &
-    !          dbdercp(1:ndofddpes,1:dercpdim,1))
-    !  else
 ! PES matrix in adiabatic (en) and diabatic (pesdia) representations
 ! rotmatz is the ADT matrix (as a complex)
-         call calcdiab(hops,en,pesdia,rotmatz,point,qcoo1,1)
+      call calcdiab(hops,en,pesdia,rotmatz,point,qcoo1,1)
 
 ! Matrix of gradients in adiabatic (derad) and diabatic (derdia).
-         call calcdiabder(hops,derad,derdia,rotmatz,qcoo1,1)
+      call calcdiabder(hops,derad,derdia,rotmatz,qcoo1,1)
 
 ! Convert forces to Cartesian and extract forces / nact
-         call extrgra(cstate,en,gra,nadvec,derad)
-   !   endif
+      call extrgra(cstate,en,gra,nadvec,derad)
 
-! Cris: a subrotine must be added to extract the spin-orbit vector somehow
-         sovec(:,:)=cmplx(0.d0,0.d0)
-   
+! extract SOC from diabatic energy matrix
+      if (nsmult .gt. 1) call extrsoc(pesdia,rotmatz,dsoc)
+
       close(ilog)
 
       end subroutine shzagreb_run
+
+!#######################################################################
+
+      subroutine extrsoc(pesdia,rotmatz,dsoc)
+
+      implicit none
+
+      integer(long)              :: s,s1,f,f1,n,m
+      real(dop), dimension(nddstate,nddstate), intent(out) :: dsoc
+      real(dop), dimension(maxsta,maxsta), intent(in)      :: pesdia
+      complex(dop), dimension(maxsta,maxsta), intent(in)   :: rotmatz
+
+      do s=1,nddstate
+         do s1=1,nddstate                                 
+            rotmat(s1,s) = dble(rotmatz(s1,s))               
+         enddo                                               
+      enddo
+      call simtranbd(pesdia(1:nddstate,1:nddstate),rotmat(1:nddstate,1:nddstate),&
+           dsoc(1:nddstate,1:nddstate),nddstate)
+
+! Keep only values between different multiplicities
+      do s=1,nddstate
+         do s1=1,nddstate
+            if (imultmap(s) .eq. imultmap(s1)) then
+               dsoc(s1,s) = 0.0_dop
+            endif
+         enddo
+      enddo
+
+      end subroutine extrsoc
 
 
 !#######################################################################
@@ -384,6 +407,8 @@ contains
       m = 1  ! only 1 mode in TSH
       do s=1,nddstate
          do s1=s+1,nddstate
+            if (imultmap(s) .ne. imultmap(s1)) cycle  ! ignore different spins
+
             do n=1,nspfdof(m)
                f=spfdof(n,m)
                qnadvec(n) = derad(s1,s,f)
@@ -413,100 +438,6 @@ contains
       enddo
   
       end subroutine extrgra
-
-!#######################################################################
-
-      subroutine extradgra(sta,en,gra,nadvec,av,deriv1,dercp)
-
-      implicit none
-
-      integer(long), intent(in)  :: sta
-      integer(long)              :: s,s1,f,f1,sdx
-      real(dop), dimension(ndoftsh,nddstate,nddstate), intent(out) :: nadvec
-      real(dop), dimension(ndof)                                   :: qnadvec
-      real(dop), dimension(ndoftsh),intent(out)              :: gra
-      real(dop), dimension(ndofddpes)                        :: tmpgra
-      real(dop), dimension(ndofdd)                           :: qgra
-      real(dop), dimension(maxsta), intent(out)              :: en
-      real(dop), dimension(nddstate,nddstate), intent(in)       :: av
-      real(dop), dimension(ndofddpes,nddstate,nddstate), intent(in)  :: deriv1
-      real(dop), dimension(ndofddpes,dercpdim), intent(in)           :: dercp
-      real(dop) :: ediff
-
-      gra = 0.0
-      nadvec = 0.0
-
-      do s=1,nddstate
-         en(s) = av(s,s)
-      enddo
-
-! extract gradient for present state and transform to Cartesian
-! removing frozen coordinates
-      f1 = 0
-      do f=1,ndofddpes
-         f1 = f1+1
-         tmpgra(f1) = deriv1(f,sta,sta)
-      enddo
-
-! first transform from Cartesians (DB coordinates) to DD coordinates
-      if (lddtrans) then
-         call ddf2q(tmpgra,qgra)
-      else
-         qgra(1:ndofdd) = tmpgra(1:ndofdd)
-      endif
-    
-! transform from DD coordinates to TSH coordinates
-      if (ltshtrans) then
-         call mvtxdd1(tshtransb,qgra,gra,maxdim,nspfdof(1),ndoftsh)
-      else
-         do f=1,ndoftsh
-            gra(f)=qgra(f)
-         enddo
-      endif
-
-! extract nacts and transform to Cartesian
-! set  for frozen coordinates to 0
-      nadvec = 0.0_dop
-      do s=1,nddstate-1
-         do s1=s+1,nddstate
-            sdx = (s1-1)*(s1-2)/2+s
-
-            f1 = 0
-            do f=1,ndofddpes
-               f1 = f1+1
-               tmpgra(f1) = dercp(f,sdx)
-            enddo
-
-            if (lddtrans) then
-               call ddf2q(tmpgra,qnadvec)
-            else
-               qnadvec(1:ndofdd) = tmpgra(ndofdd)
-            endif
-
-            if (ltshtrans) then
-               call mvtxdd1(tshtransb,qnadvec,nadvec(1,s1,s),maxdim,&
-                    nspfdof(1),ndoftsh)
-            else
-               do f=1,ndoftsh
-                  nadvec(f,s1,s)=qnadvec(f)
-               enddo
-            endif
-
-            ediff = en(s) - en(s1)
-            if (abs(ediff) .lt. 1.0d-6) then
-               if (ediff .lt. 0.0) then
-                  ediff=-1.0d-6
-               else
-                  ediff=1.0d-6
-               endif
-            endif
-            nadvec(:,s1,s) = nadvec(:,s1,s) / ediff
-
-            nadvec(:,s,s1) = -nadvec(:,s1,s)
-         enddo
-      enddo
-  
-      end subroutine extradgra
 
 end module shzagreb_inter
 
