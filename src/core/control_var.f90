@@ -158,6 +158,8 @@ module control_var
         !! - 1 - Remove states higher than cstate + 1 and min_nstate when the absolute value of
         !!       their coefficient in the total electronic wave functions drops below 0.01.
         logical :: oscill !< Signal to read oscillator strengths from the QM calculation.
+        
+        integer, allocatable :: spinv(:) !< Vector storing the multiplicity of states, need for SOSH
 
     end type control
 

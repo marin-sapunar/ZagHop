@@ -124,7 +124,7 @@ contains
         integer, intent(in) :: opt_clvl !< Method for calculating time-derivative couplings.
         integer, intent(in) :: opt_inte !< Method for interpolating energies during the time step.
         integer, intent(in) :: opt_into !< Method for interpolating overlaps during the time step.
-        integer, intent(in) :: opt_intv !< Method for interpolating nad vecs during the time step.
+        integer, intent(in) :: opt_intv !< Method for interpolating nad and soc vecs during the time step.
         real(dp), intent(in) :: dt !< Nuclear dynamics time step.
         integer, intent(in) :: nstep !< Number of substeps.
         real(dp), intent(in) :: qe1(:) !< Energies at t0.
@@ -144,7 +144,7 @@ contains
         real(dp) :: tt !< Current time during propagation.
         real(dp) :: prob !< Probability of hopping into a state.
         real(dp) :: cprob !< Cumulative probability of hopping into any state.
-        integer(dp), intent(in) :: spinst(:) !< Multiplicity of each state
+        integer, intent(in) :: spinst(:) !< Multiplicity of each state
 
         integer :: i
         integer :: st,st2

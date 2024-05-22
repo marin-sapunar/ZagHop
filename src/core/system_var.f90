@@ -64,6 +64,7 @@ module system_var
         real(dp), allocatable :: olap(:, :) !< Overlaps between wfs between this and previous step.
         real(dp), allocatable :: nadv(:, :, :) !< Nonadiabatic coupling vectors.        
         real(dp), allocatable :: sov(:, :) !< spin-orbit coupling vectors. So far real.
+        integer, allocatable :: spinv(:) !< Vector storing the multiplicity of states, need for SOSH
 
         real(dp) :: pbcbox(1:6) = 0.0_dp
     contains
@@ -130,7 +131,7 @@ contains
         real(dp) :: mkine
         mkine = ekin(t%mass(t%mind), t%velo(:, t%mind))
     end function traj_mkine
-
+            
 
     !----------------------------------------------------------------------------------------------
     ! SUBROUTINE: trajectory_next
@@ -181,7 +182,7 @@ contains
 
     !----------------------------------------------------------------------------------------------
     ! SUBROUTINE: Traj_WriteStep
-    !
+    !            
     ! DESCRIPTION:
     !> @brief Write requested output from each step.
     !----------------------------------------------------------------------------------------------
