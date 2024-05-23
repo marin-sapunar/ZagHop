@@ -820,6 +820,8 @@ contains
                         ctrl%sh = 2
                     case('diabatic', 'ldiab', 'diab')
                         ctrl%sh = 3
+                    case('sosh')
+                        ctrl%sh = 4
                     end select
                 end if
             case('tdse_steps')

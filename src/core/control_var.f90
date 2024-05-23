@@ -99,6 +99,7 @@ module control_var
                       !! - 1 - Landau-Zener formula.
                       !! - 2 - Fewest switches surface hopping in the adiabatic representation.
                       !! - 3 - FSSH in the locally diabatic representation.
+        integer, allocatable :: spinv(:)
         integer :: shnstep !< Number of steps in the integration of the TDSE.
 
         logical, allocatable :: couple(:) !< Signals that a state is included in the coupling
@@ -159,7 +160,7 @@ module control_var
         !!       their coefficient in the total electronic wave functions drops below 0.01.
         logical :: oscill !< Signal to read oscillator strengths from the QM calculation.
         
-        integer, allocatable :: spinv(:) !< Vector storing the multiplicity of states, need for SOSH
+
 
     end type control
 
