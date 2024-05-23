@@ -860,6 +860,16 @@ contains
                         ctrl%tdc_interpolate = 2
                     end select
                 end if
+            case('sovec')
+                ctrl%tdc_type = 2
+                if (readf%narg > 1) then
+                    select case(readf%args(2)%s)
+                    case('constant')
+                        ctrl%tdc_interpolate = 1
+                    case('linear')
+                        ctrl%tdc_interpolate = 2
+                    end select
+                end if    
             case('energy')
                 select case(readf%args(2)%s)
                 case('constant')

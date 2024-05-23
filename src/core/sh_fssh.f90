@@ -144,7 +144,7 @@ contains
         real(dp) :: tt !< Current time during propagation.
         real(dp) :: prob !< Probability of hopping into a state.
         real(dp) :: cprob !< Cumulative probability of hopping into any state.
-        integer, intent(in) :: spinst(:) !< Multiplicity of each state
+        integer(long), intent(in) :: spinst(:) !< Multiplicity of each state/block
 
         integer :: i
         integer :: st,st2
