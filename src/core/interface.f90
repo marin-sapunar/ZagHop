@@ -42,6 +42,7 @@ contains
         integer :: cunit, i, j, d1, d2
         logical :: check1, check2
 
+
         select case (ctrl%qlib)
         case(0)
             if ((t%step > 0) .and. (.not. hop)) then
@@ -133,6 +134,8 @@ contains
         case(1)
 #ifdef QUANTICS
             ! Assume all atoms are QM so no temporary arrays need to be created.
+            write(69,*)"Cris before calling shzagreb_run ", size(t%sov,1),size(t%sov,2)
+            call flush(69)
             call shzagreb_run(t%step, t%geom, t%cstate, t%qe, t%grad, t%nadv,t%sov)
 #else
             write(stderr, *) 'Error in run_qm. Code not compiled with quantics interface.'

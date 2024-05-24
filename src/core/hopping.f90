@@ -55,6 +55,7 @@ contains
             call sh_diabatic(t(1)%max_nstate, ctrl%dt, t(2)%qe, t(1)%qe, t(1)%cwf, t(1)%cstate,    &
             &                t(1)%olap, t(1)%prob)
         case(4)
+            print*,"Reached case 4"
             call decoherence()
             call phasematch()
             call sh_sosh(ctrl%tdc_type, ctrl%ene_interpolate, ctrl%tdc_interpolate,                &

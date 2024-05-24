@@ -60,26 +60,24 @@ program zaghop
             write(stderr,*) 'Warning. Results directory already exists.'
             write(stderr,*) '  New results will be appended.'
         else
-            call system('mkdir -p '//ctrl%output_dir)
-            call t(1)%writeheader(ctrl%print, ctrl%output_dir)
+           call system('mkdir -p '//ctrl%output_dir) 
+           call t(1)%writeheader(ctrl%print, ctrl%output_dir)
         end if
-
         ! Run energy/gradient calculation for initial geometry.
         if (ctrl%mm) then
             write(stdout, '(a)') 'Running initial MM calculation: '
             call stepclock%start()
             call run_mm(t(1))
             call stepclock%print(stdout, '  MM run time:')
-        end if
-        write(stdout, '(a)') 'Running initial QM calculation: '
-        call stepclock%start()
+        end if 
+        call stepclock%start()        
+        
         call run_qm(t(1), .false.)
         call stepclock%print(stdout, '  QM run time:')
         call t(1)%writestep(ctrl%print, ctrl%output_dir)
         call trajectory_next(1, t, ctrl%dt, .true.)
     end if
     ctrl%t0_tot_en = t(1)%tote()
-
     ! Stop the program if max_time already reached.
     if (t(1)%time > ctrl%max_time) then
         write(stdout, *) ' NO STEPS TO BE DONE, ending calculation.'
@@ -94,6 +92,8 @@ program zaghop
 
     main: do
         call stepclock%start()
+              
+        
         write(stdout, '(1x,a,i0)') 'Starting step: ', t(1)%step
 
         ! Get new geometry.

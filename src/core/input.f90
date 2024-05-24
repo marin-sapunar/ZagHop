@@ -152,7 +152,6 @@ contains
         write(stdout, *)
         write(stdout, '(1x,a,a)') "Work directory for QM calculations: ", ctrl%qmdir
         call system('mkdir -p '//ctrl%qmdir)
-
         ! If restarting don't read initial conditions.
         if (ctrl%restart) return
 
@@ -214,7 +213,6 @@ contains
                 write(stdout, '(2x,a5,1000e18.10)') t(1)%sym(t(1)%mind(i)), t(1)%velo(:, t(1)%mind(i))
             end do
         end if
-
     end subroutine read_input
 
 
@@ -301,7 +299,7 @@ contains
             end select
         end if
         select case(ctrl%sh)
-        case(2, 3)
+        case(2, 3, 4)
             allocate(ctrl%couple(t(1)%max_nstate), source=.true.)
             if (allocated(uncouple_states)) then
                 do i = 1, size(uncouple_states, 1)
@@ -310,7 +308,6 @@ contains
                 end do
             end if
         end select
-
     end subroutine read_main
 
 
@@ -861,9 +858,9 @@ contains
                     end select
                 end if
             case('sovec')
-                ctrl%tdc_type = 2
-                if (readf%narg > 1) then
-                    select case(readf%args(2)%s)
+                ctrl%tdc_type = 2                
+                if (readf%narg > 1) then                    
+                    select case(readf%args(2)%s)                    
                     case('constant')
                         ctrl%tdc_interpolate = 1
                     case('linear')
