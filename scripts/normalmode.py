@@ -98,31 +98,31 @@ class NormalModes():
         # Reads elements from Turbomole Hessian file
         try:
             with open(hess_file_name, 'r') as file:
-                c = file.readlines()
+                hess_lines = file.readlines()
         except FileNotFoundError:
             print(hess_file_name + " file not found")
             sys.exit(1)
 
-        first_index = c.index("$hessian (projected)\n")
+        first_index = hess_lines.index("$hessian (projected)\n")
         # First line of the projected Hessian is the one after the line
         # that contains $hessian (projected).
 
-        final_index = c.index("$end\n")
-        n_atom=int(int(c[final_index-1].split()[0])/3)
+        final_index = hess_lines.index("$end\n")
+        n_atom=int(int(hess_lines[final_index-1].split()[0])/3)
         # Number of atoms, first element of last row divided by 3.
 
         # This block creates a Hessian matrix as a numpy array
         hessian_matrix = []
-        for i in c[first_index:final_index]:
-            d=i.split()
-            for j in range(2,len(d)):
-                hessian_matrix.append(float(d[j]))
+        for i in hess_lines[first_index:final_index]:
+            line_array = i.split()
+            for j in range(2,len(line_array)):
+                hessian_matrix.append(float(line_array[j]))
         hessian_matrix = np.array(hessian_matrix).reshape(3*n_atom,3*n_atom)
 
         # This reads atoms from "coord" file in order to create a mass weighted matrix
         try:
             with open(coord_file,"r") as file:
-                c = file.readlines()
+                coord_lines = file.readlines()
         except FileNotFoundError:
             print(coord_file + " not found!")
             sys.exit(1)
@@ -133,7 +133,7 @@ class NormalModes():
         #will have each atom repeated once, used when
         # creating instance of NormalModes class
 
-        for i in c[1:1 + n_atom]:
+        for i in coord_lines[1:1 + n_atom]:
             coord_line = i.split()
             upper_atom =coord_line[-1].capitalize()
             #transforms atom symbols to uppercase
@@ -294,8 +294,8 @@ class NormalModes():
         # and one row is added if the resulting number isn't divisible by 5
 
         for i in gauss_out[hessian_index + 1: hessian_index + 1 + n_rows]:
-            c = i.split()
-            for j in c:
+            hess_lines = i.split()
+            for j in hess_lines:
                 lt_hessian_raw += [float(j)]
 
         lt_hessian = []# Formatted lower triangular Hessian
