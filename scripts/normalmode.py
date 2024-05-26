@@ -1,3 +1,4 @@
+import sys
 import numpy as np
 import scipy.linalg
 
@@ -40,7 +41,7 @@ class NormalModes():
         if len(freq) != nfreq:
             raise ValueError('Dimension mismatch between freq and nmode.')
         at_mass = [MASS[atom.title()] for atom in atoms]
-        self.at_mass = at_mass#average atomic mass of elements
+        self.at_mass = at_mass# average atomic mass of elements
         self.mass = np.repeat(at_mass, 3) * MASS_UNIT
         self.atoms = atoms
         if mass_weighted:
@@ -88,20 +89,28 @@ class NormalModes():
         """ Create instance of NormalMode class from turbomole files.
 
         Arguments:
-            hessfile : Hessian file that contains $hessian (projected)".
+            hess_file_name: Hessian file that contains $hessian (projected)".
+            coord_file: Turbomole file containing geometry which was used to
+                        calculate the Hessian.
         Returns:
             nmode : New instance of NormalMode class.
-        """                                                           
+        """
         # Reads elements from Turbomole Hessian file
         try:
-            a=open(hess_file_name, 'r')
-        except:
+            with open(hess_file_name, 'r') as file:
+                c = file.readlines()
+        except FileNotFoundError:
             print(hess_file_name + " file not found")
-        c=a.readlines()
-        a.close()
-        first_index = c.index("$hessian (projected)\n") # First line of the projected Hessian is the one after the line that contains $hessian (projected)
+            sys.exit(1)
+
+        first_index = c.index("$hessian (projected)\n")
+        # First line of the projected Hessian is the one after the line
+        # that contains $hessian (projected).
+
         final_index = c.index("$end\n")
-        n_atom=int(int(c[final_index-1].split()[0])/3) # Number of atoms, first element of last row divided by 3
+        n_atom=int(int(c[final_index-1].split()[0])/3)
+        # Number of atoms, first element of last row divided by 3.
+
         # This block creates a Hessian matrix as a numpy array
         hessian_matrix = []
         for i in c[first_index:final_index]:
@@ -109,20 +118,26 @@ class NormalModes():
             for j in range(2,len(d)):
                 hessian_matrix.append(float(d[j]))
         hessian_matrix = np.array(hessian_matrix).reshape(3*n_atom,3*n_atom)
-        # Reads atoms from "coord" file in order to create a mass weighted matrix
+
+        # This reads atoms from "coord" file in order to create a mass weighted matrix
         try:
-            a=open(coord_file,"r")
-        except:
+            with open(coord_file,"r") as file:
+                c = file.readlines()
+        except FileNotFoundError:
             print(coord_file + " not found!")
-            return exit()
-        c=a.readlines()
-        a.close()
+            sys.exit(1)
+
         coord = []
         atom_list=[]#has each atom repeated 3 times
-        atoms=[]#has each atom repeated once, used when creating instance of NormalModes class
+        atoms=[]
+        #will have each atom repeated once, used when
+        # creating instance of NormalModes class
+
         for i in c[1:1 + n_atom]:
             coord_line = i.split()
-            upper_atom =coord_line[-1].capitalize()#transforms atom symbols to uppercase
+            upper_atom =coord_line[-1].capitalize()
+            #transforms atom symbols to uppercase
+
             atoms.append(upper_atom)
             for j in range(3):
                 atom_list.append(upper_atom)
@@ -139,55 +154,77 @@ class NormalModes():
         force_constants, mode_vectors = scipy.linalg.eigh(mass_weighted_hessian)
         freq=np.emath.sqrt(force_constants).real
         nmode = cls(coord, mode_vectors.T, freq, atoms, mass_weighted=True)
-        return nmode    
+        return nmode
+
     @classmethod
     def from_orca(cls, hess_file_name):
+        """ Create instance of NormalMode class from turbomole files.
+
+        Arguments:
+            hess_file_name: .hess file generated with Orca.
+        Returns:
+            nmode : New instance of NormalMode class.
+        """
         try:
-            a = open(hess_file_name, 'r')
-        except:
+            with open(hess_file_name, 'r') as file:
+                orca_out = file.readlines()
+        except FileNotFoundError:
             print("ERROR: File not found!")
-            exit()
-        orca_out = a.readlines()# List that contains all the lines from .hess file
-        a.close()
+            sys.exit(1)
+        # List that contains all the lines from .hess file
+
         try:
-            hessian_index = orca_out.index("$hessian\n")# index of the line that contains $hessian, a reference point for defining ranges
+            hessian_index = orca_out.index("$hessian\n")
+            # Index of the line that contains $hessian,
+            # a reference point for defining ranges.
         except:
-            print("ERROR: $hessian not found! .hess file containing '$hessian' line needs to be provided")
-            exit()
+            print("""ERROR: $hessian not found! .hess file
+                   containing '$hessian' line needs to be provided""")
+            sys.exit(1)
         atom_index = orca_out.index("$atoms\n")# for finding atoms, and the number of atoms
         n_atom = int(orca_out[atom_index+1].split()[0])
-        # Number of atoms is contained in a line after "$atom", .split()[0] transforms  
-        # it from a list to a string which is converted to an integer
-        
-        final_index = orca_out.index("$vibrational_frequencies\n")-1 
-        # Last line of Hessian is the one that is two before the line that contains 
-        # $vibrational_frequencies, but -1 is here since for i in range(X,Y) goes from X to Y-1
-        
+        # Number of atoms is contained in a line after "$atom", .split()[0]
+        #transforms it from a list to a string which is converted to an integer
+
+        final_index = orca_out.index("$vibrational_frequencies\n")-1
+        # Last line of Hessian is the one that is two before the line
+        # that contains $vibrational_frequencies, but -1 is here since
+        # for i in range(X,Y) goes from X to Y-1
+
         raw_hessian = orca_out[hessian_index+2 : final_index]
-        for i in range(0,len(raw_hessian)-3*n_atom,3*n_atom): 
+        for i in range(0,len(raw_hessian)-3*n_atom,3*n_atom):
             raw_hessian.pop(i)
-            # Throws out elements that contain column labels, first it removes first line from the list, and then the next problematic
-            # line is guaranteed to be the one that has 3*n_atoms greater index once the previous has been removed. Column label line
-            # won't be further than len(raw_hessian)-3*n_atom with how the .hess file is organized.
-        
-        # this block creates a Hessian matrix as a wnumpy array
+            # Throws out elements that contain column labels, first it removes
+            # first line from the list, and then the next problematic line is
+            # guaranteed to be the one that has 3*n_atoms greater index once
+            # the previous has been removed. Column label line won't be further
+            # than len(raw_hessian)-3*n_atom with how the .hess file is organized.
+
+        # this block creates a Hessian matrix as a numpy array
         refined_hessian=[]
         for i in range(3*n_atom):
             for j in range(i, len(raw_hessian), 3*n_atom):
-                # It adds i-th line and every line that is 3*n_atom further from it, ensuring that all the rows associated with the i-th
-                # coordinate are together
+                # It adds i-th line and every line that is 3*n_atom further from it, ensuring
+                # that all the rows associated with the i-th coordinate are together.
                 temp_list = raw_hessian[j].split()
-                for k in temp_list[1:]:# goes from second element of the row, so that row labels won't be added to refined_hessian list
+                for k in temp_list[1:]:
+                # goes from second element of the row, so that row labels won't be
+                # added to refined_hessian list
                     refined_hessian.append(float(k))
         hessian_matrix = np.array(refined_hessian).reshape(3*n_atom, 3*n_atom)
-    
-        # This block will read all the atom symbols from the .hess file and create matrix that weights the Hessian
-        atom_list = [] # List that contains atom symbols X 3
+
+        # This block will read all the atom symbols from the .hess file and
+        # create a matrix that weights the Hessian
+        atom_list = [] # List that contains atom symbols 3 times
         atoms = [] # List that contains atom symbols once
-        geometry = [] # List that contains geometry of molecule at which the Hessian was calculated
+        geometry = []
+        # List that contains geometry of molecule at
+        # which the Hessian was calculated
         for i in orca_out[atom_index + 2: atom_index + 2 + n_atom]:
             atoms.append(i.split()[0])
-            for j in range(3):# It will add each atom 3 times to the atom_list to make creating weight matrix easier
+            for j in range(3):
+            # It will add each atom 3 times to the atom_list
+            # to make creating weight matrix easier
                 atom_list.append(i.split()[0])
             for k in i.split()[2:]:
                 geometry.append(float(k))
@@ -206,26 +243,37 @@ class NormalModes():
         return nmode
     @classmethod
     def from_gaussian(cls, gauss_file_name, log_file_name):
-        # hess_ file_name is fch file name, generated with Right Click > Results > View/Edit file in .chk opened in GaussView on Windows.
-        # log_file_name is the standard .log file. Rename them to default values ("gaussian.fch.txt" and "STRUCTURE.LOG") or call the
-        # function with from_gaussian("custom_name1", "custom_name2")
+        """ Create instance of NormalMode class from turbomole files.
+
+        Arguments:
+            gauss_file_name: Formatted checkpoint file containing results of
+                             a Gaussian vibrational analysis calculation.
+            coord_file: .log file that was created by Gaussian vibrational
+                        analysis calculation.
+        Returns:
+            nmode : New instance of NormalMode class.
+        """
         try:
-            a = open(gauss_file_name, "r")
-        except:
+            with open(gauss_file_name, "r") as file:
+                gauss_out = file.readlines()
+        except FileNotFoundError:
             print("ERROR: Formatted checkpoint file not found!")
-        gauss_out = a.readlines()
-        a.close()
 
-        hessian_index = gauss_out.index([i for i in gauss_out if "Cartesian Force Constants" in i][0])
-        # Finds the line that contains substring "Cartesian Force Constants", which is the line before Hessian matrix is printed
+        hessian_index = gauss_out.index([i for i in
+            gauss_out if "Cartesian Force Constants" in i][0])
+        # Finds the line that contains substring "Cartesian Force Constants",
+        # which is the line before Hessian matrix is printed
 
-        n_atom = int(gauss_out[gauss_out.index([i for i in gauss_out if "Number of atoms" in i][0])].split()[-1])
-        # Number of atoms is the integer of the last word in the line that contains n_atom
-        a = open(log_file_name)
-        gauss_log = a.readlines()
-        a.close()
+        n_atom = int(gauss_out[gauss_out.index([i for i in
+            gauss_out if "Number of atoms" in i][0])].split()[-1])
+        # Number of atoms is the integer of the last word
+        # in the line that contains "Number of atoms"
+        with open(log_file_name) as file:
+            gauss_log = file.readlines()
 
-        Z_mat_index = gauss_log.index(" Symbolic Z-matrix:\n") # Index of Z-matrix line in .log file - used to find all the atoms
+        Z_mat_index = gauss_log.index(" Symbolic Z-matrix:\n")
+        # Index of Z-matrix line in .log file - used to find all the atoms
+
         atom_list = []
         atoms = []
         for i in gauss_log[Z_mat_index + 2: Z_mat_index + 2 + n_atom]:
@@ -239,8 +287,10 @@ class NormalModes():
         n_rows = int((3 * n_atom + (3 * n_atom * 3 * n_atom - 3 * n_atom)/2)//5)
         if (3 * n_atom + (3 * n_atom * 3 * n_atom - 3 * n_atom)/2)%5 != 0:
             n_rows += 1
-        # Gaussian stores only lower triangular half of the Hessian matrix, and always in 5 columns, so the number of elements is 
-        # (3n_atoms)^2 - 3n_atoms divided by 2 (number of off-diagonal elements/2) + 3n_atoms (number of diagonal elements) all divided by 5
+        # Gaussian stores only lower triangular half of the Hessian matrix,
+        # and always in 5 columns, so the number of elements is
+        # (3n_atoms)^2 - 3n_atoms divided by 2 (number of off-diagonal elements/2)
+        # + 3n_atoms (number of diagonal elements) all divided by 5
         # and one row is added if the resulting number isn't divisible by 5
 
         for i in gauss_out[hessian_index + 1: hessian_index + 1 + n_rows]:
@@ -255,19 +305,29 @@ class NormalModes():
             for j in range(3 * n_atom):
                 if i >= j:
                     hess_row.append(lt_hessian_raw.pop(0))
-                    # To create 3n_atom X 3n_atom numpy array that contains Hessian matrix elements in the lower triangle,
-                    # the program adds elements from the beggining of the lt_hessian_raw to hess_row list and removes them,
-                    # while i is greater than or equal to j meaning (while column is greater than or equal to row, so that it adds those)
-                    # elements up until the diagonal. After the diagonal element, the row is filled with 0. Full Hessian is created by
-                    # adding the lower triangular matrix and upper triangular matrix of Hessian (transpose of lt_hessian) and subtracting
-                    # the diagonal elements of one of those matrices
+                    # To create 3n_atom X 3n_atom numpy array that contains
+                    # Hessian matrix elements in the lower triangle,
+                    # the program adds elements from the beggining of
+                    # the lt_hessian_raw to hess_row list and removes them,
+                    # while i is greater than or equal to j meaning (while
+                    # column is greater than or equal to row, so that it
+                    # adds those) elements up until the diagonal. After the
+                    # diagonal element, the row is filled with 0. Full Hessian
+                    # is created by adding the lower triangular matrix and upper
+                    # triangular matrix of Hessian (transpose of lt_hessian) and
+                    # subtracting the diagonal elements of one of those matrices.
                 else:
                     hess_row.append(0)
             lt_hessian.append(hess_row)
-        lt_hessian = np.array(lt_hessian)# Transforms regular lt_hessian array to a numpy array
-        hess_diag = np.diag(np.diagonal(lt_hessian))# Diagonal matrix that contains only the diagonal elements of lt_hessian
+        lt_hessian = np.array(lt_hessian)
+        # Transforms regular lt_hessian array to a numpy array
+
+        hess_diag = np.diag(np.diagonal(lt_hessian))
+        # Diagonal matrix that contains only the diagonal elements of lt_hessian
+
         hessian_matrix = lt_hessian + lt_hessian.T - hess_diag
-        # Full hessian is made by summing lower triangular Hessian and it's transpose, then subtracting the diagonal elements
+        # Full hessian is made by summing lower triangular Hessian
+        # and it's transpose, then subtracting the diagonal elements
         # of lt_hessian since they are added twice
 
         weight_matrix=[]
@@ -278,7 +338,8 @@ class NormalModes():
         mass_weighted_hessian = np.multiply(weight_matrix, hessian_matrix)
         force_constants, mode_vectors = scipy.linalg.eigh(mass_weighted_hessian)
         #reads coordinates
-        coord_index = gauss_out.index([i for i in gauss_out if "Current cartesian coordinates" in i][0])
+        coord_index = gauss_out.index([i for i in gauss_out
+            if "Current cartesian coordinates" in i][0])
         geometry = []
         n_rows = int((3 * n_atom // 5))
         if 3*n_atom%5 != 0:
@@ -335,8 +396,6 @@ class NormalModes():
 
     def harmonic_potential_energy(self, q_vec=None, cart=None):
         """ Calculate PE in harmonic approximation for given geometry.
-
-        
 
         Arguments:
             q_vec : Displacements in dimensionless normal mode coordinates.
