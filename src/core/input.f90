@@ -395,6 +395,10 @@ contains
         if (ctrl%tdc_type == 2) then
             allocate(t(1)%nadv(t(1)%ndim*t(1)%qnatom, t(1)%max_nstate, t(1)%max_nstate))
         end if
+        !Cris allocation of spin-orbit vector, max_nstate or spin blocks?
+        if (ctrl%sh == 4) then
+           allocate(t(1)%sov(t(1)%max_nstate,t(1)%max_nstate))
+        endif
 
         ! Second run through the file to read the atom, mass, position and index of each atom.
         t(1)%qnatom = 0

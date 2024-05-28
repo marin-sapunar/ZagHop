@@ -55,8 +55,8 @@ contains
       real(dop), intent(out) :: en(:)
       real(dop), intent(out) :: nadvec(:, :, :)
 ! GW: NEED TO PASS SOVEC FROM ZAGHOP
-!      real(dop), intent(out) :: sovec(:, :)
-      real(dop) :: sovec(1,1)
+      real(dop), intent(out) :: sovec(:, :)
+!      real(dop) :: sovec(1,1)
 
       integer :: i,j,ilbl,jlbl,chkdvr,chkgrd,chkpsi,chkprp,n,f,f1,m
       logical(kind=4) :: linwf
@@ -124,7 +124,6 @@ contains
             ldbsmall = .false.
          endif
       endif
-
 !-----------------------------------------------------------------------
 ! Allocate memory 
 !-----------------------------------------------------------------------
@@ -184,6 +183,9 @@ contains
       call operinfo(lerr,chkdvr,chkgrd)
       close(ioper)
 
+      write(69,*)"Cris in quantics_inter.f90"
+      call flush(69)
+      
 !-----------------------------------------------------------------------
 ! Read data needed by the operator
 !-----------------------------------------------------------------------
