@@ -5,8 +5,8 @@ from pathlib import Path
 from argparse import ArgumentParser
 import file_utils
 import numpy as np
-import turbomole
-import bagel
+from turbomole import Turbomole
+from orca import Orca
 
 FILES = {
     "geom": "qm_geom",
@@ -18,10 +18,8 @@ FILES = {
 }
 
 INTERFACES = {
-        "tm_adc2": [turbomole.ricc2, r"adc(2)"],
-        "tm_mp2": [turbomole.mp2, r"mp2"],
-        "tm_tddft": [turbomole.egrad],
-        "bagel": [bagel.CASPT2],
+        "turbomole": Turbomole,
+        "orca" : Orca
         }
 
 
@@ -43,25 +41,25 @@ def run(args):
     """ Read input files and run the interface. """
     in_data = dict()
     in_data["geom"] = np.loadtxt(FILES["geom"])
-    in_data["state"] = np.loadtxt(FILES["state"], dtype=int)[0]
+    in_data["iroot"] = np.loadtxt(FILES["state"], dtype=int)[0]
     in_data["nstate"] = np.loadtxt(FILES["state"], dtype=int)[1]
-    in_data["natom"] = len(in_data["geom"])
     try:
         in_data["mm_geom"] = np.loadtxt(FILES["mm_geom"])
         in_data["qmmm"] = True
-    except:
+    except OSError:
         in_data["qmmm"] = False
     # Go to work directory and run calculation.
     cwd = Path(os.getcwd())
     os.chdir(args.work_dir)
     interface = INTERFACES[args.interface]
-    qm_prog = interface[0](*interface[1:], in_data)
-    qm_prog.update_input()
+    qm_prog = interface()
+    request = {"gradient": True, "oscillator_strength": True}
+    qm_prog.update_input(in_data, request)
     qm_prog.run()
     qm_prog.read()
     os.chdir(cwd)
     # Write results.
-    calc_write(qm_prog.results)
+    calc_write(qm_prog.data)
 
 
 def calc_write(results):
@@ -75,9 +73,9 @@ def calc_write(results):
     with open(FILES["gradient"], "w") as out_f:
         for grad in results["gradient"]:
             out_f.write(xyz_format.format(*grad) + "\n")
-    if "oscill" in results:
+    if "oscillator_strength" in results:
         with open(FILES["oscill"], "w") as out_f:
-            for oscill in results["oscill"]:
+            for oscill in results["oscillator_strength"]:
                 out_f.write(num_format.format(oscill))
             out_f.write("\n")
 
