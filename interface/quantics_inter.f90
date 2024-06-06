@@ -20,7 +20,7 @@ module shzagreb_inter
       use iorst, only: rstinfo
       use dirdyn
       use directdyn
-      use potevalmod, only: calcdiab,calcdiabder
+      use potevalmod, only: calcdiab,calcdiabder,calcvreps
       use psidef, only: qcentdim,gwpdim,zcent,vdimgp,dimgp,ndimgp,zgp,nsgp,totgp
       use openmpmod, only: lompqc
       use lalib, only: simtranbd
@@ -35,9 +35,12 @@ module shzagreb_inter
 
       real(dop), allocatable :: qcoo(:),qcoo1(:),xgp(:)
       real(dop), allocatable :: tempvec(:, :, :)
-      real(dop), allocatable :: pesdia(:,:)
+      real(dop), allocatable :: pesdia(:,:),cpesdia(:,:)
+      real(dop), allocatable :: pesad(:),cpesad(:)
+      real(dop), allocatable :: pesspdi(:,:),cpesspdi(:,:)
       real(dop), allocatable :: derdia(:,:,:)
       real(dop), allocatable :: derad(:,:,:)
+      real(dop), allocatable :: rotmat(:,:),crotmat(:,:)
       complex(dop), allocatable :: rotmatz(:,:)
       integer(long), allocatable :: point(:)
       real(dop), allocatable :: hops(:)
@@ -64,7 +67,7 @@ contains
 
       real(dop) :: time
 
-      integer             :: ierr
+      integer             :: ierr,izflag,nham,modus,s
       character(len=c5)   :: filename,string
       logical(kind=4)     :: check,lerr
       real(dop), external :: dlamch
@@ -263,11 +266,19 @@ contains
       allocate(qcoo(ndoftsh))
       allocate(qcoo1(maxdim))
       allocate(xgp(maxdim))
-      allocate(pesdia(maxsta,maxsta))
       allocate(rotmatz(maxsta,maxsta))
+      allocate(rotmat(maxsta,maxsta))
+      allocate(crotmat(maxsta,maxsta))
       allocate(point(maxdim))
       allocate(derdia(maxsta,maxsta,maxdim))
       allocate(derad(maxsta,maxsta,maxdim))
+
+      allocate(pesdia(maxsta,maxsta))
+      allocate(cpesdia(maxsta,maxsta))
+      allocate(pesad(maxsta))
+      allocate(cpesad(maxsta))
+      allocate(pesspdi(maxsta,maxsta))
+      allocate(cpesspdi(maxsta,maxsta))
 
       initialized = .true.
       endif ! Initialization done
@@ -322,16 +333,37 @@ contains
 
 ! PES matrix in adiabatic (en) and diabatic (pesdia) representations
 ! rotmatz is the ADT matrix (as a complex)
-      call calcdiab(hops,en,pesdia,rotmatz,point,qcoo1,1)
+      if (lsocbas) then
+         modus=1
+      else
+         modus=0
+      endif
+  !   call calcdiab(hops,en,pesdia,rotmatz,point,qcoo1,1)
+      nham=1
+      call calcvreps(hops,pesad,cpesad,pesspdi,cpesspdi,&
+           pesdia,cpesdia,rotmat,crotmat,point,qcoo1,nham,&
+           izflag,modus)
+      if (lsocbas) then
+         do s=1,nddstate
+            en(s) = pesad(s)
+         enddo
+      else
+         do s=1,nddstate
+            en(s) = pesspdi(s,s)
+         enddo
+      endif
 
 ! Matrix of gradients in adiabatic (derad) and diabatic (derdia).
+      rotmatz = rotmat + (0,1.0_dop)*crotmat
       call calcdiabder(hops,derad,derdia,rotmatz,qcoo1,1)
 
 ! Convert forces to Cartesian and extract forces / nact
       call extrgra(cstate,en,gra,nadvec,derad)
 
 ! extract SOC from diabatic energy matrix
-      if (nsmult .gt. 1) call extrsoc(pesdia,rotmatz,sovec)
+      if (.not. lsocbas) then
+         if (nsmult .gt. 1) call extrsoc(pesspdi,sovec)
+      endif
 
       close(ilog)
 
@@ -339,29 +371,19 @@ contains
 
 !#######################################################################
 
-      subroutine extrsoc(pesdia,rotmatz,sovec)
+      subroutine extrsoc(pesspdi,sovec)
 
       implicit none
 
       integer(long)              :: s,s1,f,f1,n,m
-      real(dop), dimension(nddstate,nddstate), intent(out) :: sovec
-      real(dop), dimension(maxsta,maxsta), intent(in)      :: pesdia
-      complex(dop), dimension(maxsta,maxsta), intent(in)   :: rotmatz      
-      real(dop), dimension(maxsta,maxsta) :: rotmat
-
-      do s=1,nddstate
-         do s1=1,nddstate                                 
-            rotmat(s1,s) = dble(rotmatz(s1,s))               
-         enddo                                               
-      enddo
-      call simtranbd(pesdia(1:nddstate,1:nddstate),rotmat(1:nddstate,1:nddstate),&
-           sovec(1:nddstate,1:nddstate),nddstate)
+      real(dop), dimension(:,:), intent(out) :: sovec
+      real(dop), dimension(:,:), intent(in)  :: pesspdi
 
 ! Keep only values between different multiplicities
       do s=1,nddstate
          do s1=1,nddstate
-            if (imultmap(s) .eq. imultmap(s1)) then
-               sovec(s1,s) = 0.0_dop
+            if (imultmap(s) .ne. imultmap(s1)) then
+               sovec(s1,s) = pesspdi(s1,s)
             endif
          enddo
       enddo
