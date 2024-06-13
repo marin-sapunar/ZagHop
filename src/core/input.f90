@@ -283,7 +283,7 @@ contains
             select case(ctrl%sh)
             case(1)
                 allocate(t(1)%prob(t(1)%max_nstate), source=0.0_dp)
-            case(2, 3)
+            case(2, 3, 4)
                 allocate(t(1)%cwf(t(1)%max_nstate))
                 allocate(t(1)%prob(t(1)%max_nstate), source=0.0_dp)
                 if (ctrl%phaselvl > 0) allocate(t(1)%phase(t(1)%max_nstate), source=1)
@@ -398,6 +398,7 @@ contains
         !Cris allocation of spin-orbit vector, max_nstate or spin blocks?
         if (ctrl%sh == 4) then
            allocate(t(1)%sov(t(1)%max_nstate,t(1)%max_nstate))
+           allocate(t(1)%spinv(t(1)%max_nstate))
         endif
 
         ! Second run through the file to read the atom, mass, position and index of each atom.

@@ -55,14 +55,13 @@ contains
             call sh_diabatic(t(1)%max_nstate, ctrl%dt, t(2)%qe, t(1)%qe, t(1)%cwf, t(1)%cstate,    &
             &                t(1)%olap, t(1)%prob)
         case(4)
-            print*,"Reached case 4"
             call decoherence()
             call phasematch()
             call sh_sosh(ctrl%tdc_type, ctrl%ene_interpolate, ctrl%tdc_interpolate,                &
             &                 ctrl%tdc_interpolate, ctrl%dt, ctrl%shnstep, t(2)%qe, t(1)%qe,       &
             &                 t(1)%cwf, t(1)%cstate, t(2)%olap, t(1)%olap, t(2)%nadv, t(1)%nadv,   &
             &                 t(2)%velo(:, t(2)%qind), t(1)%velo(:, t(1)%qind), t(2)%sov, t(1)%sov,&
-            &                 ctrl%spinv , t(1)%prob)
+            &                 t(1)%spinv , t(1)%prob)
         end select
 
         if (tst /= t(1)%cstate) ctrl%hop = .true.

@@ -76,6 +76,8 @@ contains
       allocate(xyz, source=xyz0)
       open(ilog,file='quantics.log',status='unknown',position='append')
 
+      write(69,*)"Cris in quantics_inter.f90 ",initialized
+      call flush(69)
       if (.not. initialized) then
       macheps = dlamch('P')
 
@@ -185,9 +187,6 @@ contains
       chkgrd=1
       call operinfo(lerr,chkdvr,chkgrd)
       close(ioper)
-
-      write(69,*)"Cris in quantics_inter.f90"
-      call flush(69)
       
 !-----------------------------------------------------------------------
 ! Read data needed by the operator
@@ -255,7 +254,9 @@ contains
          read(string(ilbl:jlbl),*) ddtrajnum
 
       endif
+       
 
+      
 ! get no. of states and no. of dynamical coordinates
       nstate = gdim(feb)
 
@@ -289,7 +290,7 @@ contains
 ! reform xyz -> qcoo (Quantics dynamical coordinates)
       if (ltshtrans) then
          call subvxxdo1(xyz,tshxcoo0,ndoftsh)
-         call mvxxdd1(tshtransb,xyz,qcoo,maxdim,ndoftsh,gdof)
+         call mvxxdd1(tshtransb,xyz,qcoo,maxdim,ndoftsh,gdof) 
       else
          f=0
          do n=1,natmtsh
@@ -315,6 +316,7 @@ contains
          if (basis(f) .eq. 19) qcoo1(f) = rpbaspar(1,f)
       enddo
 
+
 ! Initialise local DBs. Need to be in Cartesians.
       if (ldd .and. ldbsmall) then
          if (lddtrans) then
@@ -326,11 +328,10 @@ contains
          num_gp = 1
          call dddb_gp(dbnrec,xgp,num_gp)
       endif
-
+     
 ! Perform calculation of QC.
       time=0.0d0
-      if (ldd) call getddpes(time,qcoo,1,1)   
-
+      if (ldd) call getddpes(time,qcoo,1,1)  
 ! PES matrix in adiabatic (en) and diabatic (pesdia) representations
 ! rotmatz is the ADT matrix (as a complex)
       if (lsocbas) then
@@ -343,6 +344,7 @@ contains
       call calcvreps(hops,pesad,cpesad,pesspdi,cpesspdi,&
            pesdia,cpesdia,rotmat,crotmat,point,qcoo1,nham,&
            izflag,modus)
+      
       if (lsocbas) then
          do s=1,nddstate
             en(s) = pesad(s)
@@ -356,10 +358,9 @@ contains
 ! Matrix of gradients in adiabatic (derad) and diabatic (derdia).
       rotmatz = rotmat + (0,1.0_dop)*crotmat
       call calcdiabder(hops,derad,derdia,rotmatz,qcoo1,1)
-
+      
 ! Convert forces to Cartesian and extract forces / nact
       call extrgra(cstate,en,gra,nadvec,derad)
-
 ! extract SOC from diabatic energy matrix
       if (.not. lsocbas) then
          if (nsmult .gt. 1) call extrsoc(pesspdi,sovec)

@@ -38,6 +38,8 @@ program zaghop
     real(dp) :: tinydp = 1.0e-8_dp
     integer :: i
 
+
+    
     call mainclock%start()
 
     write(stdout, *) '-------------------------------------------------------------------------------'
@@ -70,7 +72,7 @@ program zaghop
             call run_mm(t(1))
             call stepclock%print(stdout, '  MM run time:')
         end if 
-        call stepclock%start()                
+        call stepclock%start() 
         call run_qm(t(1), .false.)
         call stepclock%print(stdout, '  QM run time:')
         call t(1)%writestep(ctrl%print, ctrl%output_dir)

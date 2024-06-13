@@ -159,14 +159,16 @@ contains
         tt = 0.0_dp
         edt = dt / nstep
        
+        write(69,*) "Values of spin vector ", spinst(st),spinst(tst)
+        call flush(69)
         do i = 1, nstep
              fprob = 0.0_dp
             ! Get energies and TDCs for current substep.
             call sh_interpolate_energy(opt_inte, nstep, i, qe1, qe2, odeen)
             
             !Checking the type of hopping, non-adiabatic or spin-orbit
-            hop: do st = 1, odens
-               if(st == tst) cycle 
+            hop: do st = 1, odens               
+               if(st == tst) cycle hop 
                if ((spinst(st) == spinst(tst))) then !NAC
                   select case(opt_clvl)
                   case(1)
@@ -189,9 +191,10 @@ contains
                         tst = st
                         exit hop
                     end if
-                 end if
-                  
+                 end if                  
                else  !spin-orbit
+!                   write(69,*) "else ",st,tst,spinst(st),spinst(tst)
+!                   call flush(69)
                    call sh_interpolate_sovec(opt_intv, nstep, i, dt, sov1, sov2, odecmat)
                   
                    ! Propagate wf coefficients.
