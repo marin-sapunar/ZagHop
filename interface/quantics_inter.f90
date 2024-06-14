@@ -76,8 +76,6 @@ contains
       allocate(xyz, source=xyz0)
       open(ilog,file='quantics.log',status='unknown',position='append')
 
-      write(69,*)"Cris in quantics_inter.f90 ",initialized
-      call flush(69)
       if (.not. initialized) then
       macheps = dlamch('P')
 
