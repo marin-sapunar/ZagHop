@@ -24,11 +24,12 @@ module shzagreb_inter
       use psidef, only: qcentdim,gwpdim,zcent,vdimgp,dimgp,ndimgp,zgp,nsgp,totgp
       use openmpmod, only: lompqc
       
-      use dd_db, only: ddq2x, ddx2q, ddf2x, dddb_gp, ddf2q
+      use dd_db, only: ddq2x, ddx2q, ddf2x, dddb_gp, ddf2q, getdbnrec, preparedb
       use channels
       use op2lib, only: subvxxdo1
       use xvlib, only: mvxxdd1, mvtxdd1
 
+      use psidef
 
       implicit none
 
@@ -129,21 +130,18 @@ contains
       call alloc_dvrdat
       call alloc_grddat
       call alloc_operdef
-      if (ldd) then
-         allocate(gwpdim(1,1))
-         allocate(zcent(1,1))
-         allocate(vdimgp(1,1))
-         allocate(dimgp(1,1))
-         allocate(ndimgp(1,1))
-         allocate(zgp(1))
-         allocate(nsgp(1))
-      endif
+      call alloc_psidef
+    !  if (ldd) then
+    !     allocate(gwpdim(1,1))
+    !     allocate(zcent(1,1))
+    !     allocate(vdimgp(1,1))
+    !     allocate(dimgp(1,1))
+    !     allocate(ndimgp(1,1))
+    !     allocate(zgp(1))
+    !     allocate(nsgp(1))
+    !  endif
 ! needed for both DD and analytical due to use of DDtrans
       call alloc_dirdyn
-      if (ldd) then
-         call alloc_dddb
-         call alloc_dercp
-      endif
 
 !-----------------------------------------------------------------------
 ! Read system / DVR information
@@ -182,7 +180,17 @@ contains
       close(ioper)
 
 !-----------------------------------------------------------------------
+! Prepare DB and allocate memory
+!-----------------------------------------------------------------------
+      if (ldd) then
+         call preparedb(0)
+         call getdbnrec(dbnrec)
+         call alloc_dddb
+      endif
+
+!-----------------------------------------------------------------------
 ! Read data needed by the operator
+! DB is loaded into memory
 !-----------------------------------------------------------------------
       operfile=oname(1:olaenge)//'/oper'
       allocate(hops(hopsdim))
@@ -206,7 +214,7 @@ contains
         endif
         chkdvr=0
         chkgrd=0
-        chkpsi=0
+        chkpsi=1
         chkprp=1
         call rstinfo(linwf,lerr,chkdvr,chkgrd,chkpsi,chkprp)
         close(irst)
