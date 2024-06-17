@@ -292,7 +292,7 @@ contains
                     allocate(t(1)%olap(t(1)%max_nstate, t(1)%max_nstate))
                     t(1)%olap = unit_mat(t(1)%max_nstate)
                 case(2)
-                    ! Nonadiabatic coupling vecotrs are allocated after reading number of atoms.
+                    ! Nonadiabatic coupling vectors are allocated after reading number of atoms.
                 end select
                 t(1)%cwf = cmplx((0.0_dp, 0.0_dp), kind = dp)
                 t(1)%cwf(t(1)%cstate) = cmplx((1.0_dp, 0.0_dp), kind = dp)

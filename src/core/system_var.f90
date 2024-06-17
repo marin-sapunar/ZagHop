@@ -298,6 +298,7 @@ contains
         integer :: i, ounit
 
         open(newunit=ounit, file=backup_file, action='write')
+        write(69,*)"onunit and backup_file", ounit,backup_file
         write(ounit, *) memory
         do i = 1, memory
             write(ounit, *) t(i)%step
@@ -339,9 +340,9 @@ contains
             write(ounit, *) allocated(t(i)%nadv)
             if (allocated(t(i)%nadv)) write(ounit, *) t(i)%nadv(:, :, :)
             write(ounit, *) allocated(t(i)%sov)
-            if (allocated(t(i)%sov)) write(ounit, *) t(i)%sov(:, :)
+            if (allocated(t(i)%sov)) write(ounit, *) "Sov ",t(i)%sov(:, :)
             write(ounit, *) allocated(t(i)%spinv)
-            if (allocated(t(i)%spinv)) write(ounit, *) t(i)%spinv(:)
+            if (allocated(t(i)%spinv)) write(ounit, *)"Spinv ", t(i)%spinv(:)
             write(ounit, *) t(i)%pbcbox
             write(ounit, *) allocated(t(i)%phase)
             if (allocated(t(i)%phase)) write(ounit, *) t(i)%phase

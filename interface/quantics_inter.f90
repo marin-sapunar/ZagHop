@@ -48,7 +48,7 @@ module shzagreb_inter
       
 contains
 
-      subroutine shzagreb_run(step, xyz0, cstate, en, gra, nadvec, sovec)
+      subroutine shzagreb_run(step, xyz0, cstate, en, gra, nadvec, sovec, spinvec)
 
       
       integer, intent(in) :: step
@@ -59,6 +59,7 @@ contains
       real(dop), intent(out) :: nadvec(:, :, :)
 ! GW: NEED TO PASS SOVEC FROM ZAGHOP
       real(dop), intent(out) :: sovec(:, :)
+      integer, intent(out) :: spinvec(:)
 !      real(dop) :: sovec(1,1)
 
       integer :: i,j,ilbl,jlbl,chkdvr,chkgrd,chkpsi,chkprp,n,f,f1,m
