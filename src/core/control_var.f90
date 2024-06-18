@@ -100,6 +100,7 @@ module control_var
                       !! - 2 - Fewest switches surface hopping in the adiabatic representation.
                       !! - 3 - FSSH in the locally diabatic representation.
                       !! - 4 - FSSH in the adiabatic representation and/or spin-orbit 
+        logical :: sodegen ! spin-orbit degeneration treatment 
         integer :: shnstep !< Number of steps in the integration of the TDSE.
 
         logical, allocatable :: couple(:) !< Signals that a state is included in the coupling

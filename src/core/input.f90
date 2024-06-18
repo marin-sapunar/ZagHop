@@ -78,6 +78,7 @@ contains
         tol_cns = 0.000000000001_dp ! Default rattle tolerance.
         ! Surface hopping options.
         ctrl%sh = 2
+        ctrl%sodegen = .true.
         ctrl%shnstep = 10000
         ctrl%decohlvl = 1
         ctrl%couplvl = 0
@@ -795,7 +796,7 @@ contains
         integer, allocatable, intent(out) :: spinst(:)   
         integer, allocatable :: statemult(:)
         logical :: check
-        integer :: i,j,s
+        integer :: i,j,k,s,ss
 
         call readf%rewind()
         call readf%go_to_keyword('$surfhop', found=check)
@@ -897,9 +898,46 @@ contains
                       endif
                       
                    enddo doi
-                   write(69,*)"Spin vector ",spinst(:)
-                   call flush(69)
+!                   write(69,*)"Spin vector ",spinst(:)
+!                   call flush(69)
                endif
+            case('nosocdegen', 'no_socdegen')
+               if(.not.allocated(spinst)) then
+                  write(stderr, *)'Multiplicity of states has to be given using state_mult=S,D,T,..'
+                  stop
+               else
+                  deallocate(spinst)
+                  ss=0
+                  do i=1,size(statemult,1)
+                      write(69,*)i,ss,i*i
+                      call flush(69)
+                      if(statemult(i).ne.0)then
+                         if(i.eq.1)then
+                            ss=ss+1
+                         else
+                            ss=ss+i*i
+                         endif
+                      endif
+                  enddo
+                  write(69,*)"Value of ss ", ss
+                  call flush(69)
+                  allocate(spinst(ss))
+                  s=1
+                  doii: do i=1,size(statemult)
+                     if(statemult(i).ne.0)then
+                        do j=1,statemult(i)
+                           do k=1,statemult(i)
+                              spinst(s)=i
+                              s=s+1
+                           enddo
+                        enddo
+                     else
+                        cycle doii
+                     endif                      
+                   enddo doii
+                   write(69,*)"Spin vector nodegen",spinst(:)
+                   call flush(69)
+                endif
             case('energy')
                 select case(readf%args(2)%s)
                 case('constant')
