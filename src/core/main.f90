@@ -66,12 +66,12 @@ program zaghop
 
         ! Run energy/gradient calculation for initial geometry.
         if (ctrl%mm) then
-            write(stdout, '(a)') 'Running initial MM calculation: '
+            write(stdout, '(a)') ' Running initial MM calculation: '
             call stepclock%start()
             call run_mm(t(1))
             call stepclock%print(stdout, '  MM run time:')
         end if
-        write(stdout, '(a)') 'Running initial QM calculation: '
+        write(stdout, '(a)') ' Running initial QM calculation: '
         call stepclock%start()
         call run_qm(t(1), .false.)
         call stepclock%print(stdout, '  QM run time:')

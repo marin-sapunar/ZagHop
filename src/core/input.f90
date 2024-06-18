@@ -143,7 +143,7 @@ contains
         ! Start the random number generator.
         write(stdout, *)
         call init_random_seed(ctrl%seed(1))
-        write(stdout, '(a,i0)') 'Random number generator started with seed: ', ctrl%seed
+        write(stdout, '(1x,a,i0)') 'Random number generator started with seed: ', ctrl%seed
 
         ! Set initial directory.
         ctrl%qmdir = 'qmdir'

@@ -26,16 +26,14 @@ def go_to_keyword(file, regex):
     raise ValueError('Requested keyword not found in file: ' + regex)
 
 
-def check_in_file(file, search):
+def check_in_file(file, regex):
     """ Check if a regex is present in a file. """
-    cfile = open_if_needed(file)
-    search_reg = re.compile(search)
-    for line in cfile:
-        if search_reg.search(line):
-            cfile.close()
-            return True
-    cfile.close()
-    return False
+    try:
+        cfile = go_to_keyword(file, regex)[0]
+        cfile.close()
+        return True
+    except ValueError:
+        return False
 
 
 def search_file(file, search, after=0, max_res=None, close=True, stop_at=None, matching_only=False):
