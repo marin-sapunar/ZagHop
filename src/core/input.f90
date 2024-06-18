@@ -229,7 +229,8 @@ contains
         logical :: check
         logical :: buffer
         type(reader) :: readf
-        integer, allocatable :: uncouple_states(:) !< States for which no couplings are calculated.
+        integer, allocatable :: uncouple_states(:) !< States for which no couplings are calculated.        
+        integer, allocatable :: spinst(:) !< Multiplicity of states calculated
         integer :: i
         buffer = .false.
 
@@ -248,7 +249,7 @@ contains
         ! Followed by optional keywords.
         call read_dynamics(readf)
         call read_output(readf)
-        call read_surfhop(readf, uncouple_states)
+        call read_surfhop(readf, uncouple_states,spinst)
         call read_mm(readf)
         call read_constraints(readf, tol_cns)
         call read_thermostat(readf)
@@ -305,8 +306,14 @@ contains
                 do i = 1, size(uncouple_states, 1)
                     if (uncouple_states(i) > t(1)%max_nstate) exit
                     ctrl%couple(uncouple_states(i)) = .false.
-                end do
+                end do                
             end if
+            if(allocated(spinst))then !ctrl%sh=4
+               allocate(t(1)%spinv(size(spinst,1)))
+               t(1)%spinv(:)=spinst(:)
+              !Cris allocation of spin-orbit vector, max_nstate or spin blocks?
+              allocate( t(1)%sov( size(spinst,1),size(spinst,1) ) )
+            endif
         end select
     end subroutine read_main
 
@@ -395,11 +402,6 @@ contains
         if (ctrl%tdc_type == 2) then
             allocate(t(1)%nadv(t(1)%ndim*t(1)%qnatom, t(1)%max_nstate, t(1)%max_nstate))
         end if
-        !Cris allocation of spin-orbit vector, max_nstate or spin blocks?
-        if (ctrl%sh == 4) then
-           allocate(t(1)%sov(t(1)%max_nstate,t(1)%max_nstate))
-           allocate(t(1)%spinv(t(1)%max_nstate))
-        endif
 
         ! Second run through the file to read the atom, mass, position and index of each atom.
         t(1)%qnatom = 0
@@ -787,10 +789,13 @@ contains
     !> @details
     !! See manual for details concerning the input.
     !----------------------------------------------------------------------------------------------
-    subroutine read_surfhop(readf, uncouple_states)
+    subroutine read_surfhop(readf, uncouple_states, spinst)
         type(reader), intent(inout) :: readf
-        integer, allocatable, intent(out) :: uncouple_states(:)
+        integer, allocatable, intent(out) :: uncouple_states(:)           
+        integer, allocatable, intent(out) :: spinst(:)   
+        integer, allocatable :: statemult(:)
         logical :: check
+        integer :: i,j,s
 
         call readf%rewind()
         call readf%go_to_keyword('$surfhop', found=check)
@@ -872,6 +877,29 @@ contains
                         ctrl%tdc_interpolate = 2
                     end select
                 end if    
+            case('state_mult') !Reading multiplicity states
+               if (readf%narg > 1) then                   
+                   call read_index_list_unsort(readf%args(2)%s, statemult)
+                   s=0
+                   do i=1,size(statemult)
+                      if(statemult(i).ne.0)s=s+statemult(i)
+                   enddo
+                   allocate(spinst(s))
+                   s=1
+                   doi: do i=1,size(statemult)
+                      if(statemult(i).ne.0)then
+                         do j=1,statemult(i)
+                            spinst(s)=i
+                            s=s+1
+                         enddo
+                      else
+                         cycle doi  
+                      endif
+                      
+                   enddo doi
+                   write(69,*)"Spin vector ",spinst(:)
+                   call flush(69)
+               endif
             case('energy')
                 select case(readf%args(2)%s)
                 case('constant')

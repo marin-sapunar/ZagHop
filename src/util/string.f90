@@ -14,7 +14,8 @@ module string_mod
     public :: string_parse
     public :: toupper
     public :: tolower
-    public :: read_index_list
+    public :: read_index_list    
+    public :: read_index_list_unsort
     public :: char_is_num
     public :: rmwhite
     public :: compact
@@ -153,6 +154,83 @@ contains
         indexlist = templist(1:ntot)
  
     end subroutine read_index_list
+ 
+     !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: read_index_list
+    !
+    ! DESCRIPTION:
+    !> @brief Read a list of positive integers from a string.
+    !> @details 
+    !! The integers can be given as a comma/whitespace separated list. Members of the list can be 
+    !! single integers or ranges separated by a hyphen.
+    !----------------------------------------------------------------------------------------------
+    subroutine read_index_list_unsort(str, indexlist)
+        use sort_mod, only : sort
+        character(len=*), intent(in) :: str !< Input string.
+        integer, allocatable, intent(out) :: indexlist(:) !< Final integer list.
+       
+        character(len=:), allocatable :: tempstr
+        logical :: range_0, range_1
+        integer :: i, j, i0, last
+        integer :: ntot
+        integer :: int1, int0
+        integer :: templist(20000)
+       
+        ntot = 0
+        tempstr = str
+        call compact(tempstr)
+
+        if (len(tempstr) == 1) then
+            allocate(indexlist(1))
+            read(tempstr, *) indexlist(1)
+            return
+        end if
+       
+        i0 = 1
+        range_0 = .false.
+        range_1 = .false.
+        do i = 2, len(tempstr)
+            select case(tempstr(i:i))
+            case('-')
+                last = 1
+                range_0 = .true.
+            case(',')
+                last = 2
+            case(' ')
+                if (last /= 4) cycle
+            case default
+                last = 4
+                if (i /= len(tempstr)) cycle
+            end select
+            if (i /= len(tempstr)) then ! Reached a delimiter.
+                read(tempstr(i0:i-1), *) int1
+            else ! Reached end of string.
+                read(tempstr(i0:i), *) int1
+            end if
+            i0 = i + 1
+            if (range_0) then
+                int0 = int1
+                range_0 = .false.
+                range_1 = .true.
+            else if (range_1) then
+                range_1 = .false.
+                do j = int0, int1
+                    ntot = ntot + 1
+                    templist(ntot) = j
+                end do
+            else
+                ntot = ntot + 1
+                templist(ntot) = int1
+            end if
+        end do
+
+       
+        if (allocated(indexlist)) deallocate(indexlist)
+        allocate(indexlist(ntot))
+!        call sort(templist(1:ntot))
+        indexlist = templist(1:ntot)
+ 
+    end subroutine read_index_list_unsort
  
  
     !----------------------------------------------------------------------------------------------
