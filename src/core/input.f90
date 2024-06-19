@@ -309,11 +309,10 @@ contains
                     ctrl%couple(uncouple_states(i)) = .false.
                 end do                
             end if
-            if(allocated(spinst))then !ctrl%sh=4
-               allocate(t(1)%spinv(size(spinst,1)))
+            if(allocated(spinst))then !ctrl%sh=4               
+               allocate(t(1)%spinv(size(spinst,1)))              
                t(1)%spinv(:)=spinst(:)
-              !Cris allocation of spin-orbit vector, max_nstate or spin blocks?
-              allocate( t(1)%sov( size(spinst,1),size(spinst,1) ) )
+               allocate( t(1)%sov( size(spinst,1),size(spinst,1) ) )
             endif
         end select
     end subroutine read_main
@@ -887,21 +886,16 @@ contains
                    enddo
                    allocate(spinst(s))
                    s=1
-                   doi: do i=1,size(statemult)
+                   do i=1,size(statemult)
                       if(statemult(i).ne.0)then
                          do j=1,statemult(i)
                             spinst(s)=i
                             s=s+1
                          enddo
-                      else
-                         cycle doi  
-                      endif
-                      
-                   enddo doi
-!                   write(69,*)"Spin vector ",spinst(:)
-!                   call flush(69)
-               endif
-            case('nosocdegen', 'no_socdegen')
+                      endif                      
+                   enddo                 
+               endif               
+            case('nosocdegen', 'no_socdegen') !Option for non-degenerate spin-orbit states
                if(.not.allocated(spinst)) then
                   write(stderr, *)'Multiplicity of states has to be given in surfhop section using state_mult=S,D,T,..'
                   stop

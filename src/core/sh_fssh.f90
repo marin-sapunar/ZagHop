@@ -159,8 +159,6 @@ contains
         tt = 0.0_dp
         edt = dt / nstep
        
-        write(69,*) "Values of spin vector ", spinst(st),spinst(tst)
-        call flush(69)
         do i = 1, nstep
              fprob = 0.0_dp
             ! Get energies and TDCs for current substep.

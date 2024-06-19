@@ -133,11 +133,10 @@ contains
             end if
         case(1)
 #ifdef QUANTICS
-            ! Assume all atoms are QM so no temporary arrays need to be created.
-            
-            write(69,*) "In interface.f90, before shzagreb_run",t%spinv
-            call flush(69)        
+            ! Assume all atoms are QM so no temporary arrays need to be created.           
+    
             call shzagreb_run(t%step, t%geom, t%cstate, t%qe, t%grad, t%nadv, t%sov,t%spinv)   
+
 #else
             write(stderr, *) 'Error in run_qm. Code not compiled with quantics interface.'         
             stop

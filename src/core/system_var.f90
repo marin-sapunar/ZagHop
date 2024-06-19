@@ -298,7 +298,6 @@ contains
         integer :: i, ounit
 
         open(newunit=ounit, file=backup_file, action='write')
-        write(69,*)"onunit and backup_file", ounit,backup_file
         write(ounit, *) memory
         do i = 1, memory
             write(ounit, *) t(i)%step
