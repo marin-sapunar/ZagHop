@@ -903,40 +903,33 @@ contains
                endif
             case('nosocdegen', 'no_socdegen')
                if(.not.allocated(spinst)) then
-                  write(stderr, *)'Multiplicity of states has to be given using state_mult=S,D,T,..'
+                  write(stderr, *)'Multiplicity of states has to be given in surfhop section using state_mult=S,D,T,..'
                   stop
                else
                   deallocate(spinst)
-                  ss=0
-                  do i=1,size(statemult,1)
-                      write(69,*)i,ss,i*i
-                      call flush(69)
+                  s=0
+                  do i=1,size(statemult,1)                      
                       if(statemult(i).ne.0)then
-                         if(i.eq.1)then
-                            ss=ss+1
-                         else
-                            ss=ss+i*i
-                         endif
+                         do j=1,statemult(i)
+                            do k=1, i
+                               s=s+1
+                            enddo
+                         enddo
                       endif
                   enddo
-                  write(69,*)"Value of ss ", ss
-                  call flush(69)
-                  allocate(spinst(ss))
-                  s=1
-                  doii: do i=1,size(statemult)
+                
+                  allocate(spinst(s))
+                  s=0
+                  do i=1,size(statemult,1)
                      if(statemult(i).ne.0)then
                         do j=1,statemult(i)
-                           do k=1,statemult(i)
+                           do k=1,i
+                              s=s+1 
                               spinst(s)=i
-                              s=s+1
-                           enddo
+                            enddo
                         enddo
-                     else
-                        cycle doii
                      endif                      
-                   enddo doii
-                   write(69,*)"Spin vector nodegen",spinst(:)
-                   call flush(69)
+                   enddo                 
                 endif
             case('energy')
                 select case(readf%args(2)%s)

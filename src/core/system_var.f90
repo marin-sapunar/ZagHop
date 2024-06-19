@@ -340,9 +340,9 @@ contains
             write(ounit, *) allocated(t(i)%nadv)
             if (allocated(t(i)%nadv)) write(ounit, *) t(i)%nadv(:, :, :)
             write(ounit, *) allocated(t(i)%sov)
-            if (allocated(t(i)%sov)) write(ounit, *) "Sov ",t(i)%sov(:, :)
+            if (allocated(t(i)%sov)) write(ounit, *) t(i)%sov(:, :)
             write(ounit, *) allocated(t(i)%spinv)
-            if (allocated(t(i)%spinv)) write(ounit, *)"Spinv ", t(i)%spinv(:)
+            if (allocated(t(i)%spinv)) write(ounit, *) t(i)%spinv(:)
             write(ounit, *) t(i)%pbcbox
             write(ounit, *) allocated(t(i)%phase)
             if (allocated(t(i)%phase)) write(ounit, *) t(i)%phase
