@@ -195,7 +195,7 @@ contains
 !                   call flush(69)
                    call sh_interpolate_sovec(opt_intv, nstep, i, dt, sov1, sov2, odecmat)
                   
-                   ! Propagate wf coefficients.
+                   ! Propagatre wf coefficients.
                    call callode(odens, cwf, tt, edt, de_flag)                   
                    
                    ! Determine hopping probabilities.

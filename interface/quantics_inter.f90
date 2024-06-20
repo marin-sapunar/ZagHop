@@ -60,7 +60,6 @@ contains
 ! GW: NEED TO PASS SOVEC FROM ZAGHOP
       real(dop), intent(out) :: sovec(:, :)
       integer, intent(out) :: spinvec(:)
-!      real(dop) :: sovec(1,1)
 
       integer :: i,j,ilbl,jlbl,chkdvr,chkgrd,chkpsi,chkprp,n,f,f1,m
       logical(kind=4) :: linwf

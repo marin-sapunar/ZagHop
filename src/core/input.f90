@@ -79,6 +79,7 @@ contains
         ! Surface hopping options.
         ctrl%sh = 2
         ctrl%sodegen = .true.
+        ctrl%socbas = .false.
         ctrl%shnstep = 10000
         ctrl%decohlvl = 1
         ctrl%couplvl = 0
@@ -796,7 +797,7 @@ contains
         integer, allocatable :: statemult(:)
         logical :: check
         integer :: i,j,k,s,ss
-
+        
         call readf%rewind()
         call readf%go_to_keyword('$surfhop', found=check)
         if (.not. check) return
@@ -894,7 +895,12 @@ contains
                          enddo
                       endif                      
                    enddo                 
-               endif               
+               endif    
+            case('socdegen')
+               if(.not.allocated(spinst)) then
+                  write(stderr, *)'Multiplicity of states has to be given in surfhop section using state_mult=S,D,T,..'
+                  stop
+               endif
             case('nosocdegen', 'no_socdegen') !Option for non-degenerate spin-orbit states
                if(.not.allocated(spinst)) then
                   write(stderr, *)'Multiplicity of states has to be given in surfhop section using state_mult=S,D,T,..'
@@ -925,6 +931,8 @@ contains
                      endif                      
                    enddo                 
                 endif
+            case('socbas') ! Spin-orbit basis representation
+               ctrl%socbas=.true.
             case('energy')
                 select case(readf%args(2)%s)
                 case('constant')
