@@ -48,7 +48,7 @@ module shzagreb_inter
       
 contains
 
-      subroutine shzagreb_run(step, xyz0, cstate, en, gra, nadvec, sovec, spinvec)
+      subroutine shzagreb_run(step, xyz0, cstate, en, gra, nadvec, sovec, spinvec, socbas)
 
       
       integer, intent(in) :: step
@@ -59,7 +59,8 @@ contains
       real(dop), intent(out) :: nadvec(:, :, :)
 ! GW: NEED TO PASS SOVEC FROM ZAGHOP
       real(dop), intent(out) :: sovec(:, :)
-      integer, intent(out) :: spinvec(:)
+      integer, intent(in) :: spinvec(:)
+      logical(kind=4), intent(in) :: socbas
 
       integer :: i,j,ilbl,jlbl,chkdvr,chkgrd,chkpsi,chkprp,n,f,f1,m
       logical(kind=4) :: linwf
@@ -343,7 +344,7 @@ contains
            pesdia,cpesdia,rotmat,crotmat,point,qcoo1,nham,&
            izflag,modus)
       
-      if (lsocbas) then
+      if (lsocbas.or.socbas) then
          do s=1,nddstate
             en(s) = pesad(s)
          enddo
@@ -361,7 +362,9 @@ contains
       call extrgra(cstate,en,gra,nadvec,derad)
 ! extract SOC from diabatic energy matrix
       if (.not. lsocbas) then
-         if (nsmult .gt. 1) call extrsoc(pesspdi,sovec)
+         if (nsmult .gt. 1) call extrsoc(pesspdi,sovec,spinvec)
+      else if (.not. socbas) then
+         if (size(spinvec,1).gt.0) call extrsoc(pesspdi,sovec,spinvec)
       endif
 
       close(ilog)
@@ -370,23 +373,34 @@ contains
 
 !#######################################################################
 
-      subroutine extrsoc(pesspdi,sovec)
-
+      subroutine extrsoc(pesspdi,sovec, spinvec)
       implicit none
 
       integer(long)              :: s,s1,f,f1,n,m
       real(dop), dimension(:,:), intent(out) :: sovec
-      real(dop), dimension(:,:), intent(in)  :: pesspdi
-
-! Keep only values between different multiplicities
-      do s=1,nddstate
-         do s1=1,nddstate
-            if (imultmap(s) .ne. imultmap(s1)) then
-               sovec(s1,s) = pesspdi(s1,s)
-            endif
+      real(dop), dimension(:,:), intent(in)  :: pesspdi      
+      integer, dimension(:), intent(in) :: spinvec
+      
+      if(size(spinvec,1).gt.0)then
+      ! Keep only values between different multiplicities
+         do s=1,size(spinvec,1)
+            do s1=1,size(spinvec,1)
+               if (spinvec(s) .ne. spinvec(s1)) then
+                  sovec(s1,s) = pesspdi(s1,s)
+               endif
+            enddo
          enddo
-      enddo
-
+      elseif(allocated(imultmap))then !Ask Graham, cause nddstate is the number of multiplicity blocks, no the multiplicity of all states
+      ! Keep only values between different multiplicities
+         do s=1,nddstate
+            do s1=1,nddstate
+               if (imultmap(s) .ne. imultmap(s1)) then
+                  sovec(s1,s) = pesspdi(s1,s)
+               endif
+            enddo
+         enddo
+      endif
+      
       end subroutine extrsoc
 
 

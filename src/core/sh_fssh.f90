@@ -151,6 +151,9 @@ contains
         integer :: de_flag
         real(dp) :: rnum !< Random number for surface hopping.
 
+!        write(69,*)nadv1(:,:,:),nadv2(:,:,:),spinst(:),qe1(:),qe2(:)
+!        call flush(69)
+        
         odens = size(qe1)
         allocate(odeen(odens))
         allocate(odecmat(odens, odens))
@@ -215,6 +218,9 @@ contains
             end do hop
         enddo
 
+        write(69,*)"Probability calculated with SH ", prob, cwf(st),cwf(tst),odecmat(tst,st),nstep
+        call flush(69)
+        
         deallocate(odeen)
         deallocate(odecmat)
     end subroutine sh_sosh

@@ -895,7 +895,7 @@ contains
                          enddo
                       endif                      
                    enddo                 
-               endif    
+               endif 
             case('socdegen')
                if(.not.allocated(spinst)) then
                   write(stderr, *)'Multiplicity of states has to be given in surfhop section using state_mult=S,D,T,..'

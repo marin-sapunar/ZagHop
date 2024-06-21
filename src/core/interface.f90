@@ -135,7 +135,7 @@ contains
 #ifdef QUANTICS
             ! Assume all atoms are QM so no temporary arrays need to be created.           
     
-            call shzagreb_run(t%step, t%geom, t%cstate, t%qe, t%grad, t%nadv, t%sov,t%spinv)   
+            call shzagreb_run(t%step, t%geom, t%cstate, t%qe, t%grad, t%nadv, t%sov,t%spinv,ctrl%socbas)   
 
 #else
             write(stderr, *) 'Error in run_qm. Code not compiled with quantics interface.'         
