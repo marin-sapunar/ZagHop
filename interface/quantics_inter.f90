@@ -334,12 +334,13 @@ contains
 ! PES matrix in adiabatic (en) and diabatic (pesdia) representations
 ! rotmatz is the ADT matrix (as a complex)
       if (lsocbas) then
-         modus=1
-      else
          modus=0
+      else
+         modus=1
       endif
   !   call calcdiab(hops,en,pesdia,rotmatz,point,qcoo1,1)
       nham=1
+      
       call calcvreps(hops,pesad,cpesad,pesspdi,cpesspdi,&
            pesdia,cpesdia,rotmat,crotmat,point,qcoo1,nham,&
            izflag,modus)
@@ -363,10 +364,12 @@ contains
 ! extract SOC from diabatic energy matrix
       if (.not. lsocbas) then
          if (nsmult .gt. 1) call extrsoc(pesspdi,sovec,spinvec)
+         
       else if (.not. socbas) then
          if (size(spinvec,1).gt.0) call extrsoc(pesspdi,sovec,spinvec)
+         
       endif
-
+      
       close(ilog)
 
       end subroutine shzagreb_run

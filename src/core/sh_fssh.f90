@@ -197,9 +197,11 @@ contains
 !                   write(69,*) "else ",st,tst,spinst(st),spinst(tst)
 !                   call flush(69)
                    call sh_interpolate_sovec(opt_intv, nstep, i, dt, sov1, sov2, odecmat)
+       
                   
                    ! Propagatre wf coefficients.
-                   call callode(odens, cwf, tt, edt, de_flag)                   
+                   call callode(odens, cwf, tt, edt, de_flag)    
+                               write(69,*) 'INTERPOLATE',odeen,odecmat,cwf
                    
                    ! Determine hopping probabilities.
                    call random_number(rnum)
@@ -218,7 +220,7 @@ contains
             end do hop
         enddo
 
-        write(69,*)"Probability calculated with SH ", prob, cwf(st),cwf(tst),odecmat(tst,st),nstep
+        write(69,*)"Probability calculated with SH ", prob,tst, cwf,odecmat
         call flush(69)
         
         deallocate(odeen)
