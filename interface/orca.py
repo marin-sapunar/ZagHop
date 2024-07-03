@@ -1,6 +1,7 @@
 """ Interface for running Orca calculations. """
 import subprocess
 import sys
+import os
 import numpy as np
 import file_utils
 import interface
@@ -26,13 +27,14 @@ class Orca(interface.QMInterface):
         else:
             self.opts["base_name"] = self.template
         self.opts["xyz_file"] = xyzfile[0][0]
+        self.opts["root"] = os.environ["ORCA_ROOT"]
 
     def run(self):
         """ Run the calculation and check success. """
         with open(self.log_file, "w") as outf:
             with open(self.err_file, "w") as errf:
                 try:
-                    subprocess.run(["orca",
+                    subprocess.run([self.opts["root"] + "/orca",
                                     self.template],
                                     stdout=outf,
                                     stderr=errf,
@@ -42,7 +44,7 @@ class Orca(interface.QMInterface):
                     print("  Check " + self.err_file + "/" + self.log_file + ".")
                     sys.exit(1)
                 try:
-                    subprocess.run(["orca_2mkl", self.opts["base_name"], "-molden"],
+                    subprocess.run([self.opts["root"] + "/orca_2mkl", self.opts["base_name"], "-molden"],
                                     stdout=outf,
                                     stderr=errf,
                                     check=True)
