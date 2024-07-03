@@ -26,7 +26,17 @@ def go_to_keyword(file, regex):
     raise ValueError('Requested keyword not found in file: ' + regex)
 
 
-def search_file(file, search, after=0, max_res=None, close=True, stop_at=None):
+def check_in_file(file, regex):
+    """ Check if a regex is present in a file. """
+    try:
+        cfile = go_to_keyword(file, regex)[0]
+        cfile.close()
+        return True
+    except ValueError:
+        return False
+
+
+def search_file(file, search, after=0, max_res=None, close=True, stop_at=None, matching_only=False):
     """ Find all occurences of a regex in file. """
     cfile = open_if_needed(file)
     search_reg = re.compile(search)
@@ -38,9 +48,12 @@ def search_file(file, search, after=0, max_res=None, close=True, stop_at=None):
         if stop_at is not None:
             if stop_reg.search(line):
                 break
-        if search_reg.search(line):
+        line_res = search_reg.search(line)
+        if line_res:
             n_hit = n_hit + 1
-            if after == 0:
+            if matching_only:
+                values.append(line_res.groups() or line_res.group())
+            elif after == 0:
                 values.append(line.rstrip())
             else:
                 for _ in range(after):
@@ -52,28 +65,18 @@ def search_file(file, search, after=0, max_res=None, close=True, stop_at=None):
     if close:
         cfile.close()
     if not values:
-        raise ValueError("No matches for {} in file {}".format(
-            search_reg.pattern, cfile.name))
+        raise ValueError(f"No matches for {search_reg.pattern} in file {cfile.name}")
     return values
 
 
-def split_columns(split_list, col=None, split=str.split, convert=None):
+def split_columns(in_list, col=None, split=str.split, convert=lambda x:x):
     """ Split all sublists of split_list and take specified columns. """
-    if col is None and convert is not None:
-        split_list = [convert(val) for val in split_list]
+    if col is None:
+        split_list = [[convert(sval) for sval in split(val)] for val in in_list]
     elif isinstance(col, int):
-        for i, line in enumerate(split_list):
-            if convert is None:
-                split_list[i] = split(line)[col]
-            else:
-                split_list[i] = convert(split(line)[col])
+        split_list = [convert(split(val)[col]) for val in in_list]
     elif isinstance(col, list):
-        for i, line in enumerate(split_list):
-            line = split(line)
-            if convert is None:
-                split_list[i] = [line[ci] for ci in col]
-            else:
-                split_list[i] = [convert(line[ci]) for ci in col]
+        split_list = [[convert(split(val)[ci]) for ci in col]for val in in_list]
     return split_list
 
 
@@ -98,6 +101,7 @@ def replace_cols_inplace(file_name,
                          cols=None,
                          split=str.split,
                          max_replace=1,
+                         skip=0,
                          val_format=" {:20.12f} "):
     """ Replace columns after a given keyword with values from array. """
     reg = re.compile(keyword)
@@ -112,6 +116,9 @@ def replace_cols_inplace(file_name,
                 else:
                     n_found = n_found + 1
                     tmp_file.write(line)
+                    for i in range(skip):
+                        line = next(cfile)
+                        tmp_file.write(line)
                     for vals in array:
                         line = split(next(cfile).rstrip())
                         for i, col in enumerate(cols):
