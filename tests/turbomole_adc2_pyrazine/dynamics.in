@@ -1,0 +1,13 @@
+$method
+ qm "run.py turbomole $QMDIR"
+ overlap "cis_overlap.exe -p 0 -swf qm_olap -os -oo -mp prevstep $QMDIR"
+$system
+ nstate = 4
+ istate = 3
+$surfhop
+ fssh diabatic
+ seed = 100
+$dynamics
+ time = 6.0
+ tstep = 0.5
+$end
