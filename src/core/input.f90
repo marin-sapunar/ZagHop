@@ -518,7 +518,7 @@ contains
         do
             call readf%next()
             if (index(readf%line, '$') == 1) exit
-            call readf%parseline(' ')
+            call readf%parseline(' =')
             select case(readf%args(1)%s)
             case('qm')
                 ctrl%qprog = readf%args(2)%s
@@ -538,6 +538,8 @@ contains
                     write(stderr, *) '  Unrecognized qlib keyword: ', readf%args(2)%s
                     stop
                 end select
+            case('seed')
+                read(readf%args(2)%s, *) ctrl%seed
             case('qm_en_error')
                 read(readf%args(2)%s, *) ctrl%qm_en_err
             end select
@@ -910,8 +912,6 @@ contains
             case('uncouple_state')
                 call compact(readf%line)
                 call read_index_list(readf%line(15:), uncouple_states)
-            case('seed')
-                read(readf%args(2)%s, *) ctrl%seed
             case default
                 write(stderr, *) 'Warning in Input module, read_surfhop subroutine.'
                 write(stderr, *) '  Skipping line with unrecognized keyword:'

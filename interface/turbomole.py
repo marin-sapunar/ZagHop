@@ -84,14 +84,14 @@ class Turbomole(QMInterface):
         """ Read energy from log file. """
         if self.opts["ricc2"]:
             self.data["energy"] = get_ricc2_energy(self.log_file, self.opts["ricc2_gs_model"])
-        elif self.opts["egrad"]:
+        else:
             self.data["energy"] = get_dft_energy(self.log_file)
 
     def read_gradient(self):
         """ Read gradient from log file. """
         if self.opts["ricc2"]:
             self.data["gradient"] = get_ricc2_gradient(self.log_file, self.data["iroot"])
-        elif self.opts["egrad"]:
+        else:
             self.data["gradient"] = get_dft_gradient(self.log_file, self.data["iroot"],
                                                      self.opts["ri"])
 

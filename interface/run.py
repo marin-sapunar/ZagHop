@@ -53,7 +53,12 @@ def run(args):
     os.chdir(args.work_dir)
     interface = INTERFACES[args.interface]
     qm_prog = interface()
-    request = {"gradient": True, "oscillator_strength": True}
+    request = {}
+    request["gradient"] =  True
+    if in_data["nstate"] > 1:
+        request["oscillator_strength"] = True
+    else:
+        request["oscillator_strength"] = False
     qm_prog.update_input(in_data, request)
     qm_prog.run()
     qm_prog.read()

@@ -2,64 +2,82 @@
 ''' Program tests. '''
 import os
 import shutil
+import subprocess
 import time
 import unittest
-import subprocess
 import numpy as np
 
 
 class ZagHopTest(unittest.TestCase):
+    """ Trajectory tests."""
 
 
-    def setup_test(self, name):
-        self.idir = os.getcwd()
-        shutil.copytree(name, "run_" + name)
-        os.chdir("run_" + name)
-        if not os.path.isdir("Reference"):
+    def test_ldfssh_pyrazine(self):
+        """ Pyrazine test case for LD-FSSH.
+
+        Both a frustrated hop and a succssfull hop occur in the first 6 fs.
+        """
+        self.run_traj()
+        self.compare_energy()
+
+
+    def test_gsmd_h2o(self):
+        """ Water test case for ground state MD with thermostat.
+
+        Tests the thermostat and that options are correctly set when surface
+        hopping is turned off.
+        """
+        self.run_traj()
+        self.compare_energy()
+
+
+    @classmethod
+    def setUpClass(cls):
+        """ Make test logs directory.
+
+        If a directory from a previous test run exists, rename that directory
+        based on the time it was modified and create a new one."""
+        cls.logdir = "zaghop_test"
+        cls.idir = os.getcwd()
+        try:
+            os.mkdir(cls.logdir)
+        except FileExistsError:
+            old_log_time = time.gmtime(os.path.getmtime(cls.logdir))
+            old_log_time = time.strftime("%y.%m.%d.%H.%M.%S", old_log_time)
+            os.rename(cls.logdir, cls.logdir + old_log_time)
+            os.mkdir(cls.logdir)
+
+
+    def setUp(self):
+        """ Set up directory for running a specific test."""
+        self.name = self.id().split(".")[-1][5:]
+        self.rundir = self.logdir + "/" + self.name
+        self.inpdir = self.idir + "/" + self.name
+        shutil.copytree(self.inpdir, self.rundir)
+        if not os.path.isdir(self.inpdir + "/Reference"):
             raise FileNotFoundError("Reference directory not found.")
 
 
-    def run_trajectory(self):
-        with open("nad.stdout", "w") as out, open("nad.stderr", "w") as err:
-            subprocess.call("zaghop", stdout=out, stderr=err)
-        self.assertTrue(os.path.isdir("Results"), "Error termination.")
-
-
-    def compare_energy(self):
-        new = np.loadtxt("Results/energy.dat", comments="#")
-        ref = np.loadtxt("Reference/energy.dat", comments="#")
-        self.assertTrue(np.allclose(new, ref), "Difference in energy.dat file.")
-
-
-    def end_test(self):
+    def tearDown(self):
+        """ Return to initial directory in case of a failed test. """
         os.chdir(self.idir)
 
 
-class Turbomole(ZagHopTest):
-    """ Turbomole interface tests. """
+    def run_traj(self):
+        """ Run zaghop for the current test case. """
+        os.chdir(self.rundir)
+        with open("nad.stdout", "w") as out, open("nad.stderr", "w") as err:
+            subprocess.call("zaghop", stdout=out, stderr=err)
+        self.assertTrue(os.path.isdir("Results"), "Error termination.")
+        os.chdir(self.idir)
 
-    def test_adc2_pyrazine(self):
-        self.setup_test("ld-fssh_pyrazine")
-        self.run_trajectory()
-        self.compare_energy()
-        self.end_test()
 
-
-#def check_paths():
-#    ''' Check that REFDIR and PROG exist. '''
-#    if not os.path.isdir(REFDIR):
-#        raise RuntimeError(REFDIR + ' directory not found.')
-#    if not os.path.isfile(PROG[0]):
-#        raise RuntimeError(PROG[0]+ ' not found.')
-#    try:
-#        os.mkdir(LOGDIR)
-#    except FileExistsError:
-#        old_log_time = time.gmtime(os.path.getmtime(LOGDIR))
-#        old_log_time = time.strftime("%y.%m.%d._%H:%M:%S", old_log_time)
-#        os.rename(LOGDIR, LOGDIR[:-1] + old_log_time)
-#        os.mkdir(LOGDIR)
+    def compare_energy(self):
+        """ Compare full contents of the energy.dat file. """
+        new = np.loadtxt(self.rundir + "/Results/energy.dat", comments="#")
+        ref = np.loadtxt(self.rundir + "/Reference/energy.dat", comments="#")
+        self.assertTrue(np.allclose(new, ref), "Difference in energy.dat file.")
 
 
 if __name__ == '__main__':
-#   check_paths()
     unittest.main(verbosity=2)

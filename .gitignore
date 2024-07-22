@@ -8,3 +8,5 @@ doc/html
 doc/InputManual.aux
 doc/InputManual.log
 doc/InputManual.*gz
+
+tests/zaghop_test*
