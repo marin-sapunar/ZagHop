@@ -39,7 +39,7 @@ class Turbomole(ZagHopTest):
     """ Turbomole interface tests. """
 
     def test_adc2_pyrazine(self):
-        self.setup_test("turbomole_adc2_pyrazine")
+        self.setup_test("ld-fssh_pyrazine")
         self.run_trajectory()
         self.compare_energy()
         self.end_test()

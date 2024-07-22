@@ -59,6 +59,9 @@ class Turbomole(QMInterface):
             else:
                 subprocess.run("dscf", stdout=out, stderr=err, check=False)
             actual_check()
+            if file_utils.check_in_file(self.err_file, r"ended abnormally"):
+                print("Turbomole calculation failed. Check output in " + os.getcwd() + ".")
+                sys.exit(1)
             # Run the excited state + gradient calculation(s).
             if self.opts["ricc2"]:
                 subprocess.run("ricc2", stdout=out, stderr=err, check=False)
