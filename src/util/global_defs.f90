@@ -108,4 +108,16 @@ contains
     end subroutine errstop
 
 
+    elemental function truefalse_str(bool) result(tf)
+        logical, intent(in) :: bool
+        character(len=5) :: tf
+
+        if (bool) then
+            tf = "True "
+        else
+            tf = "False"
+        end if
+    end function truefalse_str
+
+
 end module global_defs

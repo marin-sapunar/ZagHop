@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """ Run a set of QM calculations. """
 import os
+import yaml
 from pathlib import Path
 from argparse import ArgumentParser
 import file_utils
@@ -39,26 +40,20 @@ def main():
 
 def run(args):
     """ Read input files and run the interface. """
-    in_data = dict()
-    in_data["geom"] = np.loadtxt(FILES["geom"])
-    in_data["iroot"] = np.loadtxt(FILES["state"], dtype=int)[0]
-    in_data["nstate"] = np.loadtxt(FILES["state"], dtype=int)[1]
-    try:
-        in_data["mm_geom"] = np.loadtxt(FILES["mm_geom"])
-        in_data["qmmm"] = True
-    except OSError:
-        in_data["qmmm"] = False
+    with open("qm_sys.yaml", "r") as infile:
+        in_data = yaml.safe_load(infile)
+    print(in_data)
+    if "geom" not in in_data:
+        print("Error, geom not found in qm_sys.yaml file.")
+        sys.exit(1)
+    in_data["geom"] = np.array(in_data["geom"], dtype=float)
+    request = in_data.pop("request")
+
     # Go to work directory and run calculation.
     cwd = Path(os.getcwd())
     os.chdir(args.work_dir)
     interface = INTERFACES[args.interface]
     qm_prog = interface()
-    request = {}
-    request["gradient"] =  True
-    if in_data["nstate"] > 1:
-        request["oscillator_strength"] = True
-    else:
-        request["oscillator_strength"] = False
     qm_prog.update_input(in_data, request)
     qm_prog.run()
     qm_prog.read()

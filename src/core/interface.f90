@@ -41,6 +41,9 @@ contains
         logical :: hop
         integer :: cunit, i, j, d1, d2
         logical :: check1, check2
+        character(len=200) :: yamfmt
+
+        write(yamfmt, '(a,i0,a)') "('    - [ ',  ", t%ndim-1, "(e22.12, ' ,'), e22.12, ' ]')"
 
         select case (ctrl%qlib)
         case(0)
@@ -49,18 +52,18 @@ contains
                 call system('cp -r '//ctrl%qmdir//' prevstep')
             end if
 
-            open(newunit=cunit, file='cstep', action='write')
-            write(cunit, '(i4.4)') t%step
-            close(cunit)
-
-            open(newunit=cunit, file='qm_geom', action='write')
+            open(newunit=cunit, file='qm_sys.yaml', action='write')
+            write(cunit, '(a, i0)') "step : ", t%step
+            write(cunit, '(a)') "geom : "
             do i = 1, t%qnatom
-                write(cunit, *) t%geom(:, t%qind(i))
+                write(cunit, yamfmt) t%geom(:, t%qind(i))
             end do
-            close(cunit)
-
-            open(newunit=cunit, file='qm_state', action='write')
-            write(cunit, *) t%cstate, t%nstate
+            write(cunit, '(a,i0)') "nstate : ", t%nstate
+            write(cunit, '(a,i0)') "iroot : ", t%cstate
+            write(cunit, '(a)') "request : "
+            write(cunit, '(a)') "    energy : True"
+            write(cunit, '(a)') "    gradient : True"
+            write(cunit, '(a,a)') "    oscillator_strength : ", truefalse_str(ctrl%oscill)
             close(cunit)
 
             if (ctrl%mm) then
