@@ -64,20 +64,12 @@ def run(args):
 
 def calc_write(results):
     """ Write output files. """
-    num_format = " {:20.14f}"
-    xyz_format = 3 * " {:20.14f}"
-    with open(FILES["energy"], "w") as out_f:
-        for energy in results["energy"]:
-            out_f.write(num_format.format(energy))
-        out_f.write("\n")
-    with open(FILES["gradient"], "w") as out_f:
-        for grad in results["gradient"]:
-            out_f.write(xyz_format.format(*grad) + "\n")
-    if "oscillator_strength" in results:
-        with open(FILES["oscill"], "w") as out_f:
-            for oscill in results["oscillator_strength"]:
-                out_f.write(num_format.format(oscill))
-            out_f.write("\n")
+    for key in results:
+        # Convert numpy arrays to lists for yaml.dump
+        if isinstance(results[key], np.ndarray):
+            results[key] = results[key].tolist()
+    with open("qm_out.yaml", "w") as outfile:
+        yaml.dump(results, outfile)
 
 
 def cleanup():

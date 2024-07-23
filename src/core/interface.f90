@@ -37,7 +37,9 @@ contains
 #endif
         use system_var, only : trajtype
         use matrix_mod, only : unit_mat
+        use file_mod, only : reader
         type(trajtype), intent(inout) :: t
+        type(reader) :: readf
         logical :: hop
         integer :: cunit, i, j, d1, d2
         logical :: check1, check2
@@ -61,9 +63,9 @@ contains
             write(cunit, '(a,i0)') "nstate : ", t%nstate
             write(cunit, '(a,i0)') "iroot : ", t%cstate
             write(cunit, '(a)') "request : "
-            write(cunit, '(a)') "    energy : True"
-            write(cunit, '(a)') "    gradient : True"
-            write(cunit, '(a,a)') "    oscillator_strength : ", truefalse_str(ctrl%oscill)
+            write(cunit, '(4x,a)') "energy : True"
+            write(cunit, '(4x,a)') "gradient : True"
+            write(cunit, '(4x,a,a)') "oscillator_strength : ", truefalse_str(ctrl%oscill)
             close(cunit)
 
             if (ctrl%mm) then
@@ -75,38 +77,50 @@ contains
             end if
 
             ! Call interface.
-            call system('rm qm_energy qm_grad qm_oscill qm_olap 2> /dev/null')
+            call system('rm -f qm_out.yaml')
             call system(ctrl%qprog)
 
             ! Check if energy and gradient files were created.
-            inquire(file='qm_energy', exist=check1)
-            if (.not. check1) write(stderr, *) 'Error, qm_energy file not found after QM calculation.'
-            inquire(file='qm_grad', exist=check2)
-            if (.not. check2) write(stderr, *) 'Error, qm_grad file not found after QM calculation.'
-            if ((.not. check1) .or. (.not. check2)) then
-                call system('rm -rf qmdir_error')
-                call system('cp -r '//ctrl%qmdir//' qmdir_error')
+            inquire(file='qm_out.yaml', exist=check1)
+            if (.not. check1) then
+                write(stderr, *) 'Error, qm_out.yaml file not found after QM calculation.'
                 stop
             end if
 
-            t%qe = 0.0_dp
-            open(newunit=cunit, file='qm_energy', action='read')
-            read(cunit, *) t%qe(1:t%nstate)
-            close(cunit)
-
-            t%grad = 0.0_dp
-            open(newunit=cunit, file='qm_grad', action='read')
-            do i = 1, t%qnatom
-                read(cunit, *) t%grad(:, t%qind(i))
+            call readf%open('qm_out.yaml', abort_on_eof=.false.)
+            do
+                call readf%next()
+                if (is_iostat_end(readf%iostat)) exit
+                call readf%parseline(' :,[]')
+                select case(readf%args(1)%s)
+                case('energy')
+                    t%qe = 0.0_dp
+                    do i = 1, t%nstate
+                        call readf%next()
+                        call readf%parseline(' ')
+                        read(readf%args(2)%s, *) t%qe(i)
+                    end do
+                case('gradient')
+                    t%grad = 0.0_dp
+                    do i = 1, t%qnatom
+                        do j = 1, t%ndim
+                            call readf%next()
+                            call readf%parseline(' ')
+                            read(readf%args(readf%narg)%s, *) t%grad(j, t%qind(i))
+                        end do
+                    end do
+                case('oscillator_strength')
+                    if (.not. ctrl%oscill) continue
+                    t%qo = 0.0_dp
+                    do i = 1, t%nstate - 1
+                        call readf%next()
+                        call readf%parseline(' ')
+                        read(readf%args(2)%s, *) t%qo(i)
+                    end do
+                case default
+                    continue
+                end select
             end do
-            close(cunit)
-
-            if (ctrl%oscill) then
-                t%qo = 0.0_dp
-                open(newunit=cunit, file='qm_oscill', action='read')
-                read(cunit, *) t%qo(1:t%nstate-1)
-                close(cunit)
-            end if
 
             if ((ctrl%tdc_type == 1) .and. (t%step /= 0)) then
                 call system(ctrl%oprog)
