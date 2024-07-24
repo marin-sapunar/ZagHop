@@ -9,14 +9,6 @@ import numpy as np
 from turbomole import Turbomole
 from orca import Orca
 
-FILES = {
-    "geom": "qm_geom",
-    "state": "qm_state",
-    "energy": "qm_energy",
-    "gradient": "qm_grad",
-    "oscill": "qm_oscill",
-    "mm_geom": "mm_geom",
-}
 
 INTERFACES = {
         "turbomole": Turbomole,
@@ -42,7 +34,6 @@ def run(args):
     """ Read input files and run the interface. """
     with open("qm_sys.yaml", "r") as infile:
         in_data = yaml.safe_load(infile)
-    print(in_data)
     if "geom" not in in_data:
         print("Error, geom not found in qm_sys.yaml file.")
         sys.exit(1)
@@ -59,7 +50,7 @@ def run(args):
     qm_prog.read()
     os.chdir(cwd)
     # Write results.
-    calc_write(qm_prog.data)
+    calc_write(qm_prog.results)
 
 
 def calc_write(results):
@@ -73,8 +64,7 @@ def calc_write(results):
 
 
 def cleanup():
-    for path in FILES.values():
-        file_utils.remove(path)
+    file_utils.remove("qm_out.yaml")
 
 
 if __name__ == "__main__":

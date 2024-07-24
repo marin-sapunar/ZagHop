@@ -10,147 +10,175 @@ from interface import QMInterface
 
 class Turbomole(QMInterface):
     """ Interface for turbomole calculations. """
-    def __init__(self, template="control", log_file="qm.log", err_file="qm.err", **kwargs):
-        super().__init__(template=template, log_file=log_file, err_file=err_file, **kwargs)
+    def __init__(self,
+                 template="control",
+                 log_file="qm.log",
+                 err_file="qm.err",
+                 **kwargs):
+        """ Initialize the interface. """
+        super().__init__(template=template,
+                         log_file=log_file,
+                         err_file=err_file,
+                         **kwargs)
+        self.read_funcs = {
+            "energy": self.read_energy,
+            "gradient": self.read_gradient,
+            "oscillator_strength": self.read_oscill
+        }
         check, lines = get_group("ricc2")
         if check != 0:
-            self.opts["ricc2"] = False
+            self.options["ricc2"] = False
         else:
-            self.opts["ricc2"] = True
+            self.options["ricc2"] = True
             for line in lines:
                 if line.strip() in ["adc(2)", "mp2"]:
-                    self.opts["ricc2_model"] = line.strip()
+                    self.options["ricc2_model"] = line.strip()
                     break
-            if "ricc2_model" not in self.opts.keys():
+            if "ricc2_model" not in self.options:
                 print("Error in Turbomole interface.")
                 print("Unrecognized wave function model in $ricc2 section.")
                 sys.exit(1)
             # MP2 is the ground state for ADC(2) calculations
-            if self.opts["ricc2_model"] == "adc(2)":
-                self.opts["ricc2_gs_model"] = "mp2"
+            if self.options["ricc2_model"] == "adc(2)":
+                self.options["ricc2_gs_model"] = "mp2"
             else:
-                self.opts["ricc2_gs_model"] = self.opts["ricc2_model"]
+                self.options["ricc2_gs_model"] = self.options["ricc2_model"]
         check, lines = get_group("soes")
         if check != 0:
-            self.opts["egrad"] = False
+            self.options["egrad"] = False
         else:
-            self.opts["egrad"] = True
-            # @todo egrad options.
-        if file_utils.check_in_file(self.template, r"\$rij"):
-            self.opts["ri"] = True
+            self.options["egrad"] = True
+        if file_utils.check_in_file(template, r"\$rij"):
+            self.options["ri"] = True
         else:
-            self.opts["ri"] = False
-        self.opts["qmmm"] = False
+            self.options["ri"] = False
+        self.options["qmmm"] = False
 
     def run(self):
         """ Run Turbomole calculation. """
         # Remove existing gradient file to avoid the file becoming huge.
-        try:
-            os.remove("gradient")
-        except FileNotFoundError:
-            pass
-        # All subprocess calls use check=False since Turbomole programs don't
-        # return a non-zero exit code on error anyways. Instead, to check for errors
-        # `actual_check` calls "actual" and parses the output.
-        with open(self.log_file, "w") as out, open(self.err_file, "w") as err:
-            # Run the SCF calculation.
-            if self.opts["ri"]:
-                subprocess.run("ridft", stdout=out, stderr=err, check=False)
-            else:
-                subprocess.run("dscf", stdout=out, stderr=err, check=False)
-            actual_check()
-            if file_utils.check_in_file(self.err_file, r"ended abnormally"):
-                print("Turbomole calculation failed. Check output in " + os.getcwd() + ".")
-                sys.exit(1)
-            # Run the excited state + gradient calculation(s).
-            if self.opts["ricc2"]:
-                subprocess.run("ricc2", stdout=out, stderr=err, check=False)
-            else:
-                if self.data["iroot"] == 1:
+        file_utils.remove("gradient")
+        file_utils.remove(self.options["log_file"])
+        file_utils.remove(self.options["err_file"])
+
+        # SCF calculation.
+        if self.options["ri"]:
+            self.run_prog("ridft")
+        else:
+            self.run_prog("dscf")
+
+        # Excited state + gradient calculation(s).
+        if self.options["ricc2"]:
+            # ricc2 does everything with a single call.
+            self.run_prog("ricc2")
+        else:
+            # rdgrad, grad and egrad calculate the gradient.
+            # egrad also calculates the excited states.
+            # escf is called if excited state energies are requested without
+            #   an excited state gradient.
+            if "gradient" in self.request:
+                if self.system["iroot"] == 1:
                     # Ground state gradient calculation.
-                    if self.opts["ri"]:
-                        subprocess.run("rdgrad", stdout=out, stderr=err, check=False)
+                    if self.options["ri"]:
+                        self.run_prog("rdgrad")
                     else:
-                        subprocess.run("grad", stdout=out, stderr=err, check=False)
-                    actual_check()
+                        self.run_prog("grad")
                     # Separate excited state calculation.
-                    if self.data["nstate"] > 1:
-                        subprocess.run("escf", stdout=out, stderr=err, check=False)
-                else:
-                    subprocess.run("egrad", stdout=out, stderr=err, check=False)
-            actual_check()
+                    if self.system["nstate"] > 1:
+                        self.run_prog("escf")
+                elif self.system["iroot"] > 1:
+                    self.run_prog("egrad")
+            elif self.system["nstate"] > 1:
+                self.run_prog("escf")
+
+    def run_prog(self, prog):
+        """ Run a Turbomole program and check it finished successfully."""
+        # All subprocess calls use check=False since Turbomole programs don't
+        # return a non-zero exit code on error anyways. Instead, to check for
+        # errors `actual_check` calls "actual" and parses the output.
+        with open(self.options["log_file"], "a") as out:
+            with open(self.options["err_file"], "a") as err:
+                subprocess.run(prog, stdout=out, stderr=err, check=False)
+        actual_check(self.options["err_file"])
 
     def read_energy(self):
         """ Read energy from log file. """
-        if self.opts["ricc2"]:
-            self.data["energy"] = get_ricc2_energy(self.log_file, self.opts["ricc2_gs_model"])
+        if self.options["ricc2"]:
+            self.results["energy"] = get_ricc2_energy(
+                self.options["log_file"], self.options["ricc2_gs_model"])
         else:
-            self.data["energy"] = get_dft_energy(self.log_file)
+            self.results["energy"] = get_dft_energy(self.options["log_file"])
 
     def read_gradient(self):
         """ Read gradient from log file. """
-        if self.opts["ricc2"]:
-            self.data["gradient"] = get_ricc2_gradient(self.log_file, self.data["iroot"])
+        if self.options["ricc2"]:
+            self.results["gradient"] = get_ricc2_gradient(
+                self.options["log_file"], self.system["iroot"])
         else:
-            self.data["gradient"] = get_dft_gradient(self.log_file, self.data["iroot"],
-                                                     self.opts["ri"])
+            self.results["gradient"] = get_dft_gradient(
+                self.options["log_file"], self.system["iroot"],
+                self.options["ri"])
 
     def read_oscill(self):
         """ Read oscillator strengths from log file. """
-        if self.opts["ricc2"]:
-            self.data["oscillator_strength"] = get_ricc2_oscill(self.log_file)
+        if self.options["ricc2"]:
+            self.results["oscillator_strength"] = get_ricc2_oscill(
+                self.options["log_file"])
         else:
-            self.data["oscillator_strength"] = get_tddft_oscill(self.log_file)
+            self.results["oscillator_strength"] = get_tddft_oscill(
+                self.options["log_file"])
 
     def update_geom(self):
-        """ Update coord file with self.data["geom"]. """
-        file_utils.replace_cols_inplace("coord", self.data["geom"], r"\$coord")
-        if self.opts["qmmm"]:
-            fn = file_utils.search_file("control", r"\$point_charges")[0]
-            fn = fn.split("=")[1].split()[0]
-            file_utils.replace_cols_inplace(fn, self.data["mm_geom"], r"\$point_charges")
+        """ Update coord file with self.system["geom"]. """
+        file_utils.replace_cols_inplace("coord", self.system["geom"],
+                                        r"\$coord")
+        if self.options["qmmm"]:
+            pc_file = file_utils.search_file("control", r"\$point_charges")[0]
+            pc_file = pc_file.split("=")[1].split()[0]
+            file_utils.replace_cols_inplace(pc_file, self.system["mm_geom"],
+                                            r"\$point_charges")
 
     def update_nstate(self):
-        """ Update control file to request self.data["nstate"] states. """
-        if self.opts["ricc2"]:
-            n_ex_state = self.data["nstate"] - 1
+        """ Update control file to request self.system["nstate"] states. """
+        if self.options["ricc2"]:
+            n_ex_state = self.system["nstate"] - 1
             file_utils.replace_inplace("control",
                                        r"(\s*irrep.*)nexc\s*=\s*\d+(.*)",
-                                       r"\1nexc="+str(n_ex_state)+r"\2")
-        if self.opts["egrad"]:
-            n_ex_state = self.data["nstate"] - 1
+                                       r"\1nexc=" + str(n_ex_state) + r"\2")
+        if self.options["egrad"]:
+            n_ex_state = self.system["nstate"] - 1
             if n_ex_state == 0:
                 return
-            n_sub = file_utils.replace_inplace("control",
-                    r"^\s*a\s+\d+\s*$",
-                    rf" a  {n_ex_state}\n")
+            n_sub = file_utils.replace_inplace("control", r"^\s*a\s+\d+\s*$",
+                                               rf" a  {n_ex_state}\n")
             if n_sub != 1:
                 raise ValueError("Failed to update number of states.")
 
     def update_iroot(self):
-        ex_state = self.data["iroot"]-1
-        if self.opts["ricc2"]:
+        ex_state = self.system["iroot"] - 1
+        if self.options["ricc2"]:
             if ex_state == 0:
                 state = r"(x)"
             else:
                 state = rf"(a {ex_state})"
-            re_grad = re.escape(self.opts["ricc2_model"])
+            re_grad = re.escape(self.options["ricc2_model"])
             re_grad = rf"(geoopt +model={re_grad} +state=).*"
-            n_sub = file_utils.replace_inplace(self.template, re_grad, r"\1" + state)
+            n_sub = file_utils.replace_inplace(self.options["template"],
+                                               re_grad, r"\1" + state)
             if n_sub == 0:
                 repl = r"$ricc2\n  geoopt model={} state={}"
-                repl = repl.format(self.opts["ricc2_model"], state)
-                n_sub = file_utils.replace_inplace(self.template, r"\$ricc2", repl)
-        elif self.opts["egrad"]:
+                repl = repl.format(self.options["ricc2_model"], state)
+                n_sub = file_utils.replace_inplace(self.options["template"],
+                                                   r"\$ricc2", repl)
+        elif self.options["egrad"]:
             if ex_state == 0:
                 return
-            n_sub = file_utils.replace_inplace(self.template,
-                    r"\$exopt.*", 
-                    rf"$exopt {ex_state}")
+            n_sub = file_utils.replace_inplace(self.options["template"],
+                                               r"\$exopt.*",
+                                               rf"$exopt {ex_state}")
             if n_sub == 0:
-                file_utils.replace_inplace(self.template,
-                        r"\$end", 
-                        rf"$exopt {ex_state}\n$end")
+                file_utils.replace_inplace(self.options["template"], r"\$end",
+                                           rf"$exopt {ex_state}\n$end")
 
 
 def get_group(group):
@@ -159,13 +187,17 @@ def get_group(group):
     return sdg_run.returncode, sdg_run.stdout.decode().splitlines()
 
 
-def actual_check():
+def actual_check(err_file):
     """ Check that the Turbomole calculation finished without error. """
-    check = subprocess.run("actual", stdout=subprocess.PIPE, check=True)
-    if check.stdout.startswith(b'fine, there is no data group "$actual step"'):
-        return
-    print("Turbomole calculation failed. Check output in " + os.getcwd() + ".")
-    sys.exit(1)
+    check_str = b'fine, there is no data group "$actual step"'
+    check1 = file_utils.check_in_file(err_file, r"ended abnormally")
+    check2 = subprocess.run("actual", stdout=subprocess.PIPE, check=True)
+    check2 = not check2.stdout.startswith(check_str)
+    if check1 or check2:
+        errmsg = ("Turbomole calculation failed.\n"
+                  "    Check output in " + os.getcwd() + ".")
+        print(errmsg)
+        sys.exit(1)
 
 
 def get_ricc2_energy(log_file, gs_model):
@@ -173,7 +205,9 @@ def get_ricc2_energy(log_file, gs_model):
     try:
         re_gs = "Final " + re.escape(gs_model.upper()) + " energy"
         gs_energy = file_utils.search_file(log_file, re_gs)
-        gs_energy = file_utils.split_columns(gs_energy, col=5, convert=np.float64)
+        gs_energy = file_utils.split_columns(gs_energy,
+                                             col=5,
+                                             convert=np.float64)
     except ValueError:
         re_gs = rf"Method          :  {gs_model.upper()}"
         gs_energy = file_utils.search_file(log_file, re_gs, after=1)[0]
@@ -214,10 +248,10 @@ def get_ricc2_gradient(log_file, iroot):
         re_grad = r"Excited state reached by transition:"
         while True:
             line = file_utils.search_file(cfile,
-                    re_grad,
-                    max_res=1,
-                    close=False,
-                    after=3)
+                                          re_grad,
+                                          max_res=1,
+                                          close=False,
+                                          after=3)
             cstate = int(line[0].split()[4]) + 1
             if cstate == iroot:
                 break
@@ -226,10 +260,10 @@ def get_ricc2_gradient(log_file, iroot):
     return grad
 
 
-def get_dft_gradient(log_file, iroot, ri):
+def get_dft_gradient(log_file, iroot, rdgrad):
     """ Read gradient from grad/rdgrad/egrad output files. """
     if iroot == 1:
-        if ri:
+        if rdgrad:
             re_grad = r"RDGRAD - INFORMATION"
         else:
             re_grad = r"SCF ENERGY GRADIENT with respect to NUCLEAR COORDINATES"
@@ -243,8 +277,11 @@ def get_dft_gradient(log_file, iroot, ri):
 
 def get_grad_from_stdout(cfile):
     """ Read gradient from any Turbomole output file. """
-    grad = file_utils.search_file(cfile, r"^  ATOM", after=3, 
-                                  stop_at=r"resulting FORCE", close=False)
+    grad = file_utils.search_file(cfile,
+                                  r"^  ATOM",
+                                  after=3,
+                                  stop_at=r"resulting FORCE",
+                                  close=False)
     grad = [line[5:] for line in grad]
     grad = [' '.join(grad[0::3]), ' '.join(grad[1::3]), ' '.join(grad[2::3])]
     grad = [line.split() for line in grad]
@@ -269,6 +306,9 @@ def get_ricc2_oscill(fname):
 
 def get_grad_from_gradient(natom):
     """ Get gradient from gradient file."""
-    grad = file_utils.search_file("gradient", r"cycle", after=2*natom)[-natom:]
-    grad = file_utils.split_columns(grad, col=[0, 1, 2],  convert=file_utils.fortran_double)
+    grad = file_utils.search_file("gradient", r"cycle",
+                                  after=2 * natom)[-natom:]
+    grad = file_utils.split_columns(grad,
+                                    col=[0, 1, 2],
+                                    convert=file_utils.fortran_double)
     return grad

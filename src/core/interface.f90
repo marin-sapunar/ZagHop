@@ -63,9 +63,11 @@ contains
             write(cunit, '(a,i0)') "nstate : ", t%nstate
             write(cunit, '(a,i0)') "iroot : ", t%cstate
             write(cunit, '(a)') "request : "
-            write(cunit, '(4x,a)') "energy : True"
-            write(cunit, '(4x,a)') "gradient : True"
-            write(cunit, '(4x,a,a)') "oscillator_strength : ", truefalse_str(ctrl%oscill)
+            write(cunit, '(2x,a)') "- energy"
+            write(cunit, '(2x,a)') "- gradient"
+            if (ctrl%oscill) then
+                write(cunit, '(2x,a)') "- oscillator_strength"
+            end if
             close(cunit)
 
             if (ctrl%mm) then
