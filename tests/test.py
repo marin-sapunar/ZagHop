@@ -21,8 +21,8 @@ class ZagHopTest(unittest.TestCase):
         self.compare_energy()
 
 
-    def test_gsmd_h2o(self):
-        """ Water test case for ground state MD with thermostat.
+    def test_gsmd_nh3(self):
+        """ Ammonia test case for ground state MD with thermostat.
 
         Tests the thermostat and that options are correctly set when surface
         hopping is turned off.
