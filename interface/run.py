@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """ Run a set of QM calculations. """
 import os
-import yaml
+import sys
 from pathlib import Path
 from argparse import ArgumentParser
-import file_utils
+import yaml
 import numpy as np
+import file_utils
 from turbomole import Turbomole
 from orca import Orca
 
@@ -32,20 +33,22 @@ def main():
 
 def run(args):
     """ Read input files and run the interface. """
-    with open("qm_sys.yaml", "r") as infile:
+    with open("qm.yaml", "r") as infile:
         in_data = yaml.safe_load(infile)
-    if "geom" not in in_data:
+    system = in_data.pop("system")
+    request = in_data.pop("request")
+    if "geom" not in system:
         print("Error, geom not found in qm_sys.yaml file.")
         sys.exit(1)
-    in_data["geom"] = np.array(in_data["geom"], dtype=float)
-    request = in_data.pop("request")
+    system["geom"] = np.array(system["geom"], dtype=float)
 
     # Go to work directory and run calculation.
     cwd = Path(os.getcwd())
     os.chdir(args.work_dir)
     interface = INTERFACES[args.interface]
     qm_prog = interface()
-    qm_prog.update_input(in_data, request)
+    qm_prog.check_template()
+    qm_prog.update(system, request)
     qm_prog.run()
     qm_prog.read()
     os.chdir(cwd)

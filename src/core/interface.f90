@@ -42,7 +42,7 @@ contains
         type(reader) :: readf
         logical :: hop
         integer :: cunit, i, j, d1, d2
-        logical :: check1, check2
+        logical :: check(5)
         character(len=200) :: yamfmt
 
         write(yamfmt, '(a,i0,a)') "('    - [ ',  ", t%ndim-1, "(e22.12, ' ,'), e22.12, ' ]')"
@@ -54,19 +54,21 @@ contains
                 call system('cp -r '//ctrl%qmdir//' prevstep')
             end if
 
-            open(newunit=cunit, file='qm_sys.yaml', action='write')
-            write(cunit, '(a, i0)') "step : ", t%step
-            write(cunit, '(a)') "geom : "
+            open(newunit=cunit, file='qm.yaml', action='write')
+            write(cunit, '(a)') 'system:'
+            write(cunit, '(2x, a, i0)') "step : ", t%step
+            write(cunit, '(2x, a)') "geom : "
             do i = 1, t%qnatom
                 write(cunit, yamfmt) t%geom(:, t%qind(i))
             end do
-            write(cunit, '(a,i0)') "nstate : ", t%nstate
-            write(cunit, '(a,i0)') "iroot : ", t%cstate
+            write(cunit, '(2x,a)') "states :"
+            write(cunit, '(4x,a,i0)') "- nstate : ", t%nstate
+            write(cunit, *)
             write(cunit, '(a)') "request : "
-            write(cunit, '(2x,a)') "- energy"
-            write(cunit, '(2x,a)') "- gradient"
+            write(cunit, '(2x,a)') "energy : True"
+            write(cunit, '(2x,a,i0)') "gradient : ", t%cstate
             if (ctrl%oscill) then
-                write(cunit, '(2x,a)') "- oscillator_strength"
+                write(cunit, '(2x,a)') "oscillator_strength : True"
             end if
             close(cunit)
 
@@ -83,13 +85,14 @@ contains
             call system(ctrl%qprog)
 
             ! Check if energy and gradient files were created.
-            inquire(file='qm_out.yaml', exist=check1)
-            if (.not. check1) then
+            inquire(file='qm_out.yaml', exist=check(1))
+            if (.not. check(1)) then
                 write(stderr, *) 'Error, qm_out.yaml file not found after QM calculation.'
                 stop
             end if
 
             call readf%open('qm_out.yaml', abort_on_eof=.false.)
+            check = .false.
             do
                 call readf%next()
                 if (is_iostat_end(readf%iostat)) exit
@@ -102,6 +105,7 @@ contains
                         call readf%parseline(' ')
                         read(readf%args(2)%s, *) t%qe(i)
                     end do
+                    check(1) = .true.
                 case('gradient')
                     t%grad = 0.0_dp
                     do i = 1, t%qnatom
@@ -111,6 +115,7 @@ contains
                             read(readf%args(readf%narg)%s, *) t%grad(j, t%qind(i))
                         end do
                     end do
+                    check(2) = .true.
                 case('oscillator_strength')
                     if (.not. ctrl%oscill) continue
                     t%qo = 0.0_dp
@@ -119,10 +124,15 @@ contains
                         call readf%parseline(' ')
                         read(readf%args(2)%s, *) t%qo(i)
                     end do
+                    check(3) = .true.
                 case default
                     continue
                 end select
             end do
+            if (.not. (check(1) .and. check(2))) then
+                write(stderr, *) "Energy/gradient not found in QM output."
+                stop
+            end if
 
             if ((ctrl%tdc_type == 1) .and. (t%step /= 0)) then
                 call system(ctrl%oprog)

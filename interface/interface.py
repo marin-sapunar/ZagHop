@@ -1,5 +1,4 @@
 """ Base class for interfacing with electronic structure codes. """
-import os.path
 import sys
 
 
@@ -7,25 +6,20 @@ class QMInterface():
     """ 
     Generic interface for electronic structure calculations.
 
-    The main methods of this class are `update_input`, `run`, and `read`. The
-    `update_input` method is used to set up the calculation, `run` is used to
-    execute the calculation, and `read` is used to extract the requested
-    results from the output files.
+    The main methods of this class are `update`, `run`, and `read`. The
+    `update` method is used to set up the calculation, `run` is used to execute
+    the calculation, and `read` is used to extract the requested results from
+    the output files.
 
     Derived classes should implement the following methods:
-    - `__init__`: Set up everything needed for the interface to run the other
-                  methods. Specifically, it should always define the read_funcs
-                  dictionary.
+    - `check_template`: Read the input file and save any information that will
+         be required by the other methods. Additionally, it should define the
+         read_funcs dictionary.
     - `run`: Execute the QM calculation.
-    - `update_geom`: Update the geometry in the QM input files.
-    - `update_nstate`: Update the number of states requested from the QM code.
-    - `update_iroot`: Update the target state (for gradient calculation).
+    - `update`: Update all inputs based on the provided information on the 
+                system and requested values.
     - `read_*` : Methods to be called to read values from the QM output.
 
-    Methods starting with `update_` are called by the `update_input` method and
-    should update the input files for the QM calculation based on the provided 
-    geometry and options.
-    
     Methods starting with `read_` are called by the `read` method and should
     store the calculated values in the `results` dictionary.
         
@@ -51,47 +45,44 @@ class QMInterface():
             - log_file (str): Path to the log file. Default is "qm.log".
             - err_file (str): Path to the error file. Default is "qm.err".
             - **kwargs: Additional keyword arguments.
-        
-        Raises:
-            - SystemExit: If the template file is not found.
         """
         self.calc_done = False
         self.read_funcs = {}
         self.system = {}
         self.results = {}
-        self.request = []
+        self.request = {}
         self.options = {
             "template": template,
             "log_file": log_file,
             "err_file": err_file
         }
         self.options.update(kwargs)
-        if not os.path.isfile(self.options["template"]):
-            print("Error in QM interface. Template file not found.")
-            sys.exit(1)
 
-    def update_input(self, in_data, request):
+    @classmethod
+    def generate_inputs(cls, ipath, system, options):
+        """ Generate input templates to be used by the interface. """
+        raise NotImplementedError("Need to call specific interface.")
+
+    def check_template(self):
+        """ Read interface options from input files. """
+        raise NotImplementedError("Need to call specific interface.")
+
+    def update(self, system, request):
         """ 
         Update input files to prepare a calculation. 
         
         Parameters:
-            - in_data: The input data for the calculation.
-            - request: List of values to be calculated/read.
+            - system: Information on the system.
+            - request: Values to be calculated/read.
         """
-        self.system.update(in_data)
-        self.request = request
-        self.update_geom()
-        self.update_nstate()
-        self.update_iroot()
-        self.calc_done = False
+        raise NotImplementedError("Need to call specific interface.")
 
     def run(self):
         """ Run the calculation and check success. """
         raise NotImplementedError("Need to call specific interface.")
 
     def read(self):
-        """ 
-        Read all requested values.
+        """ Read all requested values.
         
         Returns:
             The data dictionary containing the calculated values.
@@ -103,14 +94,9 @@ class QMInterface():
             self.read_funcs[req]()
         return self.results
 
-    def update_geom(self):
-        """ Update geometry in the QM input files. """
-        raise NotImplementedError("Need to call specific interface.")
-
-    def update_nstate(self):
-        """ Update number of states requested from the QM code. """
-        raise NotImplementedError("Need to call specific interface.")
-
-    def update_iroot(self):
-        """ Request gradient for specified state. """
-        raise NotImplementedError("Need to call specific interface.")
+    def __getattr__(self, atr):
+        """ Convenience for easier access to options/system variables."""
+        try:
+            return self.options[atr]
+        except KeyError:
+            return self.system[atr]
