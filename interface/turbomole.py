@@ -23,7 +23,7 @@ class Turbomole(QMInterface):
                          **kwargs)
 
     @classmethod
-    def generate_inputs(cls, ipath, system, options):
+    def generate_inputs(cls, system, options):
         """ Run define to generate inputs for Turbomole. """
         inst = cls(**options)
         states = ElStates(system["states"])
@@ -339,11 +339,11 @@ def write_coord(fname, geom, atoms):
     """ Writes a coord file for Turbomole input. Takes output file name,
         numpy array containing geometry and array containing atoms and
         creates a coord file. """
-    natom = int(geom.shape[0] / 3)
+    natom = len(atoms)
     gformat = 3 * '{:20.13f} ' + '  {}\n'
     with open(fname, 'w') as ofile:
         ofile.write('$coord\n')
-        for atom, xyz in zip(atoms, geom.reshape([natom, 3])):
+        for atom, xyz in zip(atoms, geom):
             ofile.write(gformat.format(*xyz, atom.lower()))
         ofile.write('$end\n')
 

@@ -21,6 +21,11 @@ def main():
     """ Run a set of QM calculations using a specified interface. """
     parser = ArgumentParser(
         description="Run an electronic structure calculation.")
+    parser.add_argument(
+        "-init",
+        "--init-inputs",
+        action="store_true",
+        help="Initialize input files for the interface.")
     parser.add_argument("interface", type=str, help="Interface to use.")
     parser.add_argument("work_dir", type=str, help="Working directory.")
     args = parser.parse_args()
@@ -45,8 +50,10 @@ def run(args):
     # Go to work directory and run calculation.
     cwd = Path(os.getcwd())
     os.chdir(args.work_dir)
-    interface = INTERFACES[args.interface]
-    qm_prog = interface()
+    qm_prog = INTERFACES[args.interface]()
+    if args.init_inputs:
+        options = in_data.pop("options")
+        qm_prog.generate_inputs(system, options)
     qm_prog.check_template()
     qm_prog.update(system, request)
     qm_prog.run()

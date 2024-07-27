@@ -7,9 +7,9 @@ class ElStates():
         if isinstance(states, list):
             self._groups = [ElStates(group, parent=self) for group in states]
             states = {}
-        self._sym = states.pop("symmetry", None)
-        self._mult = states.pop("multiplicity", None)
-        self._nstate = states.pop("nstate", 0)
+        self._sym = states.get("symmetry", None)
+        self._mult = states.get("multiplicity", None)
+        self._nstate = states.get("nstate", 0)
 
     @property
     def sym(self):

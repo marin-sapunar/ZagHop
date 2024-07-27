@@ -59,7 +59,7 @@ class QMInterface():
         self.options.update(kwargs)
 
     @classmethod
-    def generate_inputs(cls, ipath, system, options):
+    def generate_inputs(cls, system, options):
         """ Generate input templates to be used by the interface. """
         raise NotImplementedError("Need to call specific interface.")
 
