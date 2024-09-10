@@ -1,12 +1,21 @@
 #!/usr/bin/env python3
-import numpy as np
 import argparse
-import glob
-import re
+from scipy import stats
+import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib
+import statistics
+from recombinator.iid_bootstrap import \
+    iid_balanced_bootstrap, \
+    iid_bootstrap, \
+    iid_bootstrap_vectorized, \
+    iid_bootstrap_via_choice, \
+    iid_bootstrap_via_loop, \
+    iid_bootstrap_with_antithetic_resampling
+import itertools
 
 def main():
-    parser = argparse.ArgumentParser( 
+    parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         description=
         "Calculate the UV apsorption spectrum using the Nuclear Ensamble Approach.")
@@ -15,29 +24,14 @@ def main():
         "--input-file",
         type=str,
         metavar=("input_file"),
-        default="qm.out",
-        help="Name of the files that contain oscillator strengths and excitation energies.")
+        help="Insert the name of a file that contains oscillator strengths and excitation energies.")
     parser.add_argument(
         "-b",
         "--bandwidth",
-        default=0.1,
+        default=0.15,
         type=float,
         metavar=("bandwidth"),
-        help="Give the value of the bandwith of Gaussian functions.")
-    parser.add_argument(
-        "-unit",
-        "--energy-unit",
-        choices=["eV", "nm"],
-        type=str,
-        metavar=("energy_unit"),
-        default="eV",
-        help="Choose the units to express the energy on the x-axis of the spectrum. Available options are eV and nm.")
-    parser.add_argument(
-        "-n",
-        "--normalization",
-        action=argparse.BooleanOptionalAction,
-        default = True,
-        help="Create the spectrum with intensities relative to the maximum peak which is set to have the value of 1.")
+        help="Give the value of the bandwith for Gaussian functions.")
     parser.add_argument(
         "-start",
         "--start-value",
@@ -53,98 +47,100 @@ def main():
         default=10.0,
         help="Set the end value of energy on the x-axis to be displayed.")
     parser.add_argument(
-        "-step",
-        "--step",
+        "-dots",
+        "--dots",
         type=float,
-        metavar=("step"),
-        default=0.01,
-        help="Set the step of energy units on the x-axis to be displayed.")
-
+        metavar=("dots"),
+        default=100,
+        help="Set the number of dots to create the spectrum.")
+    parser.add_argument(
+        "-std",
+        "--std",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Calculate the standard deviation of the spectrum using Bootstrap method and show it on a spectrum as a shaded area around the mean value.")
+    parser.add_argument(
+        "-r",
+        "--resamples",
+        type=int,
+        metavar=("resamples"),
+        default=100,
+        help="If calculating the standard deviation, insert the number of resamples for the Bootstrap method.")
 
     args = parser.parse_args()
 
     input_file = args.input_file
 
-    bandwidth = args.bandwidth
+    bw = args.bandwidth
 
     start = args.start_value
 
     end = args.end_value
 
-    step = args.step
+    dots = args.dots
 
-    all_os = []
-    all_excited = []
+    R = args.resamples
 
-    files_out = sorted(glob.glob('**/' + input_file, recursive=True))
+    data = np.loadtxt(input_file)
 
-    for file in files_out:
-        os = read_os_from_ricc2out(file)
-        all_os.append(os)
-        
-    for file in files_out:
-        excited = read_en_from_ricc2out(file)
-        all_excited.append(excited)
+    energies = data[:, 0]
+    os_strengths = data[:, 1]
 
+    exc_en = energies.tolist()
 
-    def nea_spect(en):
-        intensity = 0
-        for i in range(len(all_os)):
-            for j in range(len(all_os[0])):
-                if args.energy_unit == "nm":
-                    intensity +=  1/bandwidth * float(all_os[i][j]) * 1239.8/float(all_excited[i][j]) * np.exp(-1/2 *((1239.8/en - 1239.8/float(all_excited[i][j]))/bandwidth) **2)
-                if args.energy_unit == "eV":
-                    intensity +=  1/bandwidth * float(all_os[i][j]) * float(all_excited[i][j]) * np.exp(-1/2 *((en - float(all_excited[i][j]))/bandwidth) **2)
-        return float(intensity)
-   
+    osc_str = os_strengths.tolist()
 
-    f = np.vectorize(nea_spect)
+    en = np.linspace(start, end, dots)
 
-    en = np.arange(start, end, step)
+    def nea_spect_initial(en):
+        kernel = stats.gaussian_kde(exc_en, bw_method=bw, weights=osc_str)
+        return np.array(kernel(en))
 
-    max_value = f(en).max()
+    def nea_spect_bootstrap(en):
+        results = []
+        for i in range(R):
+            kernel = stats.gaussian_kde(res_en[i], bw_method=bw, weights=res_os[i])
+            results.append(kernel(en))
+        return np.array(results)
 
-    def nea_spect_norm(en):
-        intensity = 0
-        for i in range(len(all_os)):
-            for j in range(len(all_os[0])):
-                if args.energy_unit == "nm":
-                    intensity += 1/max_value* (1/bandwidth * float(all_os[i][j]) * 1239.8/float(all_excited[i][j]) * np.exp(-1/2 *((1239.8/en - 1239.8/float(all_excited[i][j]))/bandwidth) **2))
-                if args.energy_unit == "eV":
-                    intensity += 1/max_value*(1/bandwidth * float(all_os[i][j]) * float(all_excited[i][j]) * np.exp(-1/2 *((en - float(all_excited[i][j]))/bandwidth) **2))
-        return float(intensity)
-
-    g = np.vectorize(nea_spect_norm)
-
-    if args.normalization:
-        plt.plot(en, g(en))
+    def plot_initial():
+        results = nea_spect_initial(en)
+        plt.plot(en, results)
+        plt.xlabel("Energy in eV")
+        plt.ylabel("Intensity")
+        plt.title("UV spectrum calculated using NEA")
         plt.show()
 
+    def plot_bootstrap():
+        results = nea_spect_bootstrap(en)
+
+        mean_kde = np.mean(results, axis=0)
+        std_kde = np.std(results, axis=0)
+
+        plt.plot(en, mean_kde, label='Mean KDE')
+
+        plt.fill_between(en, mean_kde - std_kde, mean_kde + std_kde, color='gray', alpha=0.3, label='±1 Std Dev')
+
+        plt.xlabel("Energy in eV")
+        plt.ylabel("Intensity")
+        plt.title("Bootstrap Resampled Spectra with Standard Deviation")
+        plt.legend()
+        plt.show()
+
+    if args.std:
+        joined = [list(pair) for pair in zip(exc_en, osc_str)]
+        merged = np.array(joined)
+        resampled = iid_bootstrap(merged, replications=R, replace=True)
+        res_en = []
+        res_os = []
+        for inner_list in resampled:
+            first, second = zip(*inner_list)
+            res_en.append(list(first))
+            res_os.append(list(second))
+        plot_bootstrap()
     else:
-        plt.plot(en, f(en))
-        plt.show()
-
-
-
-def read_en_from_ricc2out(fname):
-    with open(fname, "r") as ifile:
-        list_lines = []
-        lines = ifile.readlines()
-        for line in lines:
-            if re.search(r"frequency :", line):
-                line_split = line.split()[5]
-                list_lines.append(line_split)
-    return list_lines
-
-def read_os_from_ricc2out(fname):
-    with open(fname, "r") as ifile:
-        lines = ifile.readlines()
-        list_os = []
-        for line in lines:
-            if re.search(r"oscillator strength", line):
-                line_split = line.split()[5]
-                list_os.append(line_split)
-    return list_os
+        plot_initial()
 
 if __name__ == "__main__":
     main()
+
