@@ -17,8 +17,7 @@ INTERFACES = {
         }
 
 
-def main():
-    """ Run a set of QM calculations using a specified interface. """
+def cli():
     parser = ArgumentParser(
         description="Run an electronic structure calculation.")
     parser.add_argument(
@@ -28,12 +27,7 @@ def main():
         help="Initialize input files for the interface.")
     parser.add_argument("interface", type=str, help="Interface to use.")
     parser.add_argument("work_dir", type=str, help="Working directory.")
-    args = parser.parse_args()
-    try:
-        run(args)
-    except:
-        cleanup()
-        raise
+    return parser
 
 
 def run(args):
@@ -59,8 +53,7 @@ def run(args):
     qm_prog.run()
     qm_prog.read()
     os.chdir(cwd)
-    # Write results.
-    calc_write(qm_prog.results)
+    return qm_prog.results
 
 
 def calc_write(results):
@@ -73,8 +66,16 @@ def calc_write(results):
         yaml.dump(results, outfile)
 
 
-def cleanup():
-    file_utils.remove("qm_out.yaml")
+def main():
+    """ Run a set of QM calculations using a specified interface. """
+    parser = cli()
+    args = parser.parse_args()
+    try:
+        results = run(args)
+        calc_write(results)
+    except:
+        file_utils.remove("qm_out.yaml")
+        raise
 
 
 if __name__ == "__main__":
