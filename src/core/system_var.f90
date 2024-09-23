@@ -62,6 +62,7 @@ module system_var
         integer, allocatable  :: phase(:) !< Phase of wave functions during previous step.
         real(dp), allocatable :: prob(:) !< Probabilities of hopping during current step.
         real(dp), allocatable :: olap(:, :) !< Overlaps between wfs between this and previous step.
+        real(dp), allocatable :: adt(:, :) !< Adiabatic-diabatic transformation matrix.
         real(dp), allocatable :: nadv(:, :, :) !< Nonadiabatic coupling vectors.
 
         real(dp) :: pbcbox(1:6) = 0.0_dp
@@ -245,21 +246,24 @@ contains
 
         if (popt(6)) then
             open(newunit=ounit, file=res_dir//'/cwf.dat', action='write', position='append')
-            write(ounit, 1006) abs(t%cwf)
+            write(ounit, 1006) real(t%cwf), aimag(t%cwf)
             close(ounit)
         end if
-
-      ! if (popt(8)) then
-      !     open(newunit=ounit, file=res_dir//'/prob.dat', action='write', position='append')
-      !     write(ounit, 1006) t%prob
-      !     close(ounit)
-      ! end if
 
         if (popt(7)) then
             open(newunit=ounit, file=res_dir//'/overlap', action='write', position='append')
             write(ounit, *) 't= ', time_fs, 'fs, state=', t%cstate
             do i = 1, t%nstate
                 write(ounit, 1006) t%olap(i, 1:t%max_nstate)
+            end do
+            close(ounit)
+        end if
+
+        if (popt(8)) then
+            open(newunit=ounit, file=res_dir//'/adt', action='write', position='append')
+            write(ounit, *) 't= ', time_fs, 'fs, state=', t%cstate
+            do i = 1, t%nstate
+                write(ounit, 1006) t%adt(i, 1:t%max_nstate)
             end do
             close(ounit)
         end if

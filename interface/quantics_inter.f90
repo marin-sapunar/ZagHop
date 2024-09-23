@@ -44,7 +44,7 @@ module shzagreb_inter
 
 contains
 
-      subroutine shzagreb_run(step, xyz0, cstate, en, gra, nadvec)
+      subroutine shzagreb_run(step, xyz0, cstate, en, gra, nadvec, adt)
 
       
       integer, intent(in) :: step
@@ -53,6 +53,7 @@ contains
       real(dop), intent(out) :: gra(:, :)
       real(dop), intent(out) :: en(:)
       real(dop), intent(out) :: nadvec(:, :, :)
+      real(dop), intent(out) :: adt(:, :)
     
 
       integer :: i,j,ilbl,jlbl,chkdvr,chkgrd,chkpsi,chkprp,n,f,f1,m
@@ -325,6 +326,7 @@ contains
 ! PES matrix in adiabatic (en) and diabatic (pesdia) representations
 ! rotmatz is the ADT matrix (as a complex)
          call calcdiab(hops,en,pesdia,rotmatz,point,qcoo1,1)
+         adt = rotmatz
 
 ! Matrix of gradients in adiabatic (derad) and diabatic (derdia).
          call calcdiabder(hops,derad,derdia,rotmatz,qcoo1,1)

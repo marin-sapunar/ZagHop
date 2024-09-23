@@ -59,8 +59,7 @@ contains
         t(1)%time = 0.0_dp
         ! Print options.
         ctrl%print = .false.
-        ctrl%print(1:6) = .true.
-        ctrl%print(7:9) = .true.
+        ctrl%print(1:7) = .true.
         ctrl%print(10) = .true.
         ! Program flow options.
         ctrl%stop_s0s1_ci = -1.0_dp
@@ -270,7 +269,7 @@ contains
             ctrl%print(6:9) = .false.
         case(2)
             if (ctrl%tdc_type == 2) then
-                ctrl%print(9) = .false.
+                ctrl%print(7) = .false.
             end if
         end select
         if (ctrl%thermostat /= 0) then
@@ -298,6 +297,9 @@ contains
                 end select
                 t(1)%cwf = cmplx((0.0_dp, 0.0_dp), kind = dp)
                 t(1)%cwf(t(1)%cstate) = cmplx((1.0_dp, 0.0_dp), kind = dp)
+                if (ctrl%print(8)) then
+                    allocate(t(1)%adt(t(1)%max_nstate, t(1)%max_nstate))
+                end if
             end select
         end if
         select case(ctrl%sh)
