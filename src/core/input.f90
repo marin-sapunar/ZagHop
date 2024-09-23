@@ -51,6 +51,7 @@ contains
         pcinp = 'pcharge'
         ctrl%output_dir = 'Results'
         ctrl%bufile = 'backup.dat'
+        ctrl%printerval = 1
         ctrl%buinterval = 1
         ! Method options.
         ctrl%qlib = 0
@@ -679,6 +680,8 @@ contains
                 end do
             case('bufile')
                 ctrl%bufile = readf%args(2)%s
+            case('printerval')
+                read(readf%args(2)%s, *) ctrl%printerval
             case('buinterval')
                 read(readf%args(2)%s, *) ctrl%buinterval
             case default

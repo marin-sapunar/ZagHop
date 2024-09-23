@@ -192,7 +192,9 @@ program zaghop
         end if
 
         ! Write output and prepare next step.
-        call t(1)%writestep(ctrl%print, ctrl%output_dir)
+        if ((mod(t(1)%step, ctrl%printerval) == 0)) then
+            call t(1)%writestep(ctrl%print, ctrl%output_dir)
+        end if
         if ((mod(t(1)%step, ctrl%buinterval) == 0) .or. (abort_flag)) then
             call trajectory_write_backup(ctrl%bufile, t)
         end if

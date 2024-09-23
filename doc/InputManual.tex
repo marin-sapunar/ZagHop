@@ -107,7 +107,7 @@ Section \$output contains options for program output and backup. \newline
 \begin{tabularx}{\textwidth}{ m{2.5cm} X }
 results\_dir &
 	\textbf{Results} \newline
-	Name of the main output file. \\
+	Name of the directory where output files will be written. \\
 
 (no)print		&
 	\textbf{1-10} \newline
@@ -121,6 +121,10 @@ results\_dir &
 	\tabitem [7]   overlap, overlap matrix for each step. \newline
 	\tabitem [10]  oscill.dat, QM oscillator strengths. \newline
 	\tabitem [11]  qm\_traj.xyz, XYZ file containing only QM atoms. \\
+
+printerval \#	&
+	\textbf{1} \newline
+	Data is written to output files every \# steps. \\
 
 bufile			&
 	\textbf{backup.dat} \newline
