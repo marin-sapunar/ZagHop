@@ -39,6 +39,7 @@ module control_var
         integer :: printerval !< Number of steps between printing outputs.
 
         logical :: print(50) = .false. !< Output options (for writestep subroutine).
+        integer :: print_units(50) !< Fortran units for opened output files.
 
         !------------------------------------------------------------------------------------------
         ! Program flow control.

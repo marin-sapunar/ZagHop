@@ -59,9 +59,11 @@ program zaghop
         if (check_is_dir(ctrl%output_dir)) then
             write(stderr,*) 'Warning. Results directory already exists.'
             write(stderr,*) '  New results will be appended.'
+            call t(1)%open_files(ctrl%print, ctrl%print_units, ctrl%output_dir)
         else
             call system('mkdir -p '//ctrl%output_dir)
-            call t(1)%writeheader(ctrl%print, ctrl%output_dir)
+            call t(1)%open_files(ctrl%print, ctrl%print_units, ctrl%output_dir)
+            call t(1)%writeheader(ctrl%print, ctrl%print_units, ctrl%output_dir)
         end if
 
         ! Run energy/gradient calculation for initial geometry.
@@ -75,7 +77,7 @@ program zaghop
         call stepclock%start()
         call run_qm(t(1), .false.)
         call stepclock%print(stdout, '  QM run time:')
-        call t(1)%writestep(ctrl%print, ctrl%output_dir)
+        call t(1)%writestep(ctrl%print, ctrl%print_units, ctrl%output_dir)
         call trajectory_next(1, t, ctrl%dt, .true.)
     end if
     ctrl%t0_tot_en = t(1)%tote()
@@ -193,7 +195,7 @@ program zaghop
 
         ! Write output and prepare next step.
         if ((mod(t(1)%step, ctrl%printerval) == 0)) then
-            call t(1)%writestep(ctrl%print, ctrl%output_dir)
+            call t(1)%writestep(ctrl%print, ctrl%print_units, ctrl%output_dir)
         end if
         if ((mod(t(1)%step, ctrl%buinterval) == 0) .or. (abort_flag)) then
             call trajectory_write_backup(ctrl%bufile, t)

@@ -3,7 +3,7 @@
 !> @author Marin Sapunar, Ruđer Bošković Institute
 !> @date October, 2017
 !
-! DESCRIPTION: 
+! DESCRIPTION:
 !> @brief Defines type for holding all variables about the system in the dynamics calculation.
 !--------------------------------------------------------------------------------------------------
 module system_var
@@ -69,6 +69,7 @@ module system_var
     contains
         procedure :: writestep => traj_writestep
         procedure :: writeheader => traj_writeheader
+        procedure :: open_files => traj_open_files
         procedure :: tote => traj_tote !< Total energy of the system.
         procedure :: kine => traj_kine !< Kinetic energy of the system.
         procedure :: pote => traj_pote !< Potential energy of the system.
@@ -99,7 +100,6 @@ contains
             en = en + mass(i) * dot_product(velo(:, i), velo(:, i)) * 0.5_dp
         end do
     end function ekin
-
 
     pure function traj_tote(t) result(tote)
         class(trajtype), intent(in) :: t
@@ -179,115 +179,155 @@ contains
 
 
     !----------------------------------------------------------------------------------------------
-    ! SUBROUTINE: Traj_WriteStep
+    ! SUBROUTINE: traj_open_files
     !
     ! DESCRIPTION:
-    !> @brief Write requested output from each step.
+    !> @brief Prepare output files for writing dynamics outputs.
     !----------------------------------------------------------------------------------------------
-    subroutine traj_writestep(t, popt, res_dir)
+    subroutine traj_open_files(t, popt, punit, res_dir)
         class(trajtype) :: t
         logical, intent(in) :: popt(:) !< Print options.
+        integer, intent(out) :: punit(:) !< Units for output files.
         character(len=*), intent(in) :: res_dir ! Directory for writing results.
-        integer :: ounit, i
+        integer :: i
         real(dp) :: time_fs
 
-        time_fs = t%time * aut_fs
         if (popt(1)) then
-            open(newunit=ounit, file=res_dir//'/energy.dat', action='write', position='append')
-            write(ounit, 1001, advance='no') time_fs, t%cstate
-            write(ounit, 1002, advance='no') t%tote(), t%qe(t%cstate)
-            write(ounit, 1002, advance='no') t%qe(:)
-            write(ounit, *)
-            close(ounit)
+            open(newunit=punit(1), file=res_dir//'/energy.dat', action='write', position='append')
 
             if (t%mnatom > 0) then
-                open(newunit=ounit, file=res_dir//'/mm.dat', action='write', position='append')
-                write(ounit, 1001, advance='no') time_fs
-                write(ounit, 1002, advance='no') t%mkine(), t%me
-                write(ounit, 1002, advance='no') t%pbcbox
-                write(ounit, *)
-                close(ounit)
+                open(newunit=punit(50), file=res_dir//'/mm.dat', action='write', position='append')
             end if
         end if
 
         if (popt(2)) then
-            open(newunit=ounit, file=res_dir//'/trajectory.xyz', action='write', position='append')
-            write(ounit, *) t%natom
-            write(ounit, *) 't= ', time_fs, 'fs, state=', t%cstate
-            do i = 1, t%natom
-                write(ounit, 1003) t%sym(i), t%geom(:, i) * a0_A
-            end do
-            close(ounit)
+            open(newunit=punit(2), file=res_dir//'/trajectory.xyz', action='write', position='append')
         end if
 
         if (popt(3)) then
-            open(newunit=ounit, file=res_dir//'/geometry', action='write', position='append')
-            do i = 1, t%natom
-                write(ounit, 1002) t%geom(:, i)
-            end do
-            close(ounit)
+            open(newunit=punit(3), file=res_dir//'/geometry', action='write', position='append')
         end if
-         
+
         if (popt(4)) then
-            open(newunit=ounit, file=res_dir//'/velocity', action='write', position='append')
-            do i = 1, t%natom
-                write(ounit, 1002) t%velo(:, i)
-            end do
-            close(ounit)
+            open(newunit=punit(4), file=res_dir//'/velocity', action='write', position='append')
         end if
 
         if (popt(5)) then
-            open(newunit=ounit, file=res_dir//'/gradient', action='write', position='append')
-            do i = 1, t%natom
-                write(ounit, 1002) t%grad(:, i)
-            end do
-            close(ounit)
+            open(newunit=punit(5), file=res_dir//'/gradient', action='write', position='append')
         end if
 
         if (popt(6)) then
-            open(newunit=ounit, file=res_dir//'/cwf.dat', action='write', position='append')
-            write(ounit, 1006) real(t%cwf), aimag(t%cwf)
-            close(ounit)
+            open(newunit=punit(6), file=res_dir//'/cwf.dat', action='write', position='append')
         end if
 
         if (popt(7)) then
-            open(newunit=ounit, file=res_dir//'/overlap', action='write', position='append')
-            write(ounit, *) 't= ', time_fs, 'fs, state=', t%cstate
-            do i = 1, t%nstate
-                write(ounit, 1006) t%olap(i, 1:t%max_nstate)
-            end do
-            close(ounit)
+            open(newunit=punit(7), file=res_dir//'/overlap', action='write', position='append')
         end if
 
         if (popt(8)) then
-            open(newunit=ounit, file=res_dir//'/adt', action='write', position='append')
-            write(ounit, *) 't= ', time_fs, 'fs, state=', t%cstate
-            do i = 1, t%nstate
-                write(ounit, 1006) t%adt(i, 1:t%max_nstate)
-            end do
-            close(ounit)
+            open(newunit=punit(8), file=res_dir//'/adt', action='write', position='append')
         end if
 
         if (popt(10)) then
-            open(newunit=ounit, file=res_dir//'/oscill.dat', action='write', position='append')
-            write(ounit, 1006) t%qo
-            close(ounit)
+            open(newunit=punit(10), file=res_dir//'/oscill.dat', action='write', position='append')
         end if
 
         if (popt(11)) then
-            open(newunit=ounit, file=res_dir//'/qm_traj.xyz', action='write', position='append')
-            write(ounit, *) t%qnatom
-            write(ounit, *) 't= ', time_fs, 'fs, state=', t%cstate
-            do i = 1, t%qnatom
-                write(ounit, 1003) t%sym(t%qind(i)), t%geom(:, t%qind(i)) * a0_A
+            open(newunit=punit(11), file=res_dir//'/qm_traj.xyz', action='write', position='append')
+        end if
+    end subroutine traj_open_files
+
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: traj_writestep
+    !
+    ! DESCRIPTION:
+    !> @brief Write requested output from each step.
+    !----------------------------------------------------------------------------------------------
+    subroutine traj_writestep(t, popt, punit, res_dir)
+        class(trajtype) :: t
+        logical, intent(in) :: popt(:) !< Print options.
+        integer, intent(in) :: punit(:) !< Units for output files.
+        character(len=*), intent(in) :: res_dir ! Directory for writing results.
+        integer :: i
+        real(dp) :: time_fs
+
+        time_fs = t%time * aut_fs
+        if (popt(1)) then
+            write(punit(1), 1001, advance='no') time_fs, t%cstate
+            write(punit(1), 1002, advance='no') t%tote(), t%qe(t%cstate)
+            write(punit(1), 1002, advance='no') t%qe(:)
+            write(punit(1), *)
+
+            if (t%mnatom > 0) then
+                write(punit(50), 1001, advance='no') time_fs
+                write(punit(50), 1002, advance='no') t%mkine(), t%me
+                write(punit(50), 1002, advance='no') t%pbcbox
+                write(punit(50), *)
+            end if
+        end if
+
+        if (popt(2)) then
+            write(punit(2), *) t%natom
+            write(punit(2), *) 't= ', time_fs, 'fs, state=', t%cstate
+            do i = 1, t%natom
+                write(punit(2), 1003) t%sym(i), t%geom(:, i) * a0_A
             end do
-            close(ounit)
+        end if
+
+        if (popt(3)) then
+            do i = 1, t%natom
+                write(punit(3), 1002) t%geom(:, i)
+            end do
+        end if
+
+        if (popt(4)) then
+            do i = 1, t%natom
+                write(punit(4), 1002) t%velo(:, i)
+            end do
+        end if
+
+        if (popt(5)) then
+            do i = 1, t%natom
+                write(punit(5), 1002) t%grad(:, i)
+            end do
+        end if
+
+        if (popt(6)) then
+            write(punit(6), 1006) real(t%cwf), aimag(t%cwf)
+        end if
+
+        if (popt(7)) then
+            write(punit(7), *) 't= ', time_fs, 'fs, state=', t%cstate
+            do i = 1, t%nstate
+                write(punit(7), 1006) t%olap(i, 1:t%max_nstate)
+            end do
+        end if
+
+        if (popt(8)) then
+            write(punit(8), *) 't= ', time_fs, 'fs, state=', t%cstate
+            do i = 1, t%nstate
+                write(punit(8), 1006) t%adt(i, 1:t%max_nstate)
+            end do
+        end if
+
+        if (popt(10)) then
+            write(punit(10), 1006) t%qo
+        end if
+
+        if (popt(11)) then
+            write(punit(11), *) t%qnatom
+            write(punit(11), *) 't= ', time_fs, 'fs, state=', t%cstate
+            do i = 1, t%qnatom
+                write(punit(11), 1003) t%sym(t%qind(i)), t%geom(:, t%qind(i)) * a0_A
+            end do
         end if
 
 
-1001 format (f12.5,2x,i3) 
+1001 format (f12.5,2x,i3)
 1002 format (1x,1000f18.10)
-1003 format (1x,a2,2x,1000f18.10) 
+1003 format (1x,a2,2x,1000f18.10)
 1006 format (1x,1000e22.12)
     end subroutine traj_writestep
 
@@ -453,35 +493,32 @@ contains
     ! DESCRIPTION:
     !> @brief Initialize output files and write column headers.
     !----------------------------------------------------------------------------------------------
-    subroutine traj_writeheader(t, popt, res_dir)
+    subroutine traj_writeheader(t, popt, punit, res_dir)
         class(trajtype) :: t
         logical, intent(in) :: popt(:) !< Print options.
+        integer, intent(in) :: punit(:) !< Units for output files.
         character(len=*), intent(in) :: res_dir ! Directory for writing results.
-        integer :: ounit, i
+        integer :: i
         real(dp) :: time_fs
 
         time_fs = t%time * aut_fs
         if (popt(1)) then
-            open(newunit=ounit, file=res_dir//'/energy.dat', action='write', position='append')
-            write(ounit, '(a)', advance='no') '#'
-            write(ounit, '(a12,1x,a4)', advance='no') 't,', 'cst,' 
-            write(ounit, '(1x,2a18)', advance='no') 'etot,', 'epot,'
-            write(ounit, '(1x)', advance='no') 
+            write(punit(1), '(a)', advance='no') '#'
+            write(punit(1), '(a12,1x,a4)', advance='no') 't,', 'cst,'
+            write(punit(1), '(1x,2a18)', advance='no') 'etot,', 'epot,'
+            write(punit(1), '(1x)', advance='no')
             do i = 1, size(t%qe)
-                write(ounit, '(12x,a2,i3.3)', advance='no') 'qe', i
-                if (i < size(t%qe)) write(ounit, '(a)', advance='no') ','
+                write(punit(1), '(12x,a2,i3.3)', advance='no') 'qe', i
+                if (i < size(t%qe)) write(punit(1), '(a)', advance='no') ','
             end do
-            write(ounit, *)
-            close(ounit)
+            write(punit(1), *)
 
             if (t%mnatom > 0) then
-                open(newunit=ounit, file=res_dir//'/mm.dat', action='write', position='append')
-                write(ounit, '(a)', advance='no') '#'
-                write(ounit, '(a12,1x)', advance='no') 't,'
-                write(ounit, '(2x,3a18)', advance='no') 'mekin,', 'me1,', 'me2,'
-                write(ounit, '(1x,5a18,a17)', advance='no') 'pbc1,', 'pbc2,', 'pbc3,', 'pbc4,', 'pbc5,', 'pbc6'
-                write(ounit, *)
-                close(ounit)
+                write(punit(50), '(a)', advance='no') '#'
+                write(punit(50), '(a12,1x)', advance='no') 't,'
+                write(punit(50), '(2x,3a18)', advance='no') 'mekin,', 'me1,', 'me2,'
+                write(punit(50), '(1x,5a18,a17)', advance='no') 'pbc1,', 'pbc2,', 'pbc3,', 'pbc4,', 'pbc5,', 'pbc6'
+                write(punit(50), *)
             end if
         end if
     end subroutine traj_writeheader
