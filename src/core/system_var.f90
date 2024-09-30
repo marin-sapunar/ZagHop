@@ -13,8 +13,12 @@ module system_var
     implicit none
 
     private
-    public :: t, memory
+    public :: trajectory_data, tr1, tr2
+    public :: memory
+    public :: data_index_1
+    public :: data_index_2
     public :: trajtype
+    public :: allocate_trajectory_data
     public :: trajectory_next
     public :: trajectory_rewind
     public :: trajectory_write_backup
@@ -79,7 +83,11 @@ module system_var
 
 
     integer, parameter :: memory = 5
-    type(trajtype), allocatable :: t(:)
+    type(trajtype), allocatable, target :: trajectory_data(:)
+    type(trajtype), pointer :: tr1 !< Pointer to trajectory data for current time step.
+    type(trajtype), pointer :: tr2 !< Pointer to trajectory data for previous time step.
+    integer :: data_index_1 !< Index of trajectory data for current time step.
+    integer :: data_index_2 !< Index of trajectory data for previous time step.
 
 
 contains
@@ -132,24 +140,33 @@ contains
     end function traj_mkine
 
 
-    !----------------------------------------------------------------------------------------------
-    ! SUBROUTINE: trajectory_next
-    !> @brief Move array of trajectory values forward by one step at position pos.
-    !----------------------------------------------------------------------------------------------
-    subroutine trajectory_next(pos, t, dt, increment_time)
-        integer, intent(in) :: pos
-        type(trajtype), allocatable :: t(:)
-        real(dp), intent(in) :: dt
-        logical, intent(in) :: increment_time
-        integer :: i
+    !---------------------------------------------------------------------------------------------
+    ! SUBROUTINE: allocate_trajectory_data
+    !> @brief Allocate trajectory_data array and associate pointers
+    !---------------------------------------------------------------------------------------------
+    subroutine allocate_trajectory_data()
+        allocate(trajectory_data(memory))
+        data_index_1 = 2
+        data_index_2 = 1
+        tr1 => trajectory_data(data_index_1)
+        tr2 => trajectory_data(data_index_2)
+    end subroutine allocate_trajectory_data
 
-        do i = size(t), pos+1, -1
-            t(i) = t(i-1)
-        end do
-        t(pos)%step = t(pos+1)%step + 1
-        if (increment_time) then
-            t(pos)%time = t(pos)%time + dt
-        end if
+
+    !---------------------------------------------------------------------------------------------
+    ! SUBROUTINE: trajectory_next
+    !> @brief Prepare for next step by moving pointers.
+    !---------------------------------------------------------------------------------------------
+    subroutine trajectory_next(dt)
+        real(dp), intent(in) :: dt
+
+        data_index_2 = data_index_1
+        data_index_1 = mod(data_index_1, memory) + 1 ! Wrap around if pointing to end of array.
+        trajectory_data(data_index_1) = trajectory_data(data_index_2)
+        tr1 => trajectory_data(data_index_1)
+        tr2 => trajectory_data(data_index_2)
+        tr1%step = tr1%step + 1
+        tr1%time = tr1%time + dt
     end subroutine trajectory_next
 
 
@@ -157,24 +174,16 @@ contains
     ! SUBROUTINE: trajectory_rewind
     !> @brief Move array of trajectory values forward by one or more steps.
     !----------------------------------------------------------------------------------------------
-    subroutine trajectory_rewind(t, nstep, increment_step)
-        type(trajtype), allocatable :: t(:)
-        integer, intent(in) :: nstep
+    subroutine trajectory_rewind(increment_step)
         logical :: increment_step !< Increment step instead of copying value.
-        integer :: i, step
+        integer :: step
 
-        step = t(1)%step + 1
-        do i = 1, size(t) - nstep
-            t(i) = t(i+nstep)
-        end do
-        do i = size(t) - nstep + 1, size(t)
-            if (allocated(t(i)%geom)) deallocate(t(i)%geom)
-            if (allocated(t(i)%velo)) deallocate(t(i)%velo)
-            if (allocated(t(i)%grad)) deallocate(t(i)%grad)
-            if (allocated(t(i)%olap)) deallocate(t(i)%olap)
-            if (allocated(t(i)%nadv)) deallocate(t(i)%nadv)
-        end do
-        if (increment_step) t(1)%step = step
+        step = tr1%step
+        data_index_1 = data_index_2
+        data_index_2 = mod(data_index_2+4, memory) + 1 ! Wrap around if pointing to start. 
+        tr1 => trajectory_data(data_index_1)
+        tr2 => trajectory_data(data_index_2)
+        if (increment_step) tr1%step = step + 1
     end subroutine trajectory_rewind
 
 

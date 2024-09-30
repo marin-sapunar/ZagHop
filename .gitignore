@@ -10,3 +10,4 @@ doc/InputManual.log
 doc/InputManual.*gz
 
 tests/zaghop_test*
+tests/interface_test*

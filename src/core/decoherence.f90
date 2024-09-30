@@ -32,7 +32,7 @@ contains
         select case(ctrl%decohlvl)
         case(0) ! No decoherence correction.
         case(1) ! Energy based decoherence.
-            call edc(t(1)%cstate, t(1)%qkine(), t(1)%qe, ctrl%dt, t(1)%cwf)
+            call edc(tr1%cstate, tr1%qkine(), tr1%qe, ctrl%dt, tr1%cwf)
         end select
     end subroutine decoherence
 

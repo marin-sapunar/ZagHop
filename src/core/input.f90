@@ -56,8 +56,8 @@ contains
         ! Method options.
         ctrl%qlib = 0
         ! Set start step at 0
-        t(1)%step = 0
-        t(1)%time = 0.0_dp
+        tr1%step = 0
+        tr1%time = 0.0_dp
         ! Print options.
         ctrl%print = .false.
         ctrl%print(1:7) = .true.
@@ -164,7 +164,7 @@ contains
         case('maxwell-boltzmann', 'mb')
             write(stdout, '(3x,a,a)') 'Generating random velocities following Maxwell-Boltzmann ', &
                                       'distribution.'
-            call maxwell_boltzmann_velo(t(1)%mass, mb_temperature, t(1)%velo)
+            call maxwell_boltzmann_velo(tr1%mass, mb_temperature, tr1%velo)
         case default
             write(stdout, '(1x,a,a,a)') 'Reading velocity file ', veloinp, '.'
             call read_velo()
@@ -173,10 +173,10 @@ contains
         ! Reorient the molecule based on orientlvl
         select case(ctrl%orientlvl)
         case(1)
-            call set_geom_center_of_mass(t(1)%mass, t(1)%geom)
+            call set_geom_center_of_mass(tr1%mass, tr1%geom)
         case(2)
-            call set_geom_center_of_mass(t(1)%mass, t(1)%geom)
-            call project_translation_rotation_from_velocity(t(1)%mass, t(1)%geom, t(1)%velo)
+            call set_geom_center_of_mass(tr1%mass, tr1%geom)
+            call project_translation_rotation_from_velocity(tr1%mass, tr1%geom, tr1%velo)
         end select
 
 
@@ -188,30 +188,30 @@ contains
 
         ! Print initial information about the full system.
         write(stdout, *)
-        write(stdout, '(1x,a,i0,a)') 'Starting calculation for a system with ', t(1)%natom, ' atoms.'
-        write(stdout, '(3x,a,i0,a)') 'QM system consists of ', t(1)%qnatom, '.'
-        write(stdout, '(3x,a,i0,a)') 'MM system consists of ', t(1)%mnatom, '.'
+        write(stdout, '(1x,a,i0,a)') 'Starting calculation for a system with ', tr1%natom, ' atoms.'
+        write(stdout, '(3x,a,i0,a)') 'QM system consists of ', tr1%qnatom, '.'
+        write(stdout, '(3x,a,i0,a)') 'MM system consists of ', tr1%mnatom, '.'
 
         if (ctrl%qm) then
             write(stdout, *)
             write(stdout, '(3x,a)') 'Initial geometry of the QM system: '
-            do i = 1, t(1)%qnatom
-                write(stdout, '(2x,a5,1000e18.10)') t(1)%sym(t(1)%qind(i)), t(1)%geom(:, t(1)%qind(i))
+            do i = 1, tr1%qnatom
+                write(stdout, '(2x,a5,1000e18.10)') tr1%sym(tr1%qind(i)), tr1%geom(:, tr1%qind(i))
             end do
             write(stdout, '(3x,a)') 'Initial velocity of the QM system: '
-            do i = 1, t(1)%qnatom
-                write(stdout, '(2x,a5,1000e18.10)') t(1)%sym(t(1)%qind(i)), t(1)%velo(:, t(1)%qind(i))
+            do i = 1, tr1%qnatom
+                write(stdout, '(2x,a5,1000e18.10)') tr1%sym(tr1%qind(i)), tr1%velo(:, tr1%qind(i))
             end do
         end if
         if (ctrl%mm) then
             write(stdout, *)
             write(stdout, '(3x,a)') 'Initial geometry of the MM system: '
-            do i = 1, t(1)%mnatom
-                write(stdout, '(2x,a5,1000e18.10)') t(1)%sym(t(1)%mind(i)), t(1)%geom(:, t(1)%mind(i))
+            do i = 1, tr1%mnatom
+                write(stdout, '(2x,a5,1000e18.10)') tr1%sym(tr1%mind(i)), tr1%geom(:, tr1%mind(i))
             end do
             write(stdout, '(3x,a)') 'Initial velocity of the MM system: '
-            do i = 1, t(1)%mnatom
-                write(stdout, '(2x,a5,1000e18.10)') t(1)%sym(t(1)%mind(i)), t(1)%velo(:, t(1)%mind(i))
+            do i = 1, tr1%mnatom
+                write(stdout, '(2x,a5,1000e18.10)') tr1%sym(tr1%mind(i)), tr1%velo(:, tr1%mind(i))
             end do
         end if
 
@@ -258,7 +258,7 @@ contains
         call readf%close()
 
         ! Modify options based on type of calculation.
-        if (t(1)%max_nstate == 1) then
+        if (tr1%max_nstate == 1) then
             ctrl%sh = 0
             ctrl%print(10) = .false.
         end if
@@ -278,37 +278,37 @@ contains
             ctrl%max_tot_en_change_step = huge(ctrl%max_tot_en_change_step)
         end if
 
-        ! Allocate all arrays of size t(1)%max_nstate.
+        ! Allocate all arrays of size tr1%max_nstate.
         if (.not. ctrl%restart) then
-            allocate(t(1)%qe(t(1)%max_nstate))
-            if (ctrl%oscill) allocate(t(1)%qo(t(1)%max_nstate - 1))
+            allocate(tr1%qe(tr1%max_nstate))
+            if (ctrl%oscill) allocate(tr1%qo(tr1%max_nstate - 1))
             select case(ctrl%sh)
             case(1)
-                allocate(t(1)%prob(t(1)%max_nstate), source=0.0_dp)
+                allocate(tr1%prob(tr1%max_nstate), source=0.0_dp)
             case(2, 3)
-                allocate(t(1)%cwf(t(1)%max_nstate))
-                allocate(t(1)%prob(t(1)%max_nstate), source=0.0_dp)
-                if (ctrl%phaselvl > 0) allocate(t(1)%phase(t(1)%max_nstate), source=1)
+                allocate(tr1%cwf(tr1%max_nstate))
+                allocate(tr1%prob(tr1%max_nstate), source=0.0_dp)
+                if (ctrl%phaselvl > 0) allocate(tr1%phase(tr1%max_nstate), source=1)
                 select case (ctrl%tdc_type)
                 case(1)
-                    allocate(t(1)%olap(t(1)%max_nstate, t(1)%max_nstate))
-                    t(1)%olap = unit_mat(t(1)%max_nstate)
+                    allocate(tr1%olap(tr1%max_nstate, tr1%max_nstate))
+                    tr1%olap = unit_mat(tr1%max_nstate)
                 case(2)
                     ! Nonadiabatic coupling vecotrs are allocated after reading number of atoms.
                 end select
-                t(1)%cwf = cmplx((0.0_dp, 0.0_dp), kind = dp)
-                t(1)%cwf(t(1)%cstate) = cmplx((1.0_dp, 0.0_dp), kind = dp)
+                tr1%cwf = cmplx((0.0_dp, 0.0_dp), kind = dp)
+                tr1%cwf(tr1%cstate) = cmplx((1.0_dp, 0.0_dp), kind = dp)
                 if (ctrl%print(8)) then
-                    allocate(t(1)%adt(t(1)%max_nstate, t(1)%max_nstate))
+                    allocate(tr1%adt(tr1%max_nstate, tr1%max_nstate))
                 end if
             end select
         end if
         select case(ctrl%sh)
         case(2, 3)
-            allocate(ctrl%couple(t(1)%max_nstate), source=.true.)
+            allocate(ctrl%couple(tr1%max_nstate), source=.true.)
             if (allocated(uncouple_states)) then
                 do i = 1, size(uncouple_states, 1)
-                    if (uncouple_states(i) > t(1)%max_nstate) exit
+                    if (uncouple_states(i) > tr1%max_nstate) exit
                     ctrl%couple(uncouple_states(i)) = .false.
                 end do
             end if
@@ -350,19 +350,19 @@ contains
             call readf%next()
             if (is_iostat_end(readf%iostat)) exit
             call readf%parseline(' ,')
-            if (readf%narg < t(1)%ndim + 3) then
+            if (readf%narg < tr1%ndim + 3) then
                 write(stderr, '(a)') 'Error in Input module, read_geom subroutine.'
-                write(stderr, '(a,i0,a)') ' Need ', 3+t(1)%ndim, ' arguments per line:'
+                write(stderr, '(a,i0,a)') ' Need ', 3+tr1%ndim, ' arguments per line:'
                 write(stderr, '(a)') '  symbol mass coords q/m'
                 write(stderr, '(a,a)') '  Line: ', readf%line
                 stop
             end if
-            read(readf%args(3+t(1)%ndim)%s, *) part
+            read(readf%args(3+tr1%ndim)%s, *) part
             select case (tolower(part))
             case('q')
-                t(1)%qnatom = t(1)%qnatom + 1
+                tr1%qnatom = tr1%qnatom + 1
             case('m')
-                t(1)%mnatom = t(1)%mnatom + 1
+                tr1%mnatom = tr1%mnatom + 1
             case default
                 write(stderr, *) 'Error in Input module, read_geom subroutine.'
                 write(stderr, *) ' Lines should end with "q" for QM atoms or "m" for MM atoms.'
@@ -371,66 +371,66 @@ contains
         end do
         call readf%rewind()
 
-        t(1)%natom = t(1)%qnatom + t(1)%mnatom
-        if (t(1)%natom == 0) then
+        tr1%natom = tr1%qnatom + tr1%mnatom
+        if (tr1%natom == 0) then
             write(stderr, *) 'Error in Input module, read_geom subroutine.'
             write(stderr, *) ' No atoms found in geometry file!'
             stop
         end if
 
         ! Allocate arrays of natom dimensions.
-        allocate(t(1)%sym(t(1)%natom))
-        allocate(t(1)%mass(t(1)%natom))
-        allocate(t(1)%chrg(t(1)%natom))
-        allocate(t(1)%geom(t(1)%ndim, t(1)%natom))
-        allocate(t(1)%velo(t(1)%ndim, t(1)%natom))
-        allocate(t(1)%grad(t(1)%ndim, t(1)%natom))
-        if (t(1)%qnatom > 0) then
+        allocate(tr1%sym(tr1%natom))
+        allocate(tr1%mass(tr1%natom))
+        allocate(tr1%chrg(tr1%natom))
+        allocate(tr1%geom(tr1%ndim, tr1%natom))
+        allocate(tr1%velo(tr1%ndim, tr1%natom))
+        allocate(tr1%grad(tr1%ndim, tr1%natom))
+        if (tr1%qnatom > 0) then
             ctrl%qm = .true.
-            allocate(t(1)%qind(t(1)%qnatom))
+            allocate(tr1%qind(tr1%qnatom))
         else
             ctrl%qm = .false.
         end if
-        if (t(1)%mnatom > 0) then
+        if (tr1%mnatom > 0) then
             ctrl%mm = .true.
             ctrl%print(12) = .true.
-            allocate(t(1)%mind(t(1)%mnatom))
+            allocate(tr1%mind(tr1%mnatom))
         else
             ctrl%mm = .false.
         end if
         if (ctrl%tdc_type == 2) then
-            allocate(t(1)%nadv(t(1)%ndim*t(1)%qnatom, t(1)%max_nstate, t(1)%max_nstate))
+            allocate(tr1%nadv(tr1%ndim*tr1%qnatom, tr1%max_nstate, tr1%max_nstate))
         end if
 
         ! Second run through the file to read the atom, mass, position and index of each atom.
-        t(1)%qnatom = 0
-        t(1)%mnatom = 0
-        do i = 1, t(1)%natom
+        tr1%qnatom = 0
+        tr1%mnatom = 0
+        do i = 1, tr1%natom
             call readf%next()
             call readf%parseline(' ,')
 
             ! Read symbol.
             read(readf%args(1)%s, *) tsym
-            t(1)%sym(i) = tolower(tsym)
+            tr1%sym(i) = tolower(tsym)
 
             ! Read mass.
             read(readf%args(2)%s, *) tmass
-            t(1)%mass(i) = tmass * Da_me
+            tr1%mass(i) = tmass * Da_me
 
             ! Read initial geometry.
-            do d = 1, t(1)%ndim
-                read(readf%args(2+d)%s, *) t(1)%geom(d, i)
+            do d = 1, tr1%ndim
+                read(readf%args(2+d)%s, *) tr1%geom(d, i)
             end do
 
             ! Check part (q = qm, m = mm)
-            read(readf%args(3+t(1)%ndim)%s, *) part
+            read(readf%args(3+tr1%ndim)%s, *) part
             select case (tolower(part))
             case('q')
-                t(1)%qnatom = t(1)%qnatom + 1
-                t(1)%qind(t(1)%qnatom) = i
+                tr1%qnatom = tr1%qnatom + 1
+                tr1%qind(tr1%qnatom) = i
             case('m')
-                t(1)%mnatom = t(1)%mnatom + 1
-                t(1)%mind(t(1)%mnatom) = i
+                tr1%mnatom = tr1%mnatom + 1
+                tr1%mind(tr1%mnatom) = i
             end select
         end do
         call readf%close()
@@ -457,17 +457,17 @@ contains
         end if
 
         call readf%open(veloinp, comment='#')
-        do i = 1, t(1)%natom
+        do i = 1, tr1%natom
             call readf%next()
             call readf%parseline(' ,')
-            if (readf%narg < t(1)%ndim) then
+            if (readf%narg < tr1%ndim) then
                 write(stderr, *) 'Error in Input module, read_velo subroutine.'
-                write(stderr, '(a,i0,a)') ' Premature end of line, expect ', t(1)%ndim, ' arguments.'
+                write(stderr, '(a,i0,a)') ' Premature end of line, expect ', tr1%ndim, ' arguments.'
                 write(stderr, '(a,a)') ' Line: ', readf%line
                 stop
             end if
-            do d = 1, t(1)%ndim
-                read(readf%args(d)%s, *) t(1)%velo(d, i)
+            do d = 1, tr1%ndim
+                read(readf%args(d)%s, *) tr1%velo(d, i)
             end do
         end do
         call readf%close()
@@ -493,9 +493,9 @@ contains
         end if
 
         call readf%open(pcinp)
-        do i = 1, t(1)%natom
+        do i = 1, tr1%natom
             call readf%next()
-            read(readf%line, *) t(1)%chrg(i)
+            read(readf%line, *) tr1%chrg(i)
         end do
         call readf%close()
     end subroutine read_pc
@@ -575,15 +575,15 @@ contains
             call readf%parseline(' =')
             select case(readf%args(1)%s)
             case('nstate')
-                read(readf%args(2)%s, *) t(1)%nstate
+                read(readf%args(2)%s, *) tr1%nstate
             case('variable_nstate')
                 read(readf%args(2)%s, *) ctrl%variable_nstate
             case('max_nstate')
-                read(readf%args(2)%s, *) t(1)%max_nstate
+                read(readf%args(2)%s, *) tr1%max_nstate
             case('min_nstate')
-                read(readf%args(2)%s, *) t(1)%min_nstate
+                read(readf%args(2)%s, *) tr1%min_nstate
             case('istate')
-                read(readf%args(2)%s, *) t(1)%cstate
+                read(readf%args(2)%s, *) tr1%cstate
             case('geometry')
                 geominp = readf%args(2)%s
             case('velocity')
@@ -598,7 +598,7 @@ contains
                     read(readf%args(3)%s, *) mb_temperature
                 end if
             case('ndim')
-                read(readf%args(2)%s, *) t(1)%ndim
+                read(readf%args(2)%s, *) tr1%ndim
             case default
                 write(stderr, *) 'Warning in Input module, read_system subroutine.'
                 write(stderr, *) '  Skipping line with unrecognized keyword:'
@@ -608,35 +608,35 @@ contains
 
         select case (ctrl%variable_nstate)
         case(0)
-            if (t(1)%nstate == 0) then
+            if (tr1%nstate == 0) then
                 write(stderr, *) 'Error in Input module, read_system subroutine.'
                 write(stderr, *) '  Number of states not defined.'
                 stop
             end if
-            if ((t(1)%max_nstate /= 0) .or. (t(1)%min_nstate /= 0)) then
+            if ((tr1%max_nstate /= 0) .or. (tr1%min_nstate /= 0)) then
                 write(stderr, *) 'Warning in Input module, read_system subroutine.'
                 write(stderr, *) '  Options max_nstate and min_nstate are ignored when '//&
                                 'variable_nstate = 0.'
             end if
-            t(1)%max_nstate = t(1)%nstate
-            t(1)%min_nstate = t(1)%nstate
+            tr1%max_nstate = tr1%nstate
+            tr1%min_nstate = tr1%nstate
         case(1)
-            if ((t(1)%max_nstate == 0) .or. (t(1)%min_nstate == 0)) then
+            if ((tr1%max_nstate == 0) .or. (tr1%min_nstate == 0)) then
                 write(stderr, *) 'Error in Input module, read_system subroutine.'
                 write(stderr, *) '  Maximum/minimum number of states not defined.'
                 stop
             end if
-            if (t(1)%nstate == 0) then
+            if (tr1%nstate == 0) then
                 write(stderr, *) 'Warning in Input module, read_system subroutine.'
                 write(stderr, *) '  Option nstate is ignored when variable_nstate = 1'
             end if
-            t(1)%nstate = t(1)%max_nstate
+            tr1%nstate = tr1%max_nstate
         end select
-        if (t(1)%cstate == 0) then
+        if (tr1%cstate == 0) then
             write(stderr, *) 'Warning in Input module, read_system subroutine.'
             write(stderr, '(3x,a,i0,a)') 'Initial state not defined, setting initial state = ', &
-            &                            t(1)%nstate, '.'
-            t(1)%cstate = t(1)%nstate
+            &                            tr1%nstate, '.'
+            tr1%cstate = tr1%nstate
         end if
 
     end subroutine read_system
@@ -961,7 +961,7 @@ contains
                 end if
                 if (ctrl%pbc) then
                     call readf%next()
-                    read (readf%line, *) t(1)%pbcbox
+                    read (readf%line, *) tr1%pbcbox
                 end if
             case default
                 write(stderr, *) 'Warning in Input module, read_mm subroutine.'

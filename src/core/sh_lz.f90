@@ -29,23 +29,24 @@ contains
         real(dp) :: prob(3)
         real(dp) :: sd(3)
         real(dp) :: g0, g1, g2, gap_err
-        integer :: i, istate
+        integer :: i, istate, data_index_3
         logical :: err_check
 
-        allocate(check(t(1)%nstate), source=.false.)
-        if (t(1)%step < 2) return
-        if (.not. any(check_gap(t(3), t(2), t(1)))) return
-        allocate(gap_sd(t(1)%nstate))
-        allocate(sd_converged(t(1)%nstate), source=.false.)
+        data_index_3 = mod(data_index_2+4, size(trajectory_data)) + 1
+        allocate(check(tr1%nstate), source=.false.)
+        if (tr1%step < 2) return
+        if (.not. any(check_gap(trajectory_data(data_index_3), tr2, tr1))) return
+        allocate(gap_sd(tr1%nstate))
+        allocate(sd_converged(tr1%nstate), source=.false.)
 
-        istate = t(2)%cstate
-        t0 = t(3)
-        t1 = t(2)
-500     t2 = t(1)
+        istate = tr2%cstate
+        t0 = trajectory_data(data_index_3)
+        t1 = tr2
+500     t2 = tr1
 
         do
             need_bisect = .false.
-            check = check_gap(t(3), t(2), t(1))
+            check = check_gap(t0, tr2, tr1)
             do i = 1, t1%nstate
                 if (.not. check(i)) cycle
                 g0 = t0%qe(istate) - t0%qe(i)
@@ -81,23 +82,23 @@ contains
         end do
 
         if (check_hop(t1)) then
-            t(3) = t0
-            t(2) = t1
-            t(1) = t2
+            trajectory_data(data_index_3) = t0
+            tr2 = t1
+            tr1 = t2
             write(stdout, '(3x,a,f8.4,a)') ' Hop occurred, resuming trajectory from t=', &
-            &                               t(2)%time * aut_fs, '.'
-            call trajectory_rewind(t, 1, .false.)
-            t(2)%cstate = istate
+            &                               tr2%time * aut_fs, '.'
+            call trajectory_rewind(.false.)
+            tr2%cstate = istate
         else
             write(stdout, '(3x,a)') 'Hop probability evaluated, no hop.'
-            if (any(check_gap(t1, t2, t(1)))) then
+            if (any(check_gap(t1, t2, tr1))) then
                 write(stdout, '(3x,a)') ' Extra gap minimum in same step.'
                 t0 = t1
                 t1 = t2
                 goto 500
             else
-                t(3) = t0
-                t(2) = t1
+                trajectory_data(data_index_3) = t0
+                tr2 = t1
             end if
         end if
     end subroutine lzsh

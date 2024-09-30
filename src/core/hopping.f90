@@ -37,7 +37,7 @@ contains
         use constants
         integer :: tst
 
-        tst = t(1)%cstate
+        tst = tr1%cstate
         ctrl%hop = .false.
         select case(ctrl%sh)
         case(1)
@@ -46,17 +46,17 @@ contains
             call decoherence()
             call phasematch()
             call sh_adiabatic(ctrl%tdc_type, ctrl%ene_interpolate, ctrl%tdc_interpolate,           &
-            &                 ctrl%tdc_interpolate, ctrl%dt, ctrl%shnstep, t(2)%qe, t(1)%qe,       &
-            &                 t(1)%cwf, t(1)%cstate, t(2)%olap, t(1)%olap, t(2)%nadv, t(1)%nadv,   &
-            &                 t(2)%velo(:, t(2)%qind), t(1)%velo(:, t(1)%qind), t(1)%prob)
+            &                 ctrl%tdc_interpolate, ctrl%dt, ctrl%shnstep, tr2%qe, tr1%qe,       &
+            &                 tr1%cwf, tr1%cstate, tr2%olap, tr1%olap, tr2%nadv, tr1%nadv,   &
+            &                 tr2%velo(:, tr2%qind), tr1%velo(:, tr1%qind), tr1%prob)
         case(3)
             call decoherence()
             call phasematch()
-            call sh_diabatic(t(1)%max_nstate, ctrl%dt, t(2)%qe, t(1)%qe, t(1)%cwf, t(1)%cstate,    &
-            &                t(1)%olap, t(1)%prob)
+            call sh_diabatic(tr1%max_nstate, ctrl%dt, tr2%qe, tr1%qe, tr1%cwf, tr1%cstate,    &
+            &                tr1%olap, tr1%prob)
         end select
 
-        if (tst /= t(1)%cstate) ctrl%hop = .true.
+        if (tst /= tr1%cstate) ctrl%hop = .true.
     end subroutine hopping
 
 
