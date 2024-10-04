@@ -56,7 +56,7 @@ contains
         tempstr = input_string
         call compact(tempstr)
         pquotes = .true.
-        IF (present(protect_quotes)) pquotes = protect_quotes
+        if (present(protect_quotes)) pquotes = protect_quotes
         narg = 0
       
         ! First determine number of arguments.

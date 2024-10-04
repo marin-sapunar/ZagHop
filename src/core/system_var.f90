@@ -180,7 +180,7 @@ contains
 
         step = tr1%step
         data_index_1 = data_index_2
-        data_index_2 = mod(data_index_2+4, memory) + 1 ! Wrap around if pointing to start. 
+        data_index_2 = mod(data_index_2+memory-2, memory) + 1 ! Wrap around if pointing to start.
         tr1 => trajectory_data(data_index_1)
         tr2 => trajectory_data(data_index_2)
         if (increment_step) tr1%step = step + 1

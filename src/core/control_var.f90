@@ -37,6 +37,7 @@ module control_var
         character(len=:), allocatable :: bufile !< Backup file name.
         integer :: buinterval !< Number of steps between backup files.
         integer :: printerval !< Number of steps between printing outputs.
+        real(dp) :: noise = 0.0_dp !< Random noise to add to QM calculation results.
 
         logical :: print(50) = .false. !< Output options (for writestep subroutine).
         integer :: print_units(50) !< Fortran units for opened output files.

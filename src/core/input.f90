@@ -55,6 +55,7 @@ contains
         ctrl%buinterval = 1
         ! Method options.
         ctrl%qlib = 0
+        ctrl%noise = 0.0_dp
         ! Set start step at 0
         tr1%step = 0
         tr1%time = 0.0_dp
@@ -146,12 +147,14 @@ contains
         write(stdout, '(1x,a,i0)') 'Random number generator started with seed: ', ctrl%seed
 
         ! Set initial directory.
-        ctrl%qmdir = 'qmdir'
-        call get_environment_variable('QMDIR', temp)
-        if (temp /= '') ctrl%qmdir = trim(adjustl(temp))
-        write(stdout, *)
-        write(stdout, '(1x,a,a)') "Work directory for QM calculations: ", ctrl%qmdir
-        call system('mkdir -p '//ctrl%qmdir)
+        if (ctrl%qlib == 0) then
+            ctrl%qmdir = 'qmdir'
+            call get_environment_variable('QMDIR', temp)
+            if (temp /= '') ctrl%qmdir = trim(adjustl(temp))
+            write(stdout, *)
+            write(stdout, '(1x,a,a)') "Work directory for QM calculations: ", ctrl%qmdir
+            call system('mkdir -p '//ctrl%qmdir)
+        end if
 
         ! If restarting don't read initial conditions.
         if (ctrl%restart) return
@@ -510,6 +513,7 @@ contains
     !! In this section, programs to run the QM and MM calculations are selected.
     !----------------------------------------------------------------------------------------------
     subroutine read_method(readf)
+        use model_mod, only : qmodel
         type(reader), intent(inout) :: readf
 
         if (.not. allocated(ctrl%qprog)) ctrl%qprog = ''
@@ -536,11 +540,16 @@ contains
                 select case(readf%args(2)%s)
                 case('quantics')
                     ctrl%qlib = 1
+                case('model')
+                    ctrl%qlib = 2
+                    call qmodel%init(readf%args(3:))
                 case default
                     write(stderr, *) 'Error in Input module, read_method subroutine.'
                     write(stderr, *) '  Unrecognized qlib keyword: ', readf%args(2)%s
                     stop
                 end select
+            case('noise')
+                read(readf%args(2)%s, *) ctrl%noise
             case('seed')
                 read(readf%args(2)%s, *) ctrl%seed
             case('qm_en_error')

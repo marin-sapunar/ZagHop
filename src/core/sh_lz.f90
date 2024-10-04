@@ -32,7 +32,8 @@ contains
         integer :: i, istate, data_index_3
         logical :: err_check
 
-        data_index_3 = mod(data_index_2+4, size(trajectory_data)) + 1
+        i = size(trajectory_data)
+        data_index_3 = mod(data_index_2+i-2, i) + 1
         allocate(check(tr1%nstate), source=.false.)
         if (tr1%step < 2) return
         if (.not. any(check_gap(trajectory_data(data_index_3), tr2, tr1))) return
@@ -44,8 +45,8 @@ contains
         t1 = tr2
 500     t2 = tr1
 
-        do
-            need_bisect = .false.
+       !do
+       !    need_bisect = .false.
             check = check_gap(t0, tr2, tr1)
             do i = 1, t1%nstate
                 if (.not. check(i)) cycle
@@ -53,33 +54,33 @@ contains
                 g1 = t1%qe(istate) - t1%qe(i)
                 g2 = t2%qe(istate) - t2%qe(i)
                 gap_err = abs((g0 - 2*g1 + g2) / 2)
-                if (sd_converged(i)) then
-                    call lz_prob_interval_gap_only(g1, gap_sd(i), gap_err, ctrl%qm_en_err, prob)
-                else
+       !        if (sd_converged(i)) then
+       !            call lz_prob_interval_gap_only(g1, gap_sd(i), gap_err, ctrl%qm_en_err, prob)
+       !        else
                     call lz_prob_interval(t0%time, t1%time, t2%time, g0, g1, g2, gap_err, &
                     &                     ctrl%qm_en_err, sd, prob)
-                    if (gap_err < 10 * ctrl%qm_en_err) then
-                        sd_converged(i) = .true.
-                        gap_sd(i) = sd(2)
-                    end if
-                end if
+       !            if (gap_err < 10 * ctrl%qm_en_err) then
+       !                sd_converged(i) = .true.
+       !                gap_sd(i) = sd(2)
+       !            end if
+       !        end if
                 t1%prob(i) = prob(2)
-                if (prob(3) - prob(1) > ctrl%lz_prob_conv) then
-                    if (sd_converged(i)) then
-                        call lz_prob_interval(t0%time, t1%time, t2%time, g0, g1, g2, gap_err,      &
-                        &                     0.0_dp, sd, prob)
-                        if (prob(3) - prob(1) > ctrl%lz_prob_conv) then
-                            need_bisect = .true.
-                        end if
-                    else
-                        need_bisect = .true.
-                    end if
-                end if
+       !        if (prob(3) - prob(1) > ctrl%lz_prob_conv) then
+       !            if (sd_converged(i)) then
+       !                call lz_prob_interval(t0%time, t1%time, t2%time, g0, g1, g2, gap_err,      &
+       !                &                     0.0_dp, sd, prob)
+       !                if (prob(3) - prob(1) > ctrl%lz_prob_conv) then
+       !                    need_bisect = .true.
+       !                end if
+       !            else
+       !                need_bisect = .true.
+       !            end if
+       !        end if
             end do
-            if (.not. need_bisect) exit
-            if (t0%time - t2%time >= ctrl%lz_min_dt) exit
-            call bisect_gap(t0, t1, t2, err_check)
-        end do
+       !    if (.not. need_bisect) exit
+       !    if (t0%time - t2%time >= ctrl%lz_min_dt) exit
+       !    call bisect_gap(t0, t1, t2, err_check)
+       !end do
 
         if (check_hop(t1)) then
             trajectory_data(data_index_3) = t0
