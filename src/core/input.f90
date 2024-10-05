@@ -22,7 +22,9 @@ module input_mod
     implicit none
 
     private
+    public :: set_defaults
     public :: read_input
+    public :: command_line_interface
 
     character(len=:), allocatable :: maininp !< Name of main input file.
     character(len=:), allocatable :: geominp !< Name of geometry input file.
@@ -34,8 +36,48 @@ module input_mod
 contains
 
 
+
     !----------------------------------------------------------------------------------------------
-    ! SUBROUTINE: DefaultOptions
+    ! SUBROUTINE: command_line_interface
+    !> @brief Read command line options.
+    !----------------------------------------------------------------------------------------------
+    subroutine command_line_interface()
+        integer :: narg, i
+        character(len=1000) :: temp
+        integer :: print_level
+
+        narg = command_argument_count()
+        if (narg == 0) return
+        i = 0
+        do while (i < narg)
+            i = i + 1
+            call get_command_argument(i, temp)
+            if ((i == narg) .and. (temp(1:1) /= '-')) then
+                maininp = trim(adjustl(temp))
+                continue
+            end if
+            select case(temp)
+            case('--help', '-h')
+                call print_help()
+            case('--print-level', '-p')
+                i = i + 1
+                call get_command_argument(i, temp)
+                read(temp, *) print_level
+                stdp1 = .false.
+                stdp2 = .false.
+                stdp3 = .false.
+                stdp4 = .false.
+                if (print_level >= 1) stdp1 = .true.
+                if (print_level >= 2) stdp2 = .true.
+                if (print_level >= 3) stdp3 = .true.
+                if (print_level >= 4) stdp4 = .true.
+            end select
+        end do
+    end subroutine command_line_interface
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: set_defaults
     !
     ! DESCRIPTION:
     !> @brief Set program options to their default values.
@@ -43,7 +85,7 @@ contains
     !! See manual for details concerning the input.
     !> @note Default values should be changeable without causing problems elsewhere in the program.
     !----------------------------------------------------------------------------------------------
-    subroutine defaultoptions()
+    subroutine set_defaults()
         ! File names.
         maininp = 'dynamics.in'
         geominp = 'geom'
@@ -101,7 +143,7 @@ contains
         ctrl%pbc = .false.
         ! Point charges
         ctrl%pcharge = .false.
-    end subroutine defaultoptions
+    end subroutine set_defaults
 
 
     !----------------------------------------------------------------------------------------------
@@ -126,33 +168,29 @@ contains
         call getcwd(temp)
         ctrl%maindir = trim(adjustl(temp))//'/'
 
-        ! Set default options.
-        call defaultoptions()
-
-        ! Get name of the main input file.
-        narg = command_argument_count()
-        if (narg > 0) then
-            call get_command_argument(1, temp)
-            maininp = temp
+        ! Read main input file.
+        if (stdp1) then
+            write(stdout, *)
+            write(stdout, '(1x,a,a,a)') 'Reading dynamics input file ', trim(maininp), '.'
         end if
-
-         ! Read main input file.
-        write(stdout, *)
-        write(stdout, '(1x,a,a,a)') 'Reading dynamics input file ', trim(maininp), '.'
         call read_main()
 
         ! Start the random number generator.
-        write(stdout, *)
         call init_random_seed(ctrl%seed(1))
-        write(stdout, '(1x,a,i0)') 'Random number generator started with seed: ', ctrl%seed
+        if (stdp1) then
+            write(stdout, *)
+            write(stdout, '(1x,a,i0)') 'Random number generator started with seed: ', ctrl%seed
+        end if
 
         ! Set initial directory.
         if (ctrl%qlib == 0) then
             ctrl%qmdir = 'qmdir'
             call get_environment_variable('QMDIR', temp)
             if (temp /= '') ctrl%qmdir = trim(adjustl(temp))
-            write(stdout, *)
-            write(stdout, '(1x,a,a)') "Work directory for QM calculations: ", ctrl%qmdir
+            if (stdp1) then
+                write(stdout, *)
+                write(stdout, '(1x,a,a)') "Work directory for QM calculations: ", ctrl%qmdir
+            end if
             call system('mkdir -p '//ctrl%qmdir)
         end if
 
@@ -160,16 +198,20 @@ contains
         if (ctrl%restart) return
 
         ! Read initial conditions.
-        write(stdout, *)
-        write(stdout, '(1x,a,a,a)') 'Reading geometry file ', geominp, '.'
+        if (stdp2) then
+            write(stdout, *)
+            write(stdout, '(1x,a,a,a)') 'Reading geometry file ', geominp, '.'
+        end if
         call read_geom()
         select case(veloinp)
         case('maxwell-boltzmann', 'mb')
-            write(stdout, '(3x,a,a)') 'Generating random velocities following Maxwell-Boltzmann ', &
-                                      'distribution.'
+            if (stdp2) then
+                write(stdout, '(1x,a,a)') 'Generating random velocities following ', &
+                &                         'Maxwell-Boltzmann distribution.'
+            end if
             call maxwell_boltzmann_velo(tr1%mass, mb_temperature, tr1%velo)
         case default
-            write(stdout, '(1x,a,a,a)') 'Reading velocity file ', veloinp, '.'
+            if (stdp2) write(stdout, '(1x,a,a,a)') 'Reading velocity file ', veloinp, '.'
             call read_velo()
         end select
 
@@ -185,17 +227,19 @@ contains
 
         ! Read list of partial charges.
         if (ctrl%pcharge) then
-            write(stdout, '(1x,a,a,a)') 'Reading partial charges file ', pcinp, '.'
+            if (stdp2) write(stdout, '(1x,a,a,a)') 'Reading partial charges file ', pcinp, '.'
             call read_pc()
         end if
 
         ! Print initial information about the full system.
-        write(stdout, *)
-        write(stdout, '(1x,a,i0,a)') 'Starting calculation for a system with ', tr1%natom, ' atoms.'
-        write(stdout, '(3x,a,i0,a)') 'QM system consists of ', tr1%qnatom, '.'
-        write(stdout, '(3x,a,i0,a)') 'MM system consists of ', tr1%mnatom, '.'
+        if (stdp1) then
+            write(stdout, *)
+            write(stdout, '(1x,a,i0,a)') 'Starting calculation with ', tr1%natom, ' atoms.'
+            write(stdout, '(3x,a,i0,a)') 'QM system consists of ', tr1%qnatom, '.'
+            write(stdout, '(3x,a,i0,a)') 'MM system consists of ', tr1%mnatom, '.'
+        end if
 
-        if (ctrl%qm) then
+        if (ctrl%qm .and. stdp2) then
             write(stdout, *)
             write(stdout, '(3x,a)') 'Initial geometry of the QM system: '
             do i = 1, tr1%qnatom
@@ -206,7 +250,7 @@ contains
                 write(stdout, '(2x,a5,1000e18.10)') tr1%sym(tr1%qind(i)), tr1%velo(:, tr1%qind(i))
             end do
         end if
-        if (ctrl%mm) then
+        if (ctrl%mm .and. stdp2) then
             write(stdout, *)
             write(stdout, '(3x,a)') 'Initial geometry of the MM system: '
             do i = 1, tr1%mnatom
@@ -519,7 +563,7 @@ contains
         if (.not. allocated(ctrl%qprog)) ctrl%qprog = ''
         if (.not. allocated(ctrl%mprog)) ctrl%mprog = ''
 
-        write(stdout, '(3x,a)') 'Reading $method section of the dynamics input file.'
+        if (stdp3) write(stdout, '(3x,a)') 'Reading $method section of the dynamics input file.'
         call readf%rewind()
         call readf%go_to_keyword('$method')
         do
@@ -529,13 +573,22 @@ contains
             select case(readf%args(1)%s)
             case('qm')
                 ctrl%qprog = readf%args(2)%s
-                write(stdout, '(5x,a)') '"'//ctrl%qprog//'" will be used for QM calculations.'
+                if (stdp3) then
+                    write(stdout, '(5x,a)') '"'//ctrl%qprog//&
+                    &                       '" will be used for QM calculations.'
+                end if
             case('mm')
                 ctrl%mprog = readf%args(2)%s
-                write(stdout, '(5x,a)') '"'//ctrl%mprog//'" will be used for MM calculations.'
+                if (stdp3) then
+                    write(stdout, '(5x,a)') '"'//ctrl%mprog//&
+                    &                       '" will be used for QM calculations.'
+                end if
             case('overlap')
                 ctrl%oprog = readf%args(2)%s
-                write(stdout, '(5x,a)') '"'//ctrl%oprog//'" will be used for overlap calculations.'
+                if (stdp3) then
+                    write(stdout, '(5x,a)') '"'//ctrl%oprog//&
+                    &                       '" will be used for overlap calculations.'
+                end if
             case('qlib')
                 select case(readf%args(2)%s)
                 case('quantics')
@@ -1073,6 +1126,27 @@ contains
             call random_gaussian(0.0_dp, sigma, veloc(:, i))
         end do
     end subroutine maxwell_boltzmann_velo
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: print_help
+    !> @brief Print help message and exit program.
+    !----------------------------------------------------------------------------------------------
+    subroutine print_help()
+        write(stdout, '(a)') 'usage: zaghop [options] input-file'
+        write(stdout, '(a)')
+        write(stdout, '(a)') 'Run MQC trajectory calculations.'
+        write(stdout, '(a)')
+        write(stdout, '(a)') 'positional arguments:'
+        write(stdout, '(a)') '  input-file                  name of input file                                   '
+        write(stdout, '(32x,a,a)') 'default: ', maininp
+        write(stdout, '(a)')
+        write(stdout, '(a)') 'optional arguments:'
+        write(stdout, '(a)') '  -h, --help                  show this message and exit                      '
+        write(stdout, '(a)') '  -p, --print-level p         control output level of program (0 = quiet)          '
+        write(stdout, '(32x,a,i0)') 'default: ', count([stdp1, stdp2, stdp3, stdp4])
+        stop
+    end subroutine print_help
 
 
 end module input_mod

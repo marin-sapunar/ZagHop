@@ -86,14 +86,16 @@ contains
             trajectory_data(data_index_3) = t0
             tr2 = t1
             tr1 = t2
-            write(stdout, '(3x,a,f8.4,a)') ' Hop occurred, resuming trajectory from t=', &
-            &                               tr2%time * aut_fs, '.'
+            if (stdp1) then
+                write(stdout, '(3x,a,f8.4,a)') ' Hop occurred, resuming trajectory from t=', &
+                &                               tr2%time * aut_fs, '.'
+            end if
             call trajectory_rewind(.false.)
             tr2%cstate = istate
         else
-            write(stdout, '(3x,a)') 'Hop probability evaluated, no hop.'
+            if (stdp2) write(stdout, '(3x,a)') 'Hop probability evaluated, no hop.'
             if (any(check_gap(t1, t2, tr1))) then
-                write(stdout, '(3x,a)') ' Extra gap minimum in same step.'
+                if (stdp2) write(stdout, '(3x,a)') ' Extra gap minimum in same step.'
                 t0 = t1
                 t1 = t2
                 goto 500

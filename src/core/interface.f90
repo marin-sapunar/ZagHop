@@ -38,7 +38,9 @@ contains
         integer :: cunit, i, j, d1, d2
         logical :: check(5)
         character(len=200) :: yamfmt
-        real(dp), allocatable :: rnum(:)
+        real(dp), allocatable :: rn1(:)
+        real(dp), allocatable :: rn2(:, :)
+        real(dp), allocatable :: rn3(:, :, :)
 
         if (t%ndim == 1) then
             write(yamfmt, '(a,i0,a)') "('    - [ ', e22.12, ' ]')"
@@ -175,13 +177,16 @@ contains
 
         ! Add random noise to evaluated values if requested.
         if (ctrl%noise > 0.0_dp) then
-            i = t%natom * t%ndim
-            allocate(rnum(t%nstate + i + t%nstate**2*i)
-            rnum = (rnum - 0.5_dp) * ctrl%noise
-            t%qe = t%qe + rnum(1:t%nstate)
-            t%grad = t%grad + rnum(t%nstate+1:t%nstate+i)
-            if (allocated(size(t%nadv)))
-                t%nadv = t%nadv + rnum(t%nstate+i+1:)
+            allocate(rn1(t%nstate))
+            allocate(rn2(t%ndim, t%natom))
+            rn1 = (rn1 - 0.5_dp) * ctrl%noise
+            rn2 = (rn2 - 0.5_dp) * ctrl%noise
+            t%qe = t%qe + rn1
+            t%grad = t%grad + rn2
+            if (allocated(t%nadv)) then
+                allocate(rn3(t%natom * t%ndim, t%nstate, t%nstate))
+                rn3 = (rn3 - 0.5_dp) * ctrl%noise
+                t%nadv = t%nadv + rn3
             end if
         end if
     end subroutine run_qm

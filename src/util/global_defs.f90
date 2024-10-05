@@ -18,7 +18,10 @@ module global_defs
 
 
     integer, parameter :: j15 = selected_int_kind(15)
-    integer :: print_level !< Global print level option for programs.
+    logical :: stdp1 = .true.
+    logical :: stdp2 = .true.
+    logical :: stdp3 = .true.
+    logical :: stdp4 = .false.
 
     ! Number constants.
     real(dp), parameter :: num0 = 0.0_dp

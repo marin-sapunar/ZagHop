@@ -99,13 +99,15 @@ contains
         real(dp) :: mvel_dir !< Component of mass weighted velocity along rescale direction.
         real(dp) :: delta_e !< Required change in kinetic energy.
 
+        if (stdp2) write(stdout, '(5x,a)') 'Ensuring energy conservation.'
+
         ! Work with temporary arrays and use mass-weighted coordinates.
         m = spread(mass(amask), 1, size(velo, 1))
         mvel = velo(:, amask) * sqrt(m)
 
         select case(opt_mc)
         case(0) ! No rescaling.
-            continue
+            return
         case(1) ! Rescale along velocity vector.
             rescale_dir = mvel
         case(2) ! Rescale along gradient difference vector.
@@ -126,9 +128,11 @@ contains
             ! is performed).
             mvel = mvel + rescale_dir * (sign(sqrt(mvel_dir**2 - 2*delta_e), mvel_dir) - mvel_dir)
         else
-            write(stdout, '(7x,a)') 'Insufficient energy for hop.'
-            write(stdout, '(7x,a,e16.8)') 'Energy difference:', delta_e
-            write(stdout, '(7x,a,e16.8)') 'Available energy:', mvel_dir**2 / 2
+            if (stdp1) then
+                write(stdout, '(7x,a)') 'Insufficient energy for hop.'
+                write(stdout, '(7x,a,e16.8)') 'Energy difference:', delta_e
+                write(stdout, '(7x,a,e16.8)') 'Available energy:', mvel_dir**2 / 2
+            end if
 
             cgrd = pgrd
             cst = pst

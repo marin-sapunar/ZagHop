@@ -20,7 +20,7 @@ contains
 
 
     !----------------------------------------------------------------------------------------------
-    ! SUBROUTINE: Dyn_UpdateVelo
+    ! SUBROUTINE: dyn_updategeom
     !
     ! DESCRIPTION:
     !> @brief Update geometry using the velocity Verlet algorithm.
@@ -40,6 +40,8 @@ contains
         real(dp) :: masi(size(mass), size(mass))
         real(dp) :: q(size(geo2, 1), size(geo1, 2))
 
+        if (stdp3) write(stdout, *) '  Updating geometry using velocity Verlet algorithm.'
+
         masi = diagonal_mat(1.0_dp / mass)
         q = velo - dt * matmul(grad, masi) * 0.5_dp
         if (allocated(ctrl%cns)) call rattle_geom(ctrl%cns, dt, geo1, masi, q)
@@ -54,7 +56,7 @@ contains
 
 
     !----------------------------------------------------------------------------------------------
-    ! SUBROUTINE: Dyn_UpdateVelo
+    ! SUBROUTINE: dyn_updatevelo
     !
     ! DESCRIPTION:
     !> @brief Update velocity using the velocity Verlet algorithm.
@@ -73,6 +75,8 @@ contains
         real(dp), intent(in) :: vel1(:, :)
         real(dp), intent(out) :: vel2(:, :)
         real(dp) :: masi(size(mass), size(mass))
+
+        if (stdp3) write(stdout, *) '  Updating velocity using velocity Verlet algorithm.'
 
         masi = diagonal_mat(1.0_dp / mass)
         vel2 = vel1 - dt * matmul(grd1 + grd2, masi) * 0.5_dp

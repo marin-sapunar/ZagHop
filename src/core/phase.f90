@@ -33,6 +33,7 @@ contains
 
         select case(ctrl%tdc_type)
         case(1)
+            if (stdp3) write(stdout, *) '  Aligning phase of wave functions between steps.'
 
             ! Swap sign of rows corresponding to states whose sign was changed in the previous step.
             do st = 1, tr2%max_nstate
