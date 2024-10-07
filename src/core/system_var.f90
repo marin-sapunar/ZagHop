@@ -19,8 +19,11 @@ module system_var
     public :: data_index_2
     public :: trajtype
     public :: allocate_trajectory_data
+    public :: index_offset
+    public :: trajectory_step_index
+    public :: trajectory_set_current
     public :: trajectory_next
-    public :: trajectory_rewind
+    public :: trajectory_slide_forward
     public :: trajectory_write_backup
     public :: trajectory_read_backup
     public :: ekin
@@ -68,6 +71,9 @@ module system_var
         real(dp), allocatable :: olap(:, :) !< Overlaps between wfs between this and previous step.
         real(dp), allocatable :: adt(:, :) !< Adiabatic-diabatic transformation matrix.
         real(dp), allocatable :: nadv(:, :, :) !< Nonadiabatic coupling vectors.
+        real(dp), allocatable :: gap_2deriv(:) !< Second derivative of the gap between active state
+                                               !< and other states. Used for LZSH, only when a gap
+                                               !< minimum is found.
 
         real(dp) :: pbcbox(1:6) = 0.0_dp
     contains
@@ -141,6 +147,56 @@ contains
 
 
     !---------------------------------------------------------------------------------------------
+    ! FUNCTION: index_offset
+    !> @brief Return index of data offset from i by step.
+    !> @details
+    !! Ensures that indexing will wrap-around in both directions while going through the
+    !! trajectory_data array.
+    !---------------------------------------------------------------------------------------------
+    function index_offset(i, step) result(j)
+        integer, intent(in) :: i !< Starting index
+        integer, intent(in) :: step !< Offset for new index
+        integer :: j
+
+        j = abs(mod(i+memory+step-1, memory)) + 1
+    end function index_offset
+
+
+    !---------------------------------------------------------------------------------------------
+    ! FUNCTION: trajectory_step_index
+    !> @brief Return index of step in trajectory_data array.
+    !---------------------------------------------------------------------------------------------
+    function trajectory_step_index(step) result(sindex)
+        integer, intent(in) :: step
+        integer :: sindex
+
+        do sindex = 1, memory+1
+            if (sindex == memory+1) then
+                call errstop("trajectory_step_index", "Step not found.", step)
+            end if
+            if (trajectory_data(sindex)%step == step) return
+        end do
+    end function trajectory_step_index
+
+
+    !---------------------------------------------------------------------------------------------
+    ! SUBROUTINE: trajectory_set_current
+    !> @brief Move pointers of current/previous step to `step`.
+    !> @note Does not change any values stored in trajectory_data.
+    !---------------------------------------------------------------------------------------------
+    subroutine trajectory_set_current(step)
+        integer, intent(in) :: step
+        integer :: cindex
+
+        cindex = trajectory_step_index(step)
+        data_index_1 = cindex
+        data_index_2 = index_offset(cindex, -1)
+        tr1 => trajectory_data(data_index_1)
+        tr2 => trajectory_data(data_index_2)
+    end subroutine trajectory_set_current
+
+
+    !---------------------------------------------------------------------------------------------
     ! SUBROUTINE: allocate_trajectory_data
     !> @brief Allocate trajectory_data array and associate pointers
     !---------------------------------------------------------------------------------------------
@@ -161,7 +217,7 @@ contains
         real(dp), intent(in) :: dt
 
         data_index_2 = data_index_1
-        data_index_1 = mod(data_index_1, memory) + 1 ! Wrap around if pointing to end of array.
+        data_index_1 = index_offset(data_index_1, 1)
         trajectory_data(data_index_1) = trajectory_data(data_index_2)
         tr1 => trajectory_data(data_index_1)
         tr2 => trajectory_data(data_index_2)
@@ -170,9 +226,35 @@ contains
     end subroutine trajectory_next
 
 
+   
+    !---------------------------------------------------------------------------------------------
+    ! SUBROUTINE: trajectory_slide_forward
+    !> @brief Move array of trajectory values forward by one or more steps.
+    !---------------------------------------------------------------------------------------------
+    subroutine trajectory_slide_forward(step, nbump, set_current)
+        integer, intent(in) :: step
+        integer, intent(in) :: nbump
+        logical, intent(in) :: set_current
+        integer :: cind, i, new_j, old_j
+
+        cind = trajectory_step_index(step)
+
+        do i = nbump, 1, -1
+            old_j = index_offset(cind, i)
+            new_j = index_offset(cind, i+1)
+            trajectory_data(new_j) = trajectory_data(old_j)
+        end do
+
+        if (set_current) then
+            call trajectory_set_current(step)
+        end if
+    end subroutine trajectory_slide_forward
+
+
+
     !----------------------------------------------------------------------------------------------
     ! SUBROUTINE: trajectory_rewind
-    !> @brief Move array of trajectory values forward by one or more steps.
+    !> @brief Move pointers to current/previous step backwards by one step.
     !----------------------------------------------------------------------------------------------
     subroutine trajectory_rewind(increment_step)
         logical :: increment_step !< Increment step instead of copying value.
@@ -180,7 +262,7 @@ contains
 
         step = tr1%step
         data_index_1 = data_index_2
-        data_index_2 = mod(data_index_2+memory-2, memory) + 1 ! Wrap around if pointing to start.
+        data_index_2 = index_offset(data_index_1, -1)
         tr1 => trajectory_data(data_index_1)
         tr2 => trajectory_data(data_index_2)
         if (increment_step) tr1%step = step + 1

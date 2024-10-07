@@ -21,95 +21,195 @@ contains
     subroutine lzsh()
         use control_var, only : ctrl
         use system_var
-        type(trajtype) :: t0, t1, t2
+        type(trajtype), pointer :: t0 !< Trajectory variables before gap minimum.
+        type(trajtype), pointer :: t1 !< Trajectory variables at gap minimum.
+        type(trajtype), pointer :: t2 !< Trajectory variables after gap minimum.
+        type(trajtype), pointer :: t_wrk !< Temporary pointer
         logical :: need_bisect
         logical, allocatable :: check(:)
-        logical, allocatable :: sd_converged(:)
-        real(dp), allocatable :: gap_sd(:)
         real(dp) :: prob(3)
-        real(dp) :: sd(3)
+        real(dp) :: gap_sd(3)
         real(dp) :: g0, g1, g2, gap_err
-        integer :: i, istate, data_index_3
-        logical :: err_check
+        real(dp) :: rnum
+        integer :: i
+        logical :: gap_min_before_bisect
+        logical :: check_hop
 
-        i = size(trajectory_data)
-        data_index_3 = mod(data_index_2+i-2, i) + 1
-        allocate(check(tr1%nstate), source=.false.)
         if (tr1%step < 2) return
-        if (.not. any(check_gap(trajectory_data(data_index_3), tr2, tr1))) return
-        allocate(gap_sd(tr1%nstate))
-        allocate(sd_converged(tr1%nstate), source=.false.)
 
-        istate = tr2%cstate
-        t0 = trajectory_data(data_index_3)
-        t1 = tr2
-500     t2 = tr1
+        gap_min_before_bisect = .true.
 
-       !do
-       !    need_bisect = .false.
-            check = check_gap(t0, tr2, tr1)
-            do i = 1, t1%nstate
-                if (.not. check(i)) cycle
-                g0 = t0%qe(istate) - t0%qe(i)
-                g1 = t1%qe(istate) - t1%qe(i)
-                g2 = t2%qe(istate) - t2%qe(i)
-                gap_err = abs((g0 - 2*g1 + g2) / 2)
-       !        if (sd_converged(i)) then
-       !            call lz_prob_interval_gap_only(g1, gap_sd(i), gap_err, ctrl%qm_en_err, prob)
-       !        else
-                    call lz_prob_interval(t0%time, t1%time, t2%time, g0, g1, g2, gap_err, &
-                    &                     ctrl%qm_en_err, sd, prob)
-       !            if (gap_err < 10 * ctrl%qm_en_err) then
-       !                sd_converged(i) = .true.
-       !                gap_sd(i) = sd(2)
-       !            end if
-       !        end if
-                t1%prob(i) = prob(2)
-       !        if (prob(3) - prob(1) > ctrl%lz_prob_conv) then
-       !            if (sd_converged(i)) then
-       !                call lz_prob_interval(t0%time, t1%time, t2%time, g0, g1, g2, gap_err,      &
-       !                &                     0.0_dp, sd, prob)
-       !                if (prob(3) - prob(1) > ctrl%lz_prob_conv) then
-       !                    need_bisect = .true.
-       !                end if
-       !            else
-       !                need_bisect = .true.
-       !            end if
-       !        end if
-            end do
-       !    if (.not. need_bisect) exit
-       !    if (t0%time - t2%time >= ctrl%lz_min_dt) exit
-       !    call bisect_gap(t0, t1, t2, err_check)
-       !end do
-
-        if (check_hop(t1)) then
-            trajectory_data(data_index_3) = t0
-            tr2 = t1
-            tr1 = t2
-            if (stdp1) then
-                write(stdout, '(3x,a,f8.4,a)') ' Hop occurred, resuming trajectory from t=', &
-                &                               tr2%time * aut_fs, '.'
+        select case(tr1%substep)
+        case(-1)
+            t0 => trajectory_data(index_offset(data_index_1, -2))
+            t1 => trajectory_data(data_index_2)
+            t2 => trajectory_data(data_index_1)
+        case(1)
+            ! Now in step 0.5 (between steps 0 and 1 from previous call).
+            ! First checking for gap between steps 0, 0.5 and 1.
+            t0 => trajectory_data(data_index_2)
+            t1 => trajectory_data(data_index_1)
+            t2 => trajectory_data(index_offset(data_index_1, 1))
+            check = check_gap(t0, t1, t2)
+            if (.not. any(check)) then
+                ! Now checking for gap between steps 0.5, 1 and 2.
+                t_wrk => trajectory_data(data_index_2)
+                t0 => trajectory_data(data_index_1)
+                t1 => trajectory_data(index_offset(data_index_1, 1))
+                t2 => trajectory_data(index_offset(data_index_1, 2))
+                gap_min_before_bisect = .false.
             end if
-            call trajectory_rewind(.false.)
-            tr2%cstate = istate
+        case(2)
+            ! Now in step 1.5 (between steps 1 and 2 from previous call).
+            ! First checking for gap between steps 0, 1 and 1.5.
+            t0 => trajectory_data(index_offset(data_index_1, -2))
+            t1 => trajectory_data(data_index_2)
+            t2 => trajectory_data(data_index_1)
+            check = check_gap(t0, t1, t2)
+            if (.not. any(check)) then
+                ! Now checking for gap between steps 1, 1.5 and 2.
+                t_wrk => trajectory_data(index_offset(data_index_1, -2))
+                t0 => trajectory_data(data_index_2)
+                t1 => trajectory_data(data_index_1)
+                t2 => trajectory_data(index_offset(data_index_1, 1))
+                gap_min_before_bisect = .false.
+            end if
+        end select
+
+        check = check_gap(t0, t1, t2)
+        if ((tr1%substep > 0) .and. (.not. any(check))) then
+            write(stderr, *) 'Warning. Gap minimum not found after adding an extra time step.'
+            write(stderr, '(999(e24.16, 1x))') t_wrk%time, t_wrk%qe
+            write(stderr, '(999(e24.16, 1x))') t0%time, t0%qe
+            write(stderr, '(999(e24.16, 1x))') t1%time, t1%qe
+            write(stderr, '(999(e24.16, 1x))') t2%time, t2%qe
+        end if
+
+        if (.not. any(check)) return
+
+500     need_bisect = .false.
+
+        ! Evaluate hopping probability and decide whether the time step should be reduced
+        do i = 1, t1%nstate
+            if (.not. check(i)) cycle
+            g0 = t0%qe(t1%cstate) - t0%qe(i)
+            g1 = t1%qe(t1%cstate) - t1%qe(i)
+            g2 = t2%qe(t1%cstate) - t2%qe(i)
+            gap_err = abs((g0 - 2*g1 + g2) / 2)
+            if ((t1%gap_2deriv(i) == 0.0_dp) .or. (gap_err > 10 * ctrl%qm_en_err)) then
+                ! Calculate 2nd derivative of the gap if it hasn't already been calculated
+                ! for this pair of states at this gap minimum.
+                ! Also re-calculate the 2nd derivative of the gap if the energies of the states
+                ! have changed significantly enough with respect to the convergence threshold
+                ! for the energy.
+                gap_sd = sec_deriv_3p_err(t0%time, t1%time, t2%time, g0, g1, g2, ctrl%qm_en_err)
+                t1%gap_2deriv(i) = gap_sd(2)
+            else
+                ! Otherwise, keep previously calculated 2nd derivative since the random errors
+                ! in the energies due to the convergence threshold might cause larger errors
+                ! in the calculated second derivative.
+        !       gap_sd = sec_deriv_3p_err(t0%time, t1%time, t2%time, g0, g1, g2, ctrl%qm_en_err)
+                continue
+            end if
+            call lz_prob_err_gap(g1, t1%gap_2deriv(i), gap_err, ctrl%qm_en_err, prob)
+            t1%prob(i) = prob(2)
+            if (prob(3) - prob(1) > ctrl%lz_prob_conv) then
+                need_bisect = .true.
+                ! Not returning from the subroutine right away so we can also calculate the
+                ! second derivative of the gap between the current state and another state if
+                ! needed.
+            end if
+        !   call lz_prob_err_both(g1, gap_sd, gap_err, ctrl%qm_en_err, prob)
+        end do
+
+        if (need_bisect) then
+            if (1.5*(t1%time - t0%time) > (t2%time - t1%time)) then
+                t0%step = t0%step + 3
+                ! Set t0 as the current step and slide t1 and t2 forward in the array
+                ! so they don't get overwritten by the extra step.
+                ctrl%dt = 0.5_dp * (t1%time - t0%time)
+                call trajectory_slide_forward(t0%step, 2, .true.)
+                tr1%substep = 1
+                tr1%step = tr1%step + 3
+            else
+                ! Set t1 as the current step and slide t2 forward in the array
+                ! so it doesn't get overwritten by the extra step.
+                ctrl%dt = 0.5_dp * (t2%time - t1%time)
+                call trajectory_slide_forward(t1%step, 1, .true.)
+                tr1%substep = 2
+                tr1%step = tr1%step + 2
+            end if
+            if (stdp1) then
+                write(stdout, '(3x,a)') 'Adding new step:'
+                write(stdout, '(5x,a,f10.4)') 't=', (tr1%time + ctrl%dt) * aut_fs
+            end if
+            return
+        end if
+
+        ! Check if a hop should occur.
+        if (sum(t1%prob) > 1.0_dp) then
+            write(stderr, *) ' Warning. Sum of hopping probabilities for all states higher than 1.'
+            write(stderr, *) '   time:', t1%time
+            write(stderr, *) '   cstate:', t1%cstate
+            write(stderr, *) '   fprob:', t1%prob
+        end if
+        check_hop = .false.
+        prob(2) = 0.0_dp
+        call random_number(rnum)
+        do i = 1, size(t1%prob)
+            prob(2) = prob(2) + t1%prob(i)
+            if (rnum < prob(2)) then
+                check_hop = .true.
+                t1%cstate = i
+                exit
+            end if
+        end do
+
+        if (check_hop) then
+            if (stdp1) then
+                write(stdout, '(3x,a,f0.4,a)') 'Hop occurred, resuming trajectory from t=', &
+                &                               t1%time * aut_fs, '.'
+            end if
+            call trajectory_set_current(t1%step)
         else
             if (stdp2) write(stdout, '(3x,a)') 'Hop probability evaluated, no hop.'
-            if (any(check_gap(t1, t2, tr1))) then
-                if (stdp2) write(stdout, '(3x,a)') ' Extra gap minimum in same step.'
-                t0 = t1
-                t1 = t2
-                goto 500
-            else
-                trajectory_data(data_index_3) = t0
-                tr2 = t1
+            if (tr1%substep > 0) then
+                if (gap_min_before_bisect) then
+                    if (tr1%substep == 1) then
+                        t0 => trajectory_data(data_index_1)
+                        t1 => trajectory_data(index_offset(data_index_1, 1))
+                        t2 => trajectory_data(index_offset(data_index_1, 2))
+                    else if (tr1%substep == 2) then
+                        t0 => trajectory_data(data_index_2)
+                        t1 => trajectory_data(data_index_1)
+                        t2 => trajectory_data(index_offset(data_index_1, 1))
+                    end if
+                    check = check_gap(t0, t1, t2)
+                    if (any(check)) then
+                        if (stdp2) write(stdout, '(3x,a)') ' Extra gap minimum in same step.'
+                        if (stdp2) write(stdout, '(3x,a)') ' Running LZSH procedure for new steps.'
+                        goto 500
+                    end if
+                end if
             end if
+            if (stdp1) then
+                write(stdout, '(3x,a,f0.4,a)') 'Resuming trajectory from t=', t2%time * aut_fs, '.'
+            end if
+            call trajectory_set_current(t2%step)
         end if
+
+        ! Reset parameters changed by the adaptive-step LZSH algorithm
+        ctrl%dt = ctrl%dt_0
+        tr1%substep = -1
+        tr1%gap_2deriv = 0.0_dp
     end subroutine lzsh
 
 
+    !----------------------------------------------------------------------------------------------
+    ! FUNCTION: check_gap
+    !> @brief Check for a gap minimum with the active state during the previous three time steps.
+    !----------------------------------------------------------------------------------------------
     function check_gap(t0, t1, t2) result(check)
-      ! use control_var, only : ctrl
-      ! use constants
         type(trajtype), intent(in) :: t0
         type(trajtype), intent(inout) :: t1
         type(trajtype), intent(in) :: t2
@@ -136,170 +236,52 @@ contains
 
 
     !----------------------------------------------------------------------------------------------
-    ! FUNCTION: check_hop
-    !> @brief Evaluate if hop should occur based on hopping probability for t1.
-    !----------------------------------------------------------------------------------------------
-    function check_hop(t1) result(check)
-        type(trajtype), intent(inout) :: t1
-        logical :: check
-        real(dp) :: prob, rnum
-        integer :: i
-
-        if (sum(t1%prob) > 1.0_dp ) then
-            write(stderr, *) ' Warning. Sum of hopping probabilities for all states higher than 1.'
-            write(stderr, *) '   time:', t1%time
-            write(stderr, *) '   cstate:', t1%cstate
-            write(stderr, *) '   fprob:', t1%prob
-        end if
-        check = .false.
-        prob = 0.0_dp
-        call random_number(rnum)
-        do i = 1, size(t1%prob)
-            prob = prob + t1%prob(i)
-            if (rnum < prob) then
-                check = .true.
-                t1%cstate = i
-                exit
-            end if
-        end do
-    end function check_hop
-
-
-    subroutine new_step(t0, dt, new_t)
-        use control_var, only : ctrl
-        use nuclear_dyn_mod
-        use interface_mod
-        type(trajtype), intent(in) :: t0
-        real(dp), intent(in) :: dt
-        type(trajtype), intent(out) :: new_t
-
-        write(stdout, '(5x,a,f10.4,a)') ' Computing step at t=', (t0%time+dt) * aut_fs ,'.'
-        new_t = t0
-        new_t%time = t0%time + dt
-        call dyn_updategeom(dt, t0%mass, t0%geom, t0%grad, t0%velo, new_t%geom)
-        call run_qm(new_t, .false.)
-        call dyn_updatevelo(dt, t0%mass, new_t%geom, t0%grad, new_t%grad, t0%velo, new_t%velo)
-    end subroutine new_step
-
-
-    !----------------------------------------------------------------------------------------------
-    ! SUBROUTINE: bisect_gap
-    !> @brief Add extra time step between three steps to locate gap minimum
-    !> @description
-    !! Adds an extra time step halfway between t0 and t1 or t1 and t2 (depending on which time
-    !! difference is larger). Checks between which three points the gap falls and updates t0, t1
-    !! and t2 to be those steps.
-    !----------------------------------------------------------------------------------------------
-    subroutine bisect_gap(t0, t1, t2, check)
-        type(trajtype), intent(inout) :: t0 !< Trajectory variables before gap minimum
-        type(trajtype), intent(inout) :: t1 !< Trajectory variables at gap minimum
-        type(trajtype), intent(inout) :: t2 !< Trajectory variables after gap minimum
-        logical, intent(out) :: check
-        type(trajtype) :: wrk_t !< Trajectory variables at bisection
-        real(dp) :: dt1, dt2
-
-        dt1 = t1%time - t0%time
-        dt2 = t2%time - t1%time
-        check = .false.
-        if (1.5*dt1 > dt2) then
-            call new_step(t0, dt1 / 2, wrk_t)
-            if (any(check_gap(t0, wrk_t, t1))) then
-                t2 = t1
-                t1 = wrk_t
-                check = .true.
-            else
-                if (any(check_gap(wrk_t, t1, t2))) then
-                    t0 = wrk_t
-                    check = .true.
-                end if
-            end if
-        else
-            call new_step(t1, dt2 / 2, wrk_t)
-            if (any(check_gap(t0, t1, wrk_t))) then
-                t2 = wrk_t
-                check = .true.
-            else
-                if (any(check_gap(t1, wrk_t, t2))) then
-                    t0 = t1
-                    t1 = wrk_t
-                    check = .true.
-                end if
-            end if
-        end if
-
-        if (.not. check) then
-            write(stderr, *) 'Warning. Gap minimum not found after adding an extra time step.'
-            write(stderr, '(999(e24.16, 1x))') t0%time, t0%qe
-            write(stderr, '(999(e24.16, 1x))') t1%time, t1%qe
-            write(stderr, '(999(e24.16, 1x))') t2%time, t2%qe
-            write(stderr, '(999(e24.16, 1x))') wrk_t%time, wrk_t%qe
-        end if
-    end subroutine bisect_gap
-
-
-    !----------------------------------------------------------------------------------------------
-    ! FUNCTION: lz_prob_interval
+    ! SUBROUTINE: lz_prob_err_both
     !
     !> @brief Expected error interval for using the LZ formula.
     !> @details
-    !! When using finite time steps and calculating the second derivative numerically, the energy
-    !! at the gap minimum and the differences in the gap energies used for the finite difference
-    !! method are not known exactly. For both, the error is determined by the precision of the 
-    !! numerical procedure used to calculate energies. Additionaly, the true gap minimum is not
-    !! the lowest calculated point so an additional error proportional to the change in the gap
-    !! between the time steps is assumed.
+    !! Due to discreet time steps, the true gap minimum is not the lowest calculated point so an
+    !! error proportional to the change in the gap between the time steps is assumed.
+    !! Additionally, the energies are usually calculated numerically only up to a specified
+    !! precision which affects both the estimated gap minimum and the numerical evaluation of the
+    !! second derivative of the gap.
+    !> @note The sd variable passed to this subroutine is assumed to be calculated by the 
+    !!       function sec_deriv_3p_err.
     !----------------------------------------------------------------------------------------------
-    subroutine lz_prob_interval(t0, t1, t2, g0, g1, g2, gap_err, tol_err, sd, prob)
-        real(dp), intent(in) :: t0 !< Time for which g0 is evaluated
-        real(dp), intent(in) :: t1 !< Time at gap minimum
-        real(dp), intent(in) :: t2 !< Time for which g2 is evaluated
-        real(dp), intent(in) :: g0 !< Finite difference gap before minimum
-        real(dp), intent(in) :: g1 !< Gap at gap minimum
-        real(dp), intent(in) :: g2 !< Finite difference gap after minimum
+    subroutine lz_prob_err_both(g1, sd, gap_err, tol_err, prob)
+        real(dp), intent(in) :: g1 !< Gap at time-step with lowest gap
+        real(dp), intent(in) :: sd(3) !< Estimated range for the second deriv. at the gap minimum
         real(dp), intent(in) :: gap_err !< Assumed error in gap minimum due to finite step
         real(dp), intent(in) :: tol_err !< Assumed error in all energies due to precision
-        real(dp), intent(out) :: sd(3) !< Calculated numerical second derivs (same indexing as prob)
-        real(dp), intent(out) :: prob(3) !< Probabilities calculated assuming (1) errors aligning to
-            !! give min probability, (2) no errors and (3) errors aligning for max probability
-        real(dp) :: err_gap, err_g0, err_g1, err_g2
+        real(dp), intent(out) :: prob(3) !< Probabilities calculated assuming:
+                                         !< (1) errors aligning to give minimum probability,
+                                         !< (2) no errors
+                                         !< (3) errors aligning to give maximum probability.
+        real(dp) :: err_gap
         real(dp), parameter :: tinydp = 1.0e-15_dp
 
         ! Minimum probability
         err_gap = abs(g1) + tol_err
-        err_g0 = abs(g0) - tol_err
-        err_g1 = abs(g1) + tol_err
-        err_g2 = abs(g2) - tol_err
-        if ((err_g0 < err_g1) .or. (err_g2 < err_g1)) then
-            prob(1) = 0.0_dp
-            sd(1) = 0.0_dp
-        else
-            sd(1) = second_derivative(t0, t1, t2, err_g0, err_g1, err_g2)
-            prob(1) = lz_prob(err_gap, abs(sd(1)))
-        end if
+        prob(1) = lz_prob(err_gap, abs(sd(1)))
 
         ! No error probability
-        sd(2) = second_derivative(t0, t1, t2, g0, g1, g2)
         prob(2) = lz_prob(abs(g1), abs(sd(2)))
 
         ! Maximum probability
         err_gap = max(abs(g1) - gap_err - tol_err, tinydp)
-        err_g0 = abs(g0) + tol_err
-        err_g1 = max(abs(g1) - tol_err, tinydp)
-        err_g2 = abs(g2) + tol_err
-        sd(3) = second_derivative(t0, t1, t2, err_g0, err_g1, err_g2)
         prob(3) = lz_prob(err_gap, abs(sd(3)))
-    end subroutine lz_prob_interval
+    end subroutine lz_prob_err_both
 
 
     !----------------------------------------------------------------------------------------------
-    ! FUNCTION: lz_prob_interval_gap_only
+    ! SUBROUTINE: lz_prob_err_gap
     !
     !> @brief Expected error interval for using the LZ formula due to accuracy of gap minimum.
     !> @details
-    !! Additionaly, the true gap minimum is not the lowest calculated point so an error 
-    !! proportional to the change in the gap between the time steps is assumed.
+    !! Due to discreet time steps, the true gap minimum is not the lowest calculated point so an
+    !! error proportional to the change in the gap between the time steps is assumed.
     !----------------------------------------------------------------------------------------------
-    subroutine lz_prob_interval_gap_only(g1, sd, gap_err, tol_err, prob)
+    subroutine lz_prob_err_gap(g1, sd, gap_err, tol_err, prob)
         real(dp), intent(in) :: g1 !< Gap at gap minimum
         real(dp), intent(in) :: sd !< Second derivative at gap minimum
         real(dp), intent(in) :: gap_err !< Assumed error in gap minimum due to finite step
@@ -319,7 +301,7 @@ contains
         ! Maximum probability
         err_gap = max(abs(g1) - gap_err - tol_err, tinydp)
         prob(3) = lz_prob(err_gap, abs(sd))
-    end subroutine lz_prob_interval_gap_only
+    end subroutine lz_prob_err_gap
 
 
     !----------------------------------------------------------------------------------------------
@@ -335,10 +317,58 @@ contains
 
 
     !----------------------------------------------------------------------------------------------
-    ! FUNCTION: second_derivative
-    !> @brief Calculate numerical second derivative for unevenly spaced points.
+    ! FUNCTION: sec_deriv_3p_err
+    !
+    !> @brief Expected error interval for using the LZ formula.
+    !> @details
+    !! When using finite time steps and calculating the second derivative numerically, the energy
+    !! at the gap minimum and the differences in the gap energies used for the finite difference
+    !! method are not known exactly. For both, the error is determined by the precision of the 
+    !! numerical procedure used to calculate energies. Additionaly, the true gap minimum is not
+    !! the lowest calculated point so an additional error proportional to the change in the gap
+    !! between the time steps is assumed.
     !----------------------------------------------------------------------------------------------
-    function second_derivative(x1, x2, x3, y1, y2, y3) result(sd)
+    function sec_deriv_3p_err(t0, t1, t2, g0, g1, g2, tol_err) result(sd)
+        real(dp), intent(in) :: t0 !< Time for which g0 is evaluated
+        real(dp), intent(in) :: t1 !< Time at gap minimum
+        real(dp), intent(in) :: t2 !< Time for which g2 is evaluated
+        real(dp), intent(in) :: g0 !< Finite difference gap before minimum
+        real(dp), intent(in) :: g1 !< Gap at gap minimum
+        real(dp), intent(in) :: g2 !< Finite difference gap after minimum
+        real(dp), intent(in) :: tol_err !< Assumed error in all energies due to precision
+        real(dp) :: sd(3) !< Calculated numerical second derivatives assuming:
+                          !< (1) errors aligning to give maximum 2nd deriv. (min probability),
+                          !< (2) no errors in energies,
+                          !< (3) errors aligning to give minimum 2nd deriv. (max probability).
+        real(dp) :: err_g0, err_g1, err_g2
+        real(dp), parameter :: tinydp = 1.0e-15_dp
+
+        ! Minimum probability
+        err_g0 = abs(g0) - tol_err
+        err_g1 = abs(g1) + tol_err
+        err_g2 = abs(g2) - tol_err
+        if ((err_g0 < err_g1) .or. (err_g2 < err_g1)) then
+            sd(1) = 0.0_dp
+        else
+            sd(1) = sec_deriv_3p(t0, t1, t2, err_g0, err_g1, err_g2)
+        end if
+
+        ! No error probability
+        sd(2) = sec_deriv_3p(t0, t1, t2, g0, g1, g2)
+
+        ! Maximum probability
+        err_g0 = abs(g0) + tol_err
+        err_g1 = max(abs(g1) - tol_err, tinydp)
+        err_g2 = abs(g2) + tol_err
+        sd(3) = sec_deriv_3p(t0, t1, t2, err_g0, err_g1, err_g2)
+    end function sec_deriv_3p_err
+
+
+    !----------------------------------------------------------------------------------------------
+    ! FUNCTION: sec_deriv_3p
+    !> @brief Calculate numerical second derivative for three unevenly spaced points.
+    !----------------------------------------------------------------------------------------------
+    function sec_deriv_3p(x1, x2, x3, y1, y2, y3) result(sd)
         real(dp), intent(in) :: x1
         real(dp), intent(in) :: x2
         real(dp), intent(in) :: x3
@@ -351,7 +381,7 @@ contains
         d32 = x3 - x2
         d21 = x2 - x1
         sd = 2 * y1 / d21 / d31 - 2 * y2 / d32 / d21 + 2 * y3 / d32 / d31
-    end function second_derivative
+    end function sec_deriv_3p
 
 
 end module sh_lz_mod

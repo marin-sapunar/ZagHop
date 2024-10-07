@@ -332,6 +332,7 @@ contains
             select case(ctrl%sh)
             case(1)
                 allocate(tr1%prob(tr1%max_nstate), source=0.0_dp)
+                allocate(tr1%gap_2deriv(tr1%max_nstate), source=0.0_dp)
             case(2, 3)
                 allocate(tr1%cwf(tr1%max_nstate))
                 allocate(tr1%prob(tr1%max_nstate), source=0.0_dp)
@@ -445,7 +446,7 @@ contains
         else
             ctrl%mm = .false.
         end if
-        if (ctrl%tdc_type == 2) then
+        if ((ctrl%tdc_type == 2) .or. (ctrl%vrescale == 3)) then
             allocate(tr1%nadv(tr1%ndim*tr1%qnatom, tr1%max_nstate, tr1%max_nstate))
         end if
 

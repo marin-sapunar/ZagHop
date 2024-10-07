@@ -206,7 +206,7 @@ program zaghop
         end if
 
         call trajectory_next(ctrl%dt)
-        if (stdp2) call stepclock%print(stdout, '  Step run time:')
+        if (stdp2) call stepclock%print(stdout, '   Step run time:')
         if (abort_flag) then
             if (stdp1) write(stdout, *) '  Ending calculation.'
             if (stdp1) write(stdout, *)
