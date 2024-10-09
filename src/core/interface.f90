@@ -179,12 +179,15 @@ contains
         if (ctrl%noise > 0.0_dp) then
             allocate(rn1(t%nstate))
             allocate(rn2(t%ndim, t%natom))
+            call random_number(rn1)
+            call random_number(rn2)
             rn1 = (rn1 - 0.5_dp) * ctrl%noise
             rn2 = (rn2 - 0.5_dp) * ctrl%noise
             t%qe = t%qe + rn1
             t%grad = t%grad + rn2
             if (allocated(t%nadv)) then
                 allocate(rn3(t%natom * t%ndim, t%nstate, t%nstate))
+                call random_number(rn3)
                 rn3 = (rn3 - 0.5_dp) * ctrl%noise
                 t%nadv = t%nadv + rn3
             end if

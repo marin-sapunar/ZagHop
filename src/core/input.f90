@@ -332,7 +332,7 @@ contains
             select case(ctrl%sh)
             case(1)
                 allocate(tr1%prob(tr1%max_nstate), source=0.0_dp)
-                allocate(tr1%gap_2deriv(tr1%max_nstate), source=0.0_dp)
+                allocate(tr1%gap_2deriv(3, tr1%max_nstate), source=0.0_dp)
             case(2, 3)
                 allocate(tr1%cwf(tr1%max_nstate))
                 allocate(tr1%prob(tr1%max_nstate), source=0.0_dp)

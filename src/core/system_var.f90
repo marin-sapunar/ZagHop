@@ -71,9 +71,9 @@ module system_var
         real(dp), allocatable :: olap(:, :) !< Overlaps between wfs between this and previous step.
         real(dp), allocatable :: adt(:, :) !< Adiabatic-diabatic transformation matrix.
         real(dp), allocatable :: nadv(:, :, :) !< Nonadiabatic coupling vectors.
-        real(dp), allocatable :: gap_2deriv(:) !< Second derivative of the gap between active state
-                                               !< and other states. Used for LZSH, only when a gap
-                                               !< minimum is found.
+        real(dp), allocatable :: gap_2deriv(:, :) !< Second derivative of the gap between the active
+                                                  !< and other states. Used for LZSH, only when a
+                                                  !< gap minimum is found.
 
         real(dp) :: pbcbox(1:6) = 0.0_dp
     contains
@@ -226,7 +226,6 @@ contains
     end subroutine trajectory_next
 
 
-   
     !---------------------------------------------------------------------------------------------
     ! SUBROUTINE: trajectory_slide_forward
     !> @brief Move array of trajectory values forward by one or more steps.
