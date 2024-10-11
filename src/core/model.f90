@@ -103,13 +103,14 @@ contains
     end subroutine model_init
 
 
-    subroutine model_eval_sym2d(self, x, cstate, en, grad, nadv)
+    subroutine model_eval_sym2d(self, x, cstate, en, grad, nadv, adt)
         class(model_system) :: self
         real(dp), intent(in) :: x(1, 1)
         integer, intent(in) :: cstate
         real(dp), intent(out) :: en(2)
         real(dp), intent(out) :: grad(1, 1)
         real(dp), allocatable, intent(inout) :: nadv(:, :, :)
+        real(dp), allocatable, intent(inout) :: adt(:, :)
         real(dp) :: v(3) !< Vij matrix elements V11, V22, V12.
         real(dp) :: dv(3) !< Derivative of Vij matrix elements.
         real(dp) :: diag_dif
@@ -145,6 +146,12 @@ contains
             nadv(1, 1, 2) = 0.5_dp / (1 + v(3)**2 / diag_dif**2) 
             nadv(1, 1, 2) = nadv(1, 1, 2) * (dv(3) / diag_dif - v(3) * diag_dif_g / diag_dif**2)
             nadv(1, 2, 1) = - nadv(1, 1, 2)
+        end if
+        if (allocated(adt)) then
+            adt(1, 1) = - (diag_dif + sq) / sqr2 / sqrt((v(3)**2 + diag_dif * (sq + diag_dif)))
+            adt(1, 2) = - (diag_dif - sq) / sqr2 / sqrt((v(3)**2 - diag_dif * (sq - diag_dif)))
+            adt(2, 1) = v(3) / sqrt(v(3)**2 + (sq + diag_dif)**2)
+            adt(2, 2) = v(3) / sqrt(v(3)**2 + (sq - diag_dif)**2)
         end if
     end subroutine model_eval_sym2d
 

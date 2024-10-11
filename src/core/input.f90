@@ -343,10 +343,15 @@ contains
                     tr1%olap = unit_mat(tr1%max_nstate)
                 case(2)
                     ! Nonadiabatic coupling vecotrs are allocated after reading number of atoms.
+                case(3)
+                    allocate(tr1%olap(tr1%max_nstate, tr1%max_nstate))
+                    allocate(tr1%adt(tr1%max_nstate, tr1%max_nstate))
+                    tr1%olap = unit_mat(tr1%max_nstate)
+                    tr1%adt = unit_mat(tr1%max_nstate)
                 end select
                 tr1%cwf = cmplx((0.0_dp, 0.0_dp), kind = dp)
                 tr1%cwf(tr1%cstate) = cmplx((1.0_dp, 0.0_dp), kind = dp)
-                if (ctrl%print(8)) then
+                if (ctrl%print(8) .and. (.not. allocated(tr1%adt))) then
                     allocate(tr1%adt(tr1%max_nstate, tr1%max_nstate))
                 end if
             end select
@@ -928,6 +933,8 @@ contains
                         ctrl%tdc_interpolate = 2
                     end select
                 end if
+            case('adt')
+                ctrl%tdc_type = 3
             case('energy')
                 select case(readf%args(2)%s)
                 case('constant')

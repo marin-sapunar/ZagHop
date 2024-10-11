@@ -169,7 +169,7 @@ contains
             stop
 #endif
         case(2)
-            call qmodel%eval(t%geom, t%cstate, t%qe, t%grad, t%nadv)
+            call qmodel%eval(t%geom, t%cstate, t%qe, t%grad, t%nadv, t%adt)
         case default
             write(stderr, *) 'Error in run_qm. Unrecognized QM interface.'
             stop

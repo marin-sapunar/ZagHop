@@ -32,7 +32,7 @@ contains
         integer :: st
 
         select case(ctrl%tdc_type)
-        case(1)
+        case(1,3)
             if (stdp3) write(stdout, *) '  Aligning phase of wave functions between steps.'
 
             ! Swap sign of rows corresponding to states whose sign was changed in the previous step.

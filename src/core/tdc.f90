@@ -13,10 +13,28 @@ module tdc_mod
 
     private
     public :: npi_tdc_integrated
+    public :: adt2overlap
     public :: overlap2tdc
     public :: nadvec2tdc
 
 contains
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: adt2overlap
+    !
+    ! DESCRIPTION:
+    !> @brief Calculate the overlap matrix from the adiabatic-to-diabaitc transform matrix.
+    !----------------------------------------------------------------------------------------------
+    subroutine adt2overlap(adt0, adt1, olap)
+        use linalg_wrapper_mod
+        real(dp), intent(in) :: adt0(:, :) !< A2D transform matrix at previous step.
+        real(dp), intent(in) :: adt1(:, :) !< A2D transform matrix at current step.
+        real(dp), allocatable, intent(out) :: olap(:, :) !< Adiabatic WF overlap matrix.
+
+        if (.not. allocated(olap)) allocate(olap, mold=adt1)
+        call gemm(adt0, adt1, olap, transa='T')
+    end subroutine adt2overlap
 
 
     !----------------------------------------------------------------------------------------------
