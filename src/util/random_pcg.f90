@@ -1,16 +1,36 @@
+!--------------------------------------------------------------------------------------------------
+! MODULE: random_pcg_mod
+!> @author Marin Sapunar, Ruđer Bošković Institute
+!> @date October, 2024
+!
+! DESCRIPTIONi:
+!> @brief Module containing the `rng_pcg_xsh_rr` type.
+!> @details
+!! Implementation of the Permuted congruential generator variant PCG-XSH-RR by M. O'Neill with a
+!! period of 2^64 and 32-bit output. The PCG RNGs are described in the technical report "PCG: A 
+!! Family of Simple Fast Space-Efficient Statistically Good Algorithms for Random Number
+!! Generation" found at https://www.cs.hmc.edu/tr/hmc-cs-2014-0905.pdf. The RNG code here is a
+!! translation of the C++ code from the PCG Wikipedia page.
+!--------------------------------------------------------------------------------------------------
 module random_pcg_mod
     use global_defs
     use random_mod
     implicit none
 
+
     private
     public :: rng_pcg_xsh_rr
 
-    ! Parameters of the RNG
+
+    ! Parameters of the RNG.
     integer(int64), parameter :: mult = int(Z'5851F42D4C957F2D', kind=int64)
     integer(int64), parameter :: incr = int(Z'14057B7EF767814F', kind=int64)
     
 
+    !----------------------------------------------------------------------------------------------
+    ! TYPE: rng_pcg_xsh_rr
+    !> @brief Permuted congruential generator variant PCG-XSH-RR.
+    !----------------------------------------------------------------------------------------------
     type, extends(rng_type) :: rng_pcg_xsh_rr
         logical :: initialized = .false.
         integer(int64) :: state
@@ -36,7 +56,7 @@ contains
         integer(int32) :: z
 
         call self%rng_type%init(seed)
-        self%int_generator = .true.
+        self%rng_out = 1
         self%irange = 2.0**32_dp
         self%i_irangem1 = 1.0_dp / (self%irange - 1.0_dp)
         self%state = self%seed + incr

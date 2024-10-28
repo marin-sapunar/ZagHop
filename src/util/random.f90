@@ -1,3 +1,11 @@
+!--------------------------------------------------------------------------------------------------
+! MODULE: random_mod
+!> @author Marin Sapunar, Ruđer Bošković Institute
+!> @date October, 2024
+!
+! DESCRIPTION:
+!> @brief Module containing the `rng_type` base class.
+!--------------------------------------------------------------------------------------------------
 module random_mod
     use global_defs
     implicit none
@@ -6,9 +14,22 @@ module random_mod
     public :: rng_type
 
 
+    !----------------------------------------------------------------------------------------------
+    ! TYPE: rng_type
+    !> @brief Random number generator implementation.
+    !> @details
+    !! This is the base class which defines helper procedures to be used along with the actual RNG
+    !! which are implemented as child classes. Each child class should implement the `init`
+    !! procedure to set up the RNG (which should usually call the `init` of the base class to use
+    !! the same seed initialization in case a seed is not given), and at least one of the
+    !! `random_int` and `random_real` procedures.
+    !----------------------------------------------------------------------------------------------
     type :: rng_type
         integer :: seed = -1 !< Seed used for initializing the RNG.
-        logical :: int_generator = .true. !< Specify whether the RNG outputs integers or reals.
+        integer :: rng_out = -1 !< Specify which methods are implemented by the RNG child class:
+                                !! 0 - Both random_real and random_int are implemented.
+                                !! 1 - Only random_int is implemented.
+                                !! 2 - Only random_real is implemented.
         real(dp) :: irange = 0.0_dp !< Range of integers returned by the RNG.
         real(dp) :: i_irangem1 = 0.0_dp !< 1 / (irange - 1)
     contains
@@ -70,7 +91,7 @@ contains
         real(dp), intent(out) :: rnum
         integer(int32) :: z
 
-        if (self%int_generator) then
+        if (self%rng_out == 1) then
             call self%random_int(z)
             if (z < 0) then
                 rnum = (real(z, kind=dp) - self%irange) * self%i_irangem1
