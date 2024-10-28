@@ -1,111 +1,277 @@
-#if MKL
-include 'mkl_vsl.f90'
-#endif
-
 module random_mod
     use global_defs
-#if MKL
-    use mkl_vsl_type
-    use mkl_vsl
-#elif LINALG_QUANTICS
-    use randommod, only: randgaussian
-#endif
-#if __INTEL_COMPILER
-    use ifport
-#endif
     implicit none
 
     private
-    public :: init_random_seed
-    public :: random_gaussian
+    public :: rng_type
 
-#if MKL
-    type(VSL_STREAM_STATE) :: rng_stream
-#endif
+
+    type :: rng_type
+        integer :: seed = -1 !< Seed used for initializing the RNG.
+        logical :: int_generator = .true. !< Specify whether the RNG outputs integers or reals.
+        real(dp) :: irange = 0.0_dp !< Range of integers returned by the RNG.
+        real(dp) :: i_irangem1 = 0.0_dp !< 1 / (irange - 1)
+    contains
+        private
+        procedure, public :: init => rng_init_seed
+        procedure, public :: random_real => rng_real
+        procedure :: uniform_1d => rng_uniform_1d
+        procedure :: uniform_2d => rng_uniform_2d
+        procedure :: uniform_3d => rng_uniform_3d
+        procedure :: random_int => rng_integer
+        procedure :: integer_1d => rng_integer_1d
+        procedure :: integer_2d => rng_integer_2d
+        procedure :: integer_3d => rng_integer_3d
+        procedure :: random_gaussian => rng_gaussian
+        procedure :: gaussian_1d => rng_gaussian_1d
+        procedure :: gaussian_2d => rng_gaussian_2d
+        procedure :: gaussian_3d => rng_gaussian_3d
+        generic, public :: uniform => random_real, uniform_1d, uniform_2d, uniform_3d
+        generic, public :: integer => random_int, integer_1d, integer_2d, integer_3d
+        generic, public :: gaussian => random_gaussian, gaussian_1d, gaussian_2d, gaussian_3d
+    end type
 
 
 contains
 
 
     !----------------------------------------------------------------------------------------------
-    ! SUBROUTINE: init_random_seed
-    !> @brief Initialize the random number generator.
+    ! SUBROUTINE: rng_init_seed
+    !> @brief Initialize a seed for the random number generator.
     !> @details
     !! If a positive integer is passed to the subroutine it is used as the seed. Otherwise, a seed
-    !! is generated automatically using the current time and PID of the process. This routine
-    !! initializes both the native Fortran random_number subroutine and an Intel Vector Statistics
-    !! stream rng_stream.
-    !
-    !> @note This module should be compiled using a C-style preprocessor. For the intel compiler,
-    !! this is set using the -fpp flag.
+    !! is generated automatically using the current time and PID of the process.
     !----------------------------------------------------------------------------------------------
-    subroutine init_random_seed(tseed)
-        integer, intent(inout) :: tseed !< Seed used for the initialization. 
+    subroutine rng_init_seed(self, seed)
+#if __INTEL_COMPILER
+        use ifport, only : getpid
+#endif
+        class(rng_type) :: self
+        integer, intent(in) :: seed !< Seed used for the initialization. 
         integer :: tclock
-        integer, allocatable :: aseed(:)
-        integer :: n
-        integer :: i
         integer :: pid
-        real(dp) :: rnum(50)
 
-        call random_seed(size = n)
-        allocate(aseed(n))
-        if (tseed >= 0) then
-            aseed = tseed + 1307 * [(i - 1, i = 1, n)]
-            call random_seed(put = aseed)
-        else
+        if (seed <= 0) then
             call system_clock(count = tclock)
             pid = getpid()
-            aseed = tclock + 271 * pid + 1307 * [(i - 1, i = 1, n)]
-            call random_seed(put = aseed)
-            tseed = aseed(1)
+            self%seed = tclock + 271 * pid
+        else
+            self%seed = seed
         end if
-        ! When running multiple programs in the background, the time is usually identical and the
-        ! pid is different by 1. In this case, (for ifort compiled programs) the first few random
-        ! numbers are almost identical so we move the generator further along.
-        call random_number(rnum)
+    end subroutine rng_init_seed
 
-#if MKL
-        n = vslnewstream(rng_stream, VSL_BRNG_MCG31, tseed)
-        if (n /= VSL_STATUS_OK) then
-            call errstop("init_random_seed", "Error code returned by vslnewstream.", n)
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: rng_real
+    !> @brief Return a random real number between 0 and 1.
+    !----------------------------------------------------------------------------------------------
+    subroutine rng_real(self, rnum)
+        class(rng_type) :: self
+        real(dp), intent(out) :: rnum
+        integer(int32) :: z
+
+        if (self%int_generator) then
+            call self%random_int(z)
+            if (z < 0) then
+                rnum = (real(z, kind=dp) - self%irange) * self%i_irangem1
+            else
+                rnum = real(z, kind=dp) * self%i_irangem1
+            end if
+        else
+            call errstop("rng_real", "Subroutine rng_real of base class should only be called "//&
+            &                        "from integer generators.", 1)
         end if
-#endif
-    end subroutine init_random_seed
+    end subroutine rng_real
+
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: rng_uniform_1d
+    !> @brief Fill a 1D array with uniform random real numbers between 0 and 1.
+    !----------------------------------------------------------------------------------------------
+    subroutine rng_uniform_1d(self, rnum)
+        class(rng_type) :: self
+        real(dp), intent(out) :: rnum(:)
+        integer :: i
+
+        do i = 1, size(rnum)
+            call self%uniform(rnum(i))
+        end do
+    end subroutine rng_uniform_1d
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: rng_uniform_2d
+    !> @brief Fill a 2D array with uniform random real numbers between 0 and 1.
+    !----------------------------------------------------------------------------------------------
+    subroutine rng_uniform_2d(self, rnum)
+        class(rng_type) :: self
+        real(dp), intent(out) :: rnum(:, :)
+        integer :: i, j
+
+        do i = 1, size(rnum, 2)
+            call self%uniform(rnum(:, i))
+        end do
+    end subroutine rng_uniform_2d
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: rng_uniform_3d
+    !> @brief Fill a 3D array with uniform random real numbers between 0 and 1.
+    !----------------------------------------------------------------------------------------------
+    subroutine rng_uniform_3d(self, rnum)
+        class(rng_type) :: self
+        real(dp), intent(out) :: rnum(:, :, :)
+        integer :: i, j, k
+
+        do i = 1, size(rnum, 3)
+            call self%uniform(rnum(:, :, i))
+        end do
+    end subroutine rng_uniform_3d
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: rng_integer
+    !> @brief Return a random integer.
+    !----------------------------------------------------------------------------------------------
+    subroutine rng_integer(self, rnum)
+        class(rng_type) :: self
+        integer, intent(out) :: rnum
+
+        stop
+    end subroutine rng_integer
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: rng_integer_1d
+    !> @brief Fill a 1D array with random integers.
+    !----------------------------------------------------------------------------------------------
+    subroutine rng_integer_1d(self, rnum)
+        class(rng_type) :: self
+        integer, intent(out) :: rnum(:)
+        integer :: i
+
+        do i = 1, size(rnum)
+            call self%integer(rnum(i))
+        end do
+    end subroutine rng_integer_1d
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: rng_integer_2d
+    !> @brief Fill a 2D array with random integers.
+    !----------------------------------------------------------------------------------------------
+    subroutine rng_integer_2d(self, rnum)
+        class(rng_type) :: self
+        integer, intent(out) :: rnum(:, :)
+        integer :: i
+
+        do i = 1, size(rnum, 2)
+            call self%integer(rnum(:, i))
+        end do
+    end subroutine rng_integer_2d
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: rng_integer_3d
+    !> @brief Fill a 3D array with random integers.
+    !----------------------------------------------------------------------------------------------
+    subroutine rng_integer_3d(self, rnum)
+        class(rng_type) :: self
+        integer, intent(out) :: rnum(:, :, :)
+        integer :: i
+
+        do i = 1, size(rnum, 3)
+            call self%integer(rnum(:, :, i))
+        end do
+    end subroutine rng_integer_3d
 
 
     !----------------------------------------------------------------------------------------------
     ! SUBROUTINE: random_gaussian
     !> @brief Sample random numbers from a Gaussian distribution.
     !> @details
-    !! Wrapper for the vdrnggaussian subroutine from MKL. Assumes that the init_random_seed
-    !! subroutine has been called earlier.
+    !! Uses a polar Box-Muller transform to generate pairs of independent normally distributed
+    !! random numbers.
     !----------------------------------------------------------------------------------------------
-    subroutine random_gaussian(mean, sigma, rnum)
+    subroutine rng_gaussian(self, mean, sigma, rnum)
+        class(rng_type) :: self
+        real(dp), intent(in) :: mean
+        real(dp), intent(in) :: sigma
+        real(dp), intent(out) :: rnum
+        logical, save :: flag = .false.
+        real(dp), save :: gpair(2) = 0.0_dp
+        real(dp) :: rsq
+
+        if (flag) then
+            rnum = gpair(2)
+            flag = .false.
+        else
+            do
+                call self%uniform(gpair)
+                gpair = 2.0_dp * gpair - 1.0_dp
+                rsq = sum(gpair**2)
+                if ((rsq <= 1.0_dp) .and. (rsq /= 0.0_dp)) exit
+            end do
+            gpair = sqrt(-2.0_dp * log(rsq) / rsq) * gpair
+            rnum = gpair(1)
+            flag = .true.
+        end if
+
+        rnum = mean + sigma * rnum
+    end subroutine rng_gaussian
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: rng_gaussian_1d
+    !> @brief Sample random numbers from a Gaussian distribution.
+    !----------------------------------------------------------------------------------------------
+    subroutine rng_gaussian_1d(self, mean, sigma, rnum)
+        class(rng_type) :: self
         real(dp), intent(in) :: mean
         real(dp), intent(in) :: sigma
         real(dp), intent(out) :: rnum(:)
-        complex(dp) :: gpair
-        integer :: method
-        integer :: n
         integer :: i
-        integer(i4) :: err
 
-#if MKL
-        method = VSL_RNG_METHOD_GAUSSIAN_ICDF
-        n = size(rnum)
-        err = vdrnggaussian(method, rng_stream, n, rnum, mean, sigma)
+        do i = 1, size(rnum)
+            call self%gaussian(mean, sigma, rnum(i))
+        end do
+    end subroutine rng_gaussian_1d
 
-        if (err /= VSL_STATUS_OK) then
-            call errstop("random_gaussian", "Error code returned by vdrnggaussian.", err)
-        end if
-#elif LINALG_QUANTICS
-       do i=1,n
-          gpair=randgaussian()
-          rnum(i)=mean + sigma*dble(gpair)
-       enddo
-#endif
-    end subroutine random_gaussian
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: rng_gaussian_2d
+    !> @brief Sample random numbers from a Gaussian distribution.
+    !----------------------------------------------------------------------------------------------
+    subroutine rng_gaussian_2d(self, mean, sigma, rnum)
+        class(rng_type) :: self
+        real(dp), intent(in) :: mean
+        real(dp), intent(in) :: sigma
+        real(dp), intent(out) :: rnum(:, :)
+        integer :: i, j
+
+        do i = 1, size(rnum, 2)
+            call self%gaussian(mean, sigma, rnum(:, i))
+        end do
+    end subroutine rng_gaussian_2d
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: rng_gaussian_3d
+    !> @brief Sample random numbers from a Gaussian distribution.
+    !----------------------------------------------------------------------------------------------
+    subroutine rng_gaussian_3d(self, mean, sigma, rnum)
+        class(rng_type) :: self
+        real(dp), intent(in) :: mean
+        real(dp), intent(in) :: sigma
+        real(dp), intent(out) :: rnum(:, :, :)
+        integer :: i, j, k
+
+        do i = 1, size(rnum, 3)
+            call self%gaussian(mean, sigma, rnum(:, :, i))
+        end do
+    end subroutine rng_gaussian_3d
+
 
 
 end module random_mod

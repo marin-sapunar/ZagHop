@@ -46,19 +46,20 @@ contains
         ctrl%hop = .false.
         select case(ctrl%sh)
         case(1)
-            call lzsh()
+            call lzsh(ctrl%rng, ctrl%dt, ctrl%qm_en_err, ctrl%lz_prob_conv, ctrl%lz_min_dt, &
+            &         ctrl%dt_0)
         case(2)
             call decoherence()
             call phasematch()
-            call sh_adiabatic(ctrl%tdc_type, ctrl%ene_interpolate, ctrl%tdc_interpolate,   &
+            call sh_adiabatic(ctrl%tdc_type, ctrl%ene_interpolate, ctrl%tdc_interpolate, &
             &                 ctrl%tdc_interpolate, ctrl%dt, ctrl%shnstep, tr2%qe, tr1%qe, &
             &                 tr1%cwf, tr1%cstate, tr2%olap, tr1%olap, tr2%nadv, tr1%nadv, &
-            &                 tr2%velo(:, tr2%qind), tr1%velo(:, tr1%qind), tr1%prob)
+            &                 tr2%velo(:, tr2%qind), tr1%velo(:, tr1%qind), tr1%prob, ctrl%rng)
         case(3)
             call decoherence()
             call phasematch()
             call sh_diabatic(tr1%max_nstate, ctrl%dt, tr2%qe, tr1%qe, tr1%cwf, tr1%cstate, &
-            &                tr1%olap, tr1%prob)
+            &                tr1%olap, tr1%prob, ctrl%rng)
         end select
 
         if (tst /= tr1%cstate) ctrl%hop = .true.

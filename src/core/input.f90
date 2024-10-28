@@ -86,6 +86,7 @@ contains
     !> @note Default values should be changeable without causing problems elsewhere in the program.
     !----------------------------------------------------------------------------------------------
     subroutine set_defaults()
+        use random_pcg_mod, only : rng_pcg_xsh_rr
         ! File names.
         maininp = 'dynamics.in'
         geominp = 'geom'
@@ -95,6 +96,9 @@ contains
         ctrl%bufile = 'backup.dat'
         ctrl%printerval = 1
         ctrl%buinterval = 1
+        ! RNG.
+        allocate(rng_pcg_xsh_rr::ctrl%rng)
+        ctrl%rng%seed = -1
         ! Method options.
         ctrl%qlib = 0
         ctrl%noise = 0.0_dp
@@ -157,9 +161,8 @@ contains
     !! At the moment, only the name of the main input file can be passed through the command line
     !! arguments, all other options are set in this file.
     !----------------------------------------------------------------------------------------------
-    subroutine read_input
+    subroutine read_input()
         use nuclear_dyn_mod
-        use random_mod, only : init_random_seed
         integer :: narg
         character(len=1000) :: temp
         integer :: i
@@ -176,10 +179,10 @@ contains
         call read_main()
 
         ! Start the random number generator.
-        call init_random_seed(ctrl%seed(1))
+        call ctrl%rng%init(ctrl%rng%seed)
         if (stdp1) then
             write(stdout, *)
-            write(stdout, '(1x,a,i0)') 'Random number generator started with seed: ', ctrl%seed
+            write(stdout, '(1x,a,i0)') 'Random number generator started with seed: ', ctrl%rng%seed
         end if
 
         ! Set initial directory.
@@ -209,7 +212,7 @@ contains
                 write(stdout, '(1x,a,a)') 'Generating random velocities following ', &
                 &                         'Maxwell-Boltzmann distribution.'
             end if
-            call maxwell_boltzmann_velo(tr1%mass, mb_temperature, tr1%velo)
+            call maxwell_boltzmann_velo(ctrl%rng, tr1%mass, mb_temperature, tr1%velo)
         case default
             if (stdp2) write(stdout, '(1x,a,a,a)') 'Reading velocity file ', veloinp, '.'
             call read_velo()
@@ -610,7 +613,7 @@ contains
             case('noise')
                 read(readf%args(2)%s, *) ctrl%noise
             case('seed')
-                read(readf%args(2)%s, *) ctrl%seed
+                read(readf%args(2)%s, *) ctrl%rng%seed
             case('qm_en_error')
                 read(readf%args(2)%s, *) ctrl%qm_en_err
             end select
@@ -1121,8 +1124,9 @@ contains
     ! DESCRIPTION:
     !> @brief Generate random velocities based on Maxwell Boltzmann distribution
     !----------------------------------------------------------------------------------------------
-    subroutine maxwell_boltzmann_velo(mass, temperature, veloc)
-        use random_mod, only : random_gaussian
+    subroutine maxwell_boltzmann_velo(rng, mass, temperature, veloc)
+        use random_mod, only : rng_type
+        class(rng_type), allocatable, intent(in) :: rng
         real(dp), intent(in) :: mass(:)
         real(dp), intent(in) :: temperature
         real(dp), intent(out) :: veloc(:, :)
@@ -1131,7 +1135,7 @@ contains
 
         do i = 1, size(veloc, 2)
             sigma = sqrt(num2 * au_boltzmann * temperature / mass(i))
-            call random_gaussian(0.0_dp, sigma, veloc(:, i))
+            call rng%gaussian(0.0_dp, sigma, veloc(:, i))
         end do
     end subroutine maxwell_boltzmann_velo
 

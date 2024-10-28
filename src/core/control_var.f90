@@ -9,6 +9,7 @@
 module control_var
     use global_defs
     use rattle_mod, only : constraint
+    use random_mod, only : rng_type
     implicit none
 
     private
@@ -45,8 +46,9 @@ module control_var
         !------------------------------------------------------------------------------------------
         ! Program flow control.
         !------------------------------------------------------------------------------------------
-        integer :: seed(1) = [-1] !< Seed for the random number generator. A new value can be given
-        !! in the input file. If not, random_seed is called to generate a new seed.
+        class(rng_type), allocatable :: rng !< Random number generator to use. Using a custom RNG
+        !! to ensure the results are reproducible since the Fortran `random_number` subroutine is
+        !! compiler dependent.
         logical :: restart = .false. !< Restart from backup of previous run.
         real(dp) :: stop_s0s1_ci = -10000.0_dp !< Threshold to stop program in case of S0/S1 CI.
         integer :: target_state = -1 !< Stop dynamics after reaching target state.

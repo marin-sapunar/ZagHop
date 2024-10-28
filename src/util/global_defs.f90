@@ -13,8 +13,8 @@ module global_defs
         sp => real32, & 
         dp => real64, & 
         qp => real128, &
-        i4 => int32, &
-        i8 => int64
+        int32, &
+        int64
 
 
     integer, parameter :: j15 = selected_int_kind(15)

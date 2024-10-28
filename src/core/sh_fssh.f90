@@ -29,9 +29,10 @@ contains
     !! The nuclear time step (dt) is split into smaller time steps for which the coefficients and
     !! hopping probabilities are calculated.
     !----------------------------------------------------------------------------------------------
-    subroutine sh_adiabatic(opt_clvl, opt_inte, opt_into, opt_intv, dt, nstep, qe1, qe2, cwf,   &
-    &                         tst, olp1, olp2, nadv1, nadv2, vel1, vel2, fprob)
+    subroutine sh_adiabatic(opt_clvl, opt_inte, opt_into, opt_intv, dt, nstep, qe1, qe2, cwf, &
+    &                       tst, olp1, olp2, nadv1, nadv2, vel1, vel2, fprob, rng)
         use ode_call_mod ! Interface to Shampine/Gordon ODE solver.
+        use random_mod, only : rng_type
         integer, intent(in) :: opt_clvl !< Method for calculating time-derivative couplings.
         integer, intent(in) :: opt_inte !< Method for interpolating energies during the time step.
         integer, intent(in) :: opt_into !< Method for interpolating overlaps during the time step.
@@ -49,6 +50,7 @@ contains
         real(dp), intent(in) :: vel1(:, :) !< Velocities at t0.
         real(dp), intent(in) :: vel2(:, :) !< Velocities at t0 + dt.
         real(dp), intent(out) :: fprob(:) !< Final probability for each state.
+        class(rng_type), allocatable, intent(inout) :: rng
         real(dp) :: edt !< Time step for the propagation of the electronic WF.
         real(dp) :: tt !< Current time during propagation.
         real(dp) :: prob !< Probability of hopping into a state.
@@ -83,7 +85,7 @@ contains
             call callode(odens, cwf, tt, edt, de_flag)
 
             ! Determine hopping probabilities.
-            call random_number(rnum)
+            call rng%uniform(rnum)
             cprob = 0.0_dp
             hop: do st = 1, odens
                 if (st == tst) cycle

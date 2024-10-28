@@ -18,9 +18,15 @@ module sh_lz_mod
 
 contains
 
-    subroutine lzsh()
-        use control_var, only : ctrl
+    subroutine lzsh(rng, dt, qm_en_err, prob_conv, min_dt, dt_0)
         use system_var
+        use random_mod, only : rng_type
+        class(rng_type), allocatable, intent(inout) :: rng
+        real(dp), intent(inout) :: dt
+        real(dp), intent(in) :: qm_en_err
+        real(dp), intent(in) :: prob_conv
+        real(dp), intent(in) :: min_dt
+        real(dp), intent(in) :: dt_0
         type(trajtype), pointer :: t0 !< Trajectory variables before gap minimum.
         type(trajtype), pointer :: t1 !< Trajectory variables at gap minimum.
         type(trajtype), pointer :: t2 !< Trajectory variables after gap minimum.
@@ -96,13 +102,13 @@ contains
             g1 = t1%qe(t1%cstate) - t1%qe(i)
             g2 = t2%qe(t1%cstate) - t2%qe(i)
             gap_err = abs((g0 - 2*g1 + g2) / 2)
-            if ((t1%gap_2deriv(2, i) == 0.0_dp) .or. (gap_err > 20 * ctrl%qm_en_err)) then
+            if ((t1%gap_2deriv(2, i) == 0.0_dp) .or. (gap_err > 20 * qm_en_err)) then
                 ! Calculate 2nd derivative of the gap if it hasn't already been calculated
                 ! for this pair of states at this gap minimum.
                 ! Also re-calculate the 2nd derivative of the gap if the energies of the states
                 ! have changed significantly enough with respect to the convergence threshold
                 ! for the energy.
-                gap_sd = sec_deriv_3p_err(t0%time, t1%time, t2%time, g0, g1, g2, ctrl%qm_en_err)
+                gap_sd = sec_deriv_3p_err(t0%time, t1%time, t2%time, g0, g1, g2, qm_en_err)
                 t1%gap_2deriv(:, i) = gap_sd
             else
                 ! Otherwise, keep previously calculated 2nd derivative since the random errors
@@ -110,8 +116,8 @@ contains
                 ! in the calculated second derivative.
                 continue
             end if
-            call lz_prob_err_gap(g1, t1%gap_2deriv(2, i), gap_err, ctrl%qm_en_err, prob)
-        !   call lz_prob_err_both(g1, t1%gap_2deriv(:, i), gap_err, ctrl%qm_en_err, prob)
+            call lz_prob_err_gap(g1, t1%gap_2deriv(2, i), gap_err, qm_en_err, prob)
+        !   call lz_prob_err_both(g1, t1%gap_2deriv(:, i), gap_err, qm_en_err, prob)
             t1%prob(i) = prob(2)
             if (stdp3) then
                 write(stdout, '(3x,a)') 'LZSH probability estimates:'
@@ -119,12 +125,12 @@ contains
                 write(stdout, '(5x,a,e15.7)') 'P = ', prob(2)
                 write(stdout, '(5x,a,e15.7)') 'Pmax = ', prob(3)
             end if
-            if (prob(3) - prob(1) > ctrl%lz_prob_conv) then
-                if (ctrl%lz_min_dt >= ctrl%dt) then
+            if (prob(3) - prob(1) > prob_conv) then
+                if (min_dt >= dt) then
                     if (stdp3) write(stdout, '(3x,a)') 'LZSH not bisecting due to time step.'
                     cycle
                 end if
-                if (gap_err < 2 * ctrl%qm_en_err) then
+                if (gap_err < 2 * qm_en_err) then
                     if (stdp3) write(stdout, '(3x,a)') 'LZSH not bisecting due to qm_en_err.'
                     cycle
                 end if
@@ -133,28 +139,28 @@ contains
                 ! second derivative of the gap between the current state and another state if
                 ! needed.
             end if
-        !   call lz_prob_err_both(g1, gap_sd, gap_err, ctrl%qm_en_err, prob)
+        !   call lz_prob_err_both(g1, gap_sd, gap_err, qm_en_err, prob)
         end do
 
         if (need_bisect) then
             if (1.5*(t1%time - t0%time) > (t2%time - t1%time)) then
                 ! Set t0 as the current step and slide t1 and t2 forward in the array
                 ! so they don't get overwritten by the extra step.
-                ctrl%dt = 0.5_dp * (t1%time - t0%time)
+                dt = 0.5_dp * (t1%time - t0%time)
                 call trajectory_slide_forward(t0%step, 2, .true.)
                 tr1%substep = 1
                 tr1%step = maxval(trajectory_data(:)%step) + 1
             else
                 ! Set t1 as the current step and slide t2 forward in the array
                 ! so it doesn't get overwritten by the extra step.
-                ctrl%dt = 0.5_dp * (t2%time - t1%time)
+                dt = 0.5_dp * (t2%time - t1%time)
                 call trajectory_slide_forward(t1%step, 1, .true.)
                 tr1%substep = 2
                 tr1%step = maxval(trajectory_data(:)%step) + 1
             end if
             if (stdp1) then
                 write(stdout, '(3x,a, i0)') 'Adding new substep: ', tr1%substep
-                write(stdout, '(5x,a,f10.4)') 't=', (tr1%time + ctrl%dt) * aut_fs
+                write(stdout, '(5x,a,f10.4)') 't=', (tr1%time + dt) * aut_fs
             end if
             return
         end if
@@ -168,7 +174,7 @@ contains
         end if
         check_hop = .false.
         prob(2) = 0.0_dp
-        call random_number(rnum)
+        call rng%uniform(rnum)
         do i = 1, size(t1%prob)
             prob(2) = prob(2) + t1%prob(i)
             if (rnum < prob(2)) then
@@ -212,7 +218,7 @@ contains
         end if
 
         ! Reset parameters changed by the adaptive-step LZSH algorithm
-        ctrl%dt = ctrl%dt_0
+        dt = dt_0
         tr1%substep = -1
         tr1%gap_2deriv = 0.0_dp
     end subroutine lzsh

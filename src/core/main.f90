@@ -17,9 +17,9 @@
 program zaghop
     ! Import variables
     use global_defs
+    use constants
     use control_var
     use system_var
-    use constants
 
     ! Import subroutines
     use timing_mod, only : timer
