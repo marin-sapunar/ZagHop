@@ -1,11 +1,11 @@
-cmake_minimum_required (VERSION 3.5)
+cmake_minimum_required (VERSION 3.18)
 project(ZagHop LANGUAGES Fortran)
 
 ################################################################################
 # Options.                                                                     #
 
-  set(LINALG MKL CACHE STRING "Linear algebra library.")
-  set_property(CACHE LINALG PROPERTY STRINGS MKL OpenBLAS)
+  set(LINALG LAPACK CACHE STRING "Linear algebra library.")
+  set_property(CACHE LINALG PROPERTY STRINGS LAPACK MKL QUANTICS)
 
   option(OMP "Use OMP." ON)
   option(STATIC "Create a static executable." OFF)
@@ -42,10 +42,13 @@ project(ZagHop LANGUAGES Fortran)
 # Libraries.                                                                   #
 
   add_definitions(-DLINALG=1)
-  if(LINALG STREQUAL "MKL")
+  if(LINALG STREQUAL "LAPACK")
+    find_package(BLAS REQUIRED)
+    find_package(LAPACK REQUIRED)
+    target_link_libraries(zaghop PRIVATE BLAS::BLAS)
+    target_link_libraries(zaghop PRIVATE LAPACK::LAPACK)
+  elseif(LINALG STREQUAL "MKL")
     set(MKL_INTERFACE "lp64")
-    set(ENABLE_BLAS95 ON CACHE BOOL "Enables BLAS Fortran95 API")
-    set(ENABLE_LAPACK95 ON CACHE BOOL "Enables LAPACK Fortran95 API")
     find_package(MKL CONFIG REQUIRED)
     target_compile_options(zaghop PRIVATE
         $<TARGET_PROPERTY:MKL::MKL,INTERFACE_COMPILE_OPTIONS>)
@@ -53,27 +56,6 @@ project(ZagHop LANGUAGES Fortran)
         $<TARGET_PROPERTY:MKL::MKL,INTERFACE_INCLUDE_DIRECTORIES>)
     target_link_libraries(zaghop PRIVATE $<LINK_ONLY:MKL::MKL>)
     add_definitions(-DMKL=1)
-    add_definitions(-DLINALG_F95=1)
-    # MKLConfig.cmake can only set up BLAS95 and LAPACK95 with Intel compilers
-    # so they are specified manually here for gfortran.
-    if(CMAKE_Fortran_COMPILER_ID STREQUAL "GNU")
-      set(F95ROOT "" CACHE PATH "MKL F95 interface root directory.")
-      if(F95ROOT STREQUAL "")
-        set(F95ROOT $ENV{F95ROOT})
-        if(NOT F95ROOT)
-          message(FATAL_ERROR
-                  "When using MKL, set F95ROOT environment variable "
-                  "or call cmake with -DF95ROOT=/path/to/f95root_dir")
-        endif()
-      endif()
-      message(STATUS "F95ROOT = ${F95ROOT}")
-      target_include_directories(zaghop PRIVATE
-          ${F95ROOT}/include/intel64/lp64)
-      target_link_libraries(zaghop PRIVATE
-          ${F95ROOT}/lib/intel64/libmkl_blas95_lp64.a)
-      target_link_libraries(zaghop PRIVATE
-          ${F95ROOT}/lib/intel64/libmkl_lapack95_lp64.a)
-    endif()
   elseif(LINALG STREQUAL "Quantics")
     if(NOT QUANTICS)
         message(FATAL_ERROR

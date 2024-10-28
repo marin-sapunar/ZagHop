@@ -1,22 +1,15 @@
 module linalg_wrapper_mod
     use global_defs
-#ifdef LINALG_F95
-    use blas95
-    use lapack95
-#endif
     implicit none
     public
 
-#ifndef LINALG_F95
     interface gemm
         module procedure gemm_d, gemm_z
     end interface gemm
-#endif
 
 contains
 
 
-#ifndef LINALG_F95
     function dot(x, y) result(z)
         real(dp) :: x(:)
         real(dp) :: y(:)
@@ -310,7 +303,6 @@ contains
             end if
         end if
     end subroutine syev
-#endif
 
 
 end module linalg_wrapper_mod
