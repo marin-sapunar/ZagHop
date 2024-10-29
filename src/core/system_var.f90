@@ -279,8 +279,6 @@ contains
         logical, intent(in) :: popt(:) !< Print options.
         integer, intent(out) :: punit(:) !< Units for output files.
         character(len=*), intent(in) :: res_dir ! Directory for writing results.
-        integer :: i
-        real(dp) :: time_fs
 
         if (popt(1)) then
             open(newunit=punit(1), file=res_dir//'/energy.dat', action='write', position='append')
@@ -335,11 +333,10 @@ contains
     ! DESCRIPTION:
     !> @brief Write requested output from each step.
     !----------------------------------------------------------------------------------------------
-    subroutine traj_writestep(t, popt, punit, res_dir)
+    subroutine traj_writestep(t, popt, punit)
         class(trajtype) :: t
         logical, intent(in) :: popt(:) !< Print options.
         integer, intent(in) :: punit(:) !< Units for output files.
-        character(len=*), intent(in) :: res_dir ! Directory for writing results.
         integer :: i
         real(dp) :: time_fs
 
@@ -583,11 +580,10 @@ contains
     ! DESCRIPTION:
     !> @brief Initialize output files and write column headers.
     !----------------------------------------------------------------------------------------------
-    subroutine traj_writeheader(t, popt, punit, res_dir)
+    subroutine traj_writeheader(t, popt, punit)
         class(trajtype) :: t
         logical, intent(in) :: popt(:) !< Print options.
         integer, intent(in) :: punit(:) !< Units for output files.
-        character(len=*), intent(in) :: res_dir ! Directory for writing results.
         integer :: i
         real(dp) :: time_fs
 

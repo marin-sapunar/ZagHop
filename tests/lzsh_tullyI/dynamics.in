@@ -1,0 +1,19 @@
+$method
+ seed 123456
+ qlib model tully-i
+ qm_en_error = 1.0e-13
+$system
+ geometry geom
+ ndim = 1
+ nstate = 2
+ istate = 1
+$surfhop
+ lz
+ lz_prob_conv = 0.05
+ velocity=nadvec
+$dynamics
+ time = 80.0
+ tstep = 0.5
+$output
+  noprint 2,4-11
+$end

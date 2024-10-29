@@ -39,7 +39,6 @@ contains
     subroutine model_init(self, args)
         class(model_system) :: self
         type(string), intent(in) :: args(:)
-        integer :: narg
         integer :: i
 
         self%name = tolower(args(1)%s)

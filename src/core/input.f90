@@ -163,7 +163,6 @@ contains
     !----------------------------------------------------------------------------------------------
     subroutine read_input()
         use nuclear_dyn_mod
-        integer :: narg
         character(len=1000) :: temp
         integer :: i
 

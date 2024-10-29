@@ -31,12 +31,12 @@ module random_pcg_mod
     ! TYPE: rng_pcg_xsh_rr
     !> @brief Permuted congruential generator variant PCG-XSH-RR.
     !----------------------------------------------------------------------------------------------
-    type, extends(rng_type) :: rng_pcg_xsh_rr
+    type, extends(rng_type_int) :: rng_pcg_xsh_rr
         logical :: initialized = .false.
         integer(int64) :: state
     contains
         procedure :: init => xsh_rr_init
-        procedure :: random_int => xsh_rr_int
+        procedure :: random_integer => xsh_rr_int
     end type rng_pcg_xsh_rr
 
 
@@ -50,13 +50,10 @@ contains
     !! Calls the init of the parent class, and initializes the state vector based on the seed.
     !----------------------------------------------------------------------------------------------
     subroutine xsh_rr_init(self, seed)
-        class(rng_pcg_xsh_rr) :: self
+        class(rng_pcg_xsh_rr), intent(inout) :: self
         integer, intent(in) :: seed !< Seed used for the initialization. 
-        integer :: i
-        integer(int32) :: z
 
-        call self%rng_type%init(seed)
-        self%rng_out = 1
+        call self%init_seed(seed)
         self%irange = 2.0**32_dp
         self%i_irangem1 = 1.0_dp / (self%irange - 1.0_dp)
         self%state = self%seed + incr
@@ -70,7 +67,7 @@ contains
     !> @brief Get a random integer from the generator.
     !----------------------------------------------------------------------------------------------
     subroutine xsh_rr_int(self, rnum)
-        class(rng_pcg_xsh_rr) :: self
+        class(rng_pcg_xsh_rr), intent(inout) :: self
         integer(int32), intent(out) :: rnum
         integer(int64) :: x
         integer(int32) :: count
@@ -79,7 +76,7 @@ contains
         if (.not. self%initialized) call self%init(-1)
 
         x = self%state
-        count = shiftr(x, 59)
+        count = int(shiftr(x, 59), kind=int32)
         self%state = x * mult + incr
         x = ieor(x, shiftr(x, 18))
         rnum = rotr32(int((shiftr(x, 27)), kind=int32), count)

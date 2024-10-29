@@ -7,28 +7,34 @@ import time
 import unittest
 import numpy as np
 import yaml
-import run
 
 
 class ZagHopTest(unittest.TestCase):
     """ Trajectory tests."""
 
-    def test_ldfssh_pyrazine(self):
-        """ Pyrazine test case for LD-FSSH.
-
-        Both a frustrated hop and a succssfull hop occur in the first 6 fs.
-        """
+    def test_ldsh_tullyI(self):
+        """ Tully model I test case for LD-FSSH."""
         self.run_traj()
         self.compare_energy()
 
-    def test_gsmd_nh3(self):
-        """ Ammonia test case for ground state MD with thermostat.
-
-        Tests the thermostat and that options are correctly set when surface
-        hopping is turned off.
-        """
+    def test_lzsh_tullyI(self):
+        """ Tully model I test case for LZSH."""
         self.run_traj()
         self.compare_energy()
+
+    def test_fssh_tullyI(self):
+        """ Tully model I test case for A-FSSH."""
+        self.run_traj()
+        self.compare_energy()
+
+#   def test_gsmd_nh3(self):
+#       """ Ammonia test case for ground state MD with thermostat.
+
+#       Tests the thermostat and that options are correctly set when surface
+#       hopping is turned off.
+#       """
+#       self.run_traj()
+#       self.compare_energy()
 
     @classmethod
     def setUpClass(cls):

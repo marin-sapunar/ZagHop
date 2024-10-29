@@ -12,34 +12,27 @@ module random_mod
 
     private
     public :: rng_type
+    public :: rng_type_int
 
 
     !----------------------------------------------------------------------------------------------
     ! TYPE: rng_type
-    !> @brief Random number generator implementation.
+    !> @brief Random number generator base class.
     !> @details
     !! This is the base class which defines helper procedures to be used along with the actual RNG
-    !! which are implemented as child classes. Each child class should implement the `init`
-    !! procedure to set up the RNG (which should usually call the `init` of the base class to use
-    !! the same seed initialization in case a seed is not given), and at least one of the
-    !! `random_int` and `random_real` procedures.
+    !! which are implemented as child classes.
     !----------------------------------------------------------------------------------------------
-    type :: rng_type
+    type, abstract :: rng_type
         integer :: seed = -1 !< Seed used for initializing the RNG.
-        integer :: rng_out = -1 !< Specify which methods are implemented by the RNG child class:
-                                !! 0 - Both random_real and random_int are implemented.
-                                !! 1 - Only random_int is implemented.
-                                !! 2 - Only random_real is implemented.
-        real(dp) :: irange = 0.0_dp !< Range of integers returned by the RNG.
-        real(dp) :: i_irangem1 = 0.0_dp !< 1 / (irange - 1)
     contains
         private
-        procedure, public :: init => rng_init_seed
-        procedure, public :: random_real => rng_real
+        procedure, public :: init_seed => rng_init_seed
+        procedure(rngReal), deferred, public :: random_real
+        procedure(rngInt), deferred, public :: random_integer
+        procedure(rngInit), deferred, public :: init
         procedure :: uniform_1d => rng_uniform_1d
         procedure :: uniform_2d => rng_uniform_2d
         procedure :: uniform_3d => rng_uniform_3d
-        procedure :: random_int => rng_integer
         procedure :: integer_1d => rng_integer_1d
         procedure :: integer_2d => rng_integer_2d
         procedure :: integer_3d => rng_integer_3d
@@ -48,9 +41,54 @@ module random_mod
         procedure :: gaussian_2d => rng_gaussian_2d
         procedure :: gaussian_3d => rng_gaussian_3d
         generic, public :: uniform => random_real, uniform_1d, uniform_2d, uniform_3d
-        generic, public :: integer => random_int, integer_1d, integer_2d, integer_3d
+        generic, public :: integer => random_integer, integer_1d, integer_2d, integer_3d
         generic, public :: gaussian => random_gaussian, gaussian_1d, gaussian_2d, gaussian_3d
     end type
+
+
+    !----------------------------------------------------------------------------------------------
+    ! TYPE: rng_type_int
+    !> @brief Base class for RNGs which implement the random_integer method.
+    !> @details
+    !! This is the base class which assumes that child classes will implement the `random_integer`
+    !! method along with the `init` method. The `random_real` method here will convert the outputs
+    !! of `random_integer` to real random numbers between 0 and 1.
+    !----------------------------------------------------------------------------------------------
+    type, abstract, extends(rng_type) :: rng_type_int
+        real(dp) :: irange = 0.0_dp !< Range of integers returned by the RNG.
+        real(dp) :: i_irangem1 = 0.0_dp !< 1 / (irange - 1)
+    contains
+        procedure :: random_real => rng_real
+    end type
+
+
+    abstract interface
+        subroutine rngReal(self, rnum)
+            import rng_type
+            import dp
+            class(rng_type), intent(inout) :: self
+            real(dp), intent(out) :: rnum
+        end subroutine rngReal
+    end interface
+
+
+    abstract interface
+        subroutine rngInt(self, rnum)
+            import rng_type
+            import int32
+            class(rng_type), intent(inout) :: self
+            integer(int32), intent(out) :: rnum
+        end subroutine rngInt
+    end interface
+
+
+    abstract interface
+        subroutine rngInit(self, seed)
+            import rng_type
+            class(rng_type), intent(inout) :: self
+            integer, intent(in) :: seed
+        end subroutine rngInit
+    end interface
 
 
 contains
@@ -87,23 +125,17 @@ contains
     !> @brief Return a random real number between 0 and 1.
     !----------------------------------------------------------------------------------------------
     subroutine rng_real(self, rnum)
-        class(rng_type) :: self
+        class(rng_type_int), intent(inout) :: self
         real(dp), intent(out) :: rnum
         integer(int32) :: z
 
-        if (self%rng_out == 1) then
-            call self%random_int(z)
-            if (z < 0) then
-                rnum = (real(z, kind=dp) - self%irange) * self%i_irangem1
-            else
-                rnum = real(z, kind=dp) * self%i_irangem1
-            end if
+        call self%random_integer(z)
+        if (z < 0) then
+            rnum = (real(z, kind=dp) + self%irange) * self%i_irangem1
         else
-            call errstop("rng_real", "Subroutine rng_real of base class should only be called "//&
-            &                        "from integer generators.", 1)
+            rnum = real(z, kind=dp) * self%i_irangem1
         end if
     end subroutine rng_real
-
 
 
     !----------------------------------------------------------------------------------------------
@@ -128,7 +160,7 @@ contains
     subroutine rng_uniform_2d(self, rnum)
         class(rng_type) :: self
         real(dp), intent(out) :: rnum(:, :)
-        integer :: i, j
+        integer :: i
 
         do i = 1, size(rnum, 2)
             call self%uniform(rnum(:, i))
@@ -143,24 +175,12 @@ contains
     subroutine rng_uniform_3d(self, rnum)
         class(rng_type) :: self
         real(dp), intent(out) :: rnum(:, :, :)
-        integer :: i, j, k
+        integer :: i
 
         do i = 1, size(rnum, 3)
             call self%uniform(rnum(:, :, i))
         end do
     end subroutine rng_uniform_3d
-
-
-    !----------------------------------------------------------------------------------------------
-    ! SUBROUTINE: rng_integer
-    !> @brief Return a random integer.
-    !----------------------------------------------------------------------------------------------
-    subroutine rng_integer(self, rnum)
-        class(rng_type) :: self
-        integer, intent(out) :: rnum
-
-        stop
-    end subroutine rng_integer
 
 
     !----------------------------------------------------------------------------------------------
@@ -269,7 +289,7 @@ contains
         real(dp), intent(in) :: mean
         real(dp), intent(in) :: sigma
         real(dp), intent(out) :: rnum(:, :)
-        integer :: i, j
+        integer :: i
 
         do i = 1, size(rnum, 2)
             call self%gaussian(mean, sigma, rnum(:, i))
@@ -286,13 +306,12 @@ contains
         real(dp), intent(in) :: mean
         real(dp), intent(in) :: sigma
         real(dp), intent(out) :: rnum(:, :, :)
-        integer :: i, j, k
+        integer :: i
 
         do i = 1, size(rnum, 3)
             call self%gaussian(mean, sigma, rnum(:, :, i))
         end do
     end subroutine rng_gaussian_3d
-
 
 
 end module random_mod

@@ -68,7 +68,7 @@ program zaghop
         else
             call system('mkdir -p '//ctrl%output_dir)
             call tr1%open_files(ctrl%print, ctrl%print_units, ctrl%output_dir)
-            call tr1%writeheader(ctrl%print, ctrl%print_units, ctrl%output_dir)
+            call tr1%writeheader(ctrl%print, ctrl%print_units)
         end if
 
         ! Run energy/gradient calculation for initial geometry.
@@ -82,7 +82,7 @@ program zaghop
         if (stdp1) call stepclock%start()
         call run_qm(tr1, .false.)
         if (stdp1) call stepclock%print(stdout, '  QM run time:')
-        call tr1%writestep(ctrl%print, ctrl%print_units, ctrl%output_dir)
+        call tr1%writestep(ctrl%print, ctrl%print_units)
         call trajectory_next(ctrl%dt)
     end if
     ctrl%t0_tot_en = tr1%tote()
@@ -199,7 +199,7 @@ program zaghop
 
         ! Write output and prepare next step.
         if ((mod(tr1%step, ctrl%printerval) == 0)) then
-            call tr1%writestep(ctrl%print, ctrl%print_units, ctrl%output_dir)
+            call tr1%writestep(ctrl%print, ctrl%print_units)
         end if
         if ((mod(tr1%step, ctrl%buinterval) == 0) .or. (abort_flag)) then
             call trajectory_write_backup(ctrl%bufile, trajectory_data)
