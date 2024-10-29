@@ -286,13 +286,13 @@ contains
 
         ! Determine size of work array.
         allocate(work(1))
-        call dsyev(wrk_jobz, wrk_uplo, n, a, n, w, work, -1, info)
+        call dsyev(wrk_jobz, wrk_uplo, n, a, n, w, work, -1, wrk_info)
         lwork = int(work(1))
         deallocate(work)
         allocate(work(lwork))
 
         ! Call DSYEV.
-        call dsyev(wrk_jobz, wrk_uplo, n, a, n, w, work, lwork, info)
+        call dsyev(wrk_jobz, wrk_uplo, n, a, n, w, work, lwork, wrk_info)
         if (present(info)) then
             info = wrk_info
         else

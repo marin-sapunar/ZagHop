@@ -35,7 +35,11 @@ project(ZagHop LANGUAGES Fortran)
     set(dialect "-fpp -assume realloc_lhs")
   elseif(CMAKE_Fortran_COMPILER_ID STREQUAL "GNU")
     set(dialect "-cpp -ffree-line-length-0")
+    set_source_files_properties(random_pcg.f90 PROPERTIES
+                                COMPILE_FLAGS -fwrapv)
   endif()
+  set_source_files_properties(./src/util/random_pcg.f90 PROPERTIES
+                              COMPILE_FLAGS -O0)
   set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} ${dialect}")
 
 ################################################################################
@@ -62,7 +66,6 @@ project(ZagHop LANGUAGES Fortran)
                 "QUANTICS=ON needs to be set in order to use LINALG=Quantics.")
     endif()
     message(STATUS Quantics BLAS: $ENV{QUANTICS_DIR})
-    add_definitions(-DLINALG_QUANTICS=1)
   endif()
 
   if(QUANTICS)
@@ -108,3 +111,23 @@ project(ZagHop LANGUAGES Fortran)
   if(STATIC)
     target_link_libraries(zaghop PRIVATE "-static")
   endif()
+
+################################################################################
+# Tests.                                                                   #
+enable_testing()
+find_package(Python)
+if(Python_FOUND)
+  message(STATUS "Python executable: ${Python_EXECUTABLE}")
+  add_custom_command(TARGET zaghop POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+            ${CMAKE_SOURCE_DIR}/tests ${CMAKE_BINARY_DIR}/tests)
+
+  add_test(NAME python-zaghop-tests
+    COMMAND ${Python_EXECUTABLE} -m unittest -v test_zaghop
+    WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+
+  set_tests_properties(python-zaghop-tests PROPERTIES ENVIRONMENT_MODIFICATION
+    PATH=path_list_append:${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
+else()
+   message(STATUS "Python not found.")
+endif()
