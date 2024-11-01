@@ -1,4 +1,4 @@
-#!/bin/env python3
+#!/usr/bin/env python3
 """ Script for sampling an ensemble of phase space points
     from a Harmonic Wigner distribution.
 
