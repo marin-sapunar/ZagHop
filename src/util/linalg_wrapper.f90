@@ -3,6 +3,12 @@ module linalg_wrapper_mod
     implicit none
     public
 
+#if BLA_INT64
+    integer, parameter :: blas_int = int64
+#else
+    integer, parameter :: blas_int = int32
+#endif
+
     interface gemm
         module procedure gemm_d, gemm_z
     end interface gemm
@@ -28,7 +34,7 @@ contains
         character(len=1) :: wrk_trans
         real(dp) :: wrk_alpha
         real(dp) :: wrk_beta
-        integer :: m, n
+        integer(blas_int) :: m, n
         external dgemv
         m = size(a, 1)
         n = size(a, 2)
@@ -54,7 +60,7 @@ contains
         character(len=1) :: wrk_transb
         real(dp) :: wrk_alpha
         real(dp) :: wrk_beta
-        integer :: m, n, k, lda, ldb, ldc
+        integer(blas_int) :: m, n, k, lda, ldb, ldc
         external dgemm
         lda = size(a, 1)
         ldb = size(b, 1)
@@ -92,7 +98,7 @@ contains
         character(len=1) :: wrk_transb
         complex(dp) :: wrk_alpha
         complex(dp) :: wrk_beta
-        integer :: m, n, k, lda, ldb, ldc
+        integer(blas_int) :: m, n, k, lda, ldb, ldc
         external zgemm
         lda = size(a, 1)
         ldb = size(b, 1)
@@ -123,8 +129,8 @@ contains
         real(dp) :: y(:)
         real(dp) :: a(:, :)
         real(dp), optional :: alpha
-        integer :: m
-        integer :: n
+        integer(blas_int) :: m
+        integer(blas_int) :: n
         real(dp) :: wrk_alpha
         external dger
         m = size(x)
@@ -148,8 +154,8 @@ contains
         character(len=1) :: wrk_job
         character(len=1) :: jobu
         character(len=1) :: jobvt
-        integer :: wrk_info
-        integer :: m, n, ldvt, ldu, lwork
+        integer(blas_int) :: wrk_info
+        integer(blas_int) :: m, n, ldvt, ldu, lwork
         external :: dgesvd
 
         m = size(a, 1)
@@ -215,15 +221,15 @@ contains
         real(dp) :: a(:, :)
         integer, optional :: ipiv(:)
         integer, optional :: info
-        integer :: wrk_info
-        integer, allocatable :: wrk_ipiv(:)
-        integer :: n, m
+        integer(blas_int) :: wrk_info
+        integer(blas_int), allocatable :: wrk_ipiv(:)
+        integer(blas_int) :: n, m
         external :: dgetrf
 
         m = size(a, 1)
         n = size(a, 2)
         if (present(ipiv)) then
-            allocate(wrk_ipiv, source=ipiv)
+            allocate(wrk_ipiv(size(ipiv)))
         else
             allocate(wrk_ipiv(min(m, n)))
         end if
@@ -246,9 +252,9 @@ contains
         real(dp) :: a(:, :)
         integer  :: ipiv(:)
         integer, optional :: info
-        integer :: lwrk
-        integer, allocatable :: wrk(:)
-        integer :: n, lda
+        integer(blas_int) :: lwrk
+        integer(blas_int), allocatable :: wrk(:)
+        integer(blas_int) :: n, lda
         external :: dgetri
 
         lda = size(a, 1)
@@ -274,8 +280,8 @@ contains
         real(dp), allocatable :: work(:)
         character(len=1) :: wrk_jobz
         character(len=1) :: wrk_uplo
-        integer :: wrk_info
-        integer :: n, lwork
+        integer(blas_int) :: wrk_info
+        integer(blas_int) :: n, lwork
         external :: dsyev
 
         n = size(a, 1)
@@ -286,7 +292,8 @@ contains
 
         ! Determine size of work array.
         allocate(work(1))
-        call dsyev(wrk_jobz, wrk_uplo, n, a, n, w, work, -1, wrk_info)
+        lwork = -1
+        call dsyev(wrk_jobz, wrk_uplo, n, a, n, w, work, lwork, wrk_info)
         lwork = int(work(1))
         deallocate(work)
         allocate(work(lwork))

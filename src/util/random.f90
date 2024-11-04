@@ -189,7 +189,7 @@ contains
     !----------------------------------------------------------------------------------------------
     subroutine rng_integer_1d(self, rnum)
         class(rng_type) :: self
-        integer, intent(out) :: rnum(:)
+        integer(int32), intent(out) :: rnum(:)
         integer :: i
 
         do i = 1, size(rnum)
@@ -204,7 +204,7 @@ contains
     !----------------------------------------------------------------------------------------------
     subroutine rng_integer_2d(self, rnum)
         class(rng_type) :: self
-        integer, intent(out) :: rnum(:, :)
+        integer(int32), intent(out) :: rnum(:, :)
         integer :: i
 
         do i = 1, size(rnum, 2)
@@ -219,7 +219,7 @@ contains
     !----------------------------------------------------------------------------------------------
     subroutine rng_integer_3d(self, rnum)
         class(rng_type) :: self
-        integer, intent(out) :: rnum(:, :, :)
+        integer(int32), intent(out) :: rnum(:, :, :)
         integer :: i
 
         do i = 1, size(rnum, 3)
