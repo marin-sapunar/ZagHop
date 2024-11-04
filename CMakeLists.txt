@@ -32,8 +32,8 @@ project(ZagHop LANGUAGES Fortran)
 
 ################################################################################
 # Compiler specific options:                                                   #
-  if(CMAKE_Fortran_COMPILER_ID STREQUAL "Intel")
-    set(dialect "-fpp -assume realloc_lhs")
+  if(CMAKE_Fortran_COMPILER_ID MATCHES "Intel")
+    set(dialect "-fpp")
   elseif(CMAKE_Fortran_COMPILER_ID STREQUAL "GNU")
     set(dialect "-cpp -ffree-line-length-0")
     set_source_files_properties(random_pcg.f90 PROPERTIES
