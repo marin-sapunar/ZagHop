@@ -38,6 +38,8 @@ project(ZagHop LANGUAGES Fortran)
     set(dialect "-cpp -ffree-line-length-0")
     set_source_files_properties(random_pcg.f90 PROPERTIES
                                 COMPILE_FLAGS -fwrapv)
+  elseif(CMAKE_Fortran_COMPILER_ID STREQUAL "Cray")
+    set(dialect "-e Z -M 878,7206")
   endif()
   set_source_files_properties(./src/util/random_pcg.f90 PROPERTIES
                               COMPILE_FLAGS -O0)

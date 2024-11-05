@@ -1,13 +1,23 @@
 module linalg_wrapper_mod
     use global_defs
     implicit none
-    public
+    private
 
 #if BLA_INT64
     integer, parameter :: blas_int = int64
 #else
     integer, parameter :: blas_int = int32
 #endif
+
+    public :: blas_int
+    public :: dot
+    public :: gemv
+    public :: gemm
+    public :: ger
+    public :: gesvd
+    public :: getrf
+    public :: getri
+    public :: syev
 
     interface gemm
         module procedure gemm_d, gemm_z

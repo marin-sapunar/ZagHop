@@ -118,10 +118,10 @@ contains
         real(dp), allocatable :: velocity(:, :)
         real(dp), allocatable :: geom(:, :)
 
-        velocity = transpose(velo)
-        geom = transpose(geo)
+        allocate(velocity, source=transpose(velo))
+        allocate(geom, source=transpose(geo))
         natom = size(mass)
-        vel_cm = matmul(mass,velocity) / sum(mass)
+        vel_cm = matmul(mass, velocity) / sum(mass)
         ang_mom = 0.0_dp
         inert_mom = 0.0_dp
         do i = 1, natom

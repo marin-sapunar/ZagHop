@@ -6,7 +6,7 @@
 !> @brief LAPACK interfaces and common matrix operations.
 !--------------------------------------------------------------------------------------------------
 module matrix_mod
-    use global_defs, only : dp, errstop
+    use global_defs, only : dp, errstop, num1, num0
     use linalg_wrapper_mod
     implicit none
 

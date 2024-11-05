@@ -109,10 +109,17 @@ contains
         integer, intent(in) :: seed !< Seed used for the initialization. 
         integer :: tclock
         integer :: pid
+#if _CRAYFTN
+        integer :: ierror
+#endif
 
         if (seed <= 0) then
             call system_clock(count = tclock)
+#if _CRAYFTN
+            call pxfgetpid(pid, ierror)
+#else
             pid = getpid()
+#endif
             self%seed = tclock + 271 * pid
         else
             self%seed = seed

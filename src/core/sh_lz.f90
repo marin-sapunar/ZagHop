@@ -44,6 +44,7 @@ contains
         if (tr1%step < 2) return
 
         gap_min_before_bisect = .true.
+        allocate(check(tr1%nstate))
 
         select case(tr1%substep)
         case(-1)
