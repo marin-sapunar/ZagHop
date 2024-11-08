@@ -23,12 +23,16 @@ project(ZagHop LANGUAGES Fortran)
 
 ################################################################################
 # Targets:                                                                     #
-  file(GLOB SOURCES "src/core/*f90" "src/util/*f90")
+  file(GLOB CORE_SOURCE "src/core/*f90")
+  file(GLOB UTIL_SOURCE "src/util/*f90")
+
+  add_library(zagutil STATIC ${UTIL_SOURCE})
   if(QUANTICS)
-      set(SOURCES ${SOURCES} "interface/quantics_inter.f90")
+      set(CORE_SOURCE ${CORE_SOURCE} "interface/quantics_inter.f90")
   endif()
 
-  add_executable(zaghop ${SOURCES})
+  add_executable(zaghop ${CORE_SOURCE})
+  target_link_libraries(zaghop PRIVATE zagutil)
 
 ################################################################################
 # Compiler specific options:                                                   #
@@ -48,39 +52,6 @@ project(ZagHop LANGUAGES Fortran)
 ################################################################################
 # Libraries.                                                                   #
 
-  add_definitions(-DLINALG=1)
-  if(LINALG STREQUAL "LAPACK")
-    if (BLAS_64)
-      set(BLA_SIZEOF_INTEGER 8)
-      add_definitions(-DBLA_INT64=1)
-    else()
-      set(BLA_SIZEOF_INTEGER 4)
-    endif()
-    find_package(LAPACK REQUIRED)
-    target_link_libraries(zaghop PRIVATE LAPACK::LAPACK)
-  elseif(LINALG STREQUAL "MKL")
-    if (BLAS_64)
-      set(MKL_INTERFACE "ilp64")
-      add_definitions(-DBLA_INT64=1)
-    else()
-      set(MKL_INTERFACE "lp64")
-      set(BLA_SIZEOF_INTEGER 4)
-    endif()
-    find_package(MKL CONFIG REQUIRED)
-    target_compile_options(zaghop PRIVATE
-        $<TARGET_PROPERTY:MKL::MKL,INTERFACE_COMPILE_OPTIONS>)
-    target_include_directories(zaghop PRIVATE
-        $<TARGET_PROPERTY:MKL::MKL,INTERFACE_INCLUDE_DIRECTORIES>)
-    target_link_libraries(zaghop PRIVATE $<LINK_ONLY:MKL::MKL>)
-    add_definitions(-DMKL=1)
-  elseif(LINALG STREQUAL "Quantics")
-    if(NOT QUANTICS)
-        message(FATAL_ERROR
-                "QUANTICS=ON needs to be set in order to use LINALG=Quantics.")
-    endif()
-    message(STATUS Quantics BLAS: $ENV{QUANTICS_DIR})
-  endif()
-
   if(QUANTICS)
     add_definitions(-DQUANTICS=1)
     set(QUANTICS_DIR $ENV{QUANTICS_DIR})
@@ -94,7 +65,7 @@ project(ZagHop LANGUAGES Fortran)
     if(QUANTICS_COMPILER STREQUAL "default")
       set(QUANTICS_COMPILER "gfortran")
     endif()
-    set(QUANTICS_OBJ 
+    set(QUANTICS_OBJ
        ${QUANTICS_DIR}/object/${QUANTICS_PLATFORM}/${QUANTICS_COMPILER})
     target_include_directories(zaghop PRIVATE ${QUANTICS_OBJ}/include)
     target_link_directories(zaghop PRIVATE ${QUANTICS_DIR}/bin/dyn_libs)
@@ -114,12 +85,49 @@ project(ZagHop LANGUAGES Fortran)
     ${QUANTICS_OBJ}/globinc.a
     ${QUANTICS_OBJ}/libnum.a
     ${QUANTICS_OBJ}/libsys.a
-    ${QUANTICS_OBJ}/libarpack.a
-    ${QUANTICS_OBJ}/liblapack.a
-    ${QUANTICS_OBJ}/libblas.a
     ${QUANTICS_OBJ}/libomp.a)
     target_link_libraries(zaghop PRIVATE srf usrf sqlite3)
   endif()
+
+
+  add_definitions(-DLINALG=1)
+  if(LINALG STREQUAL "LAPACK")
+    if (BLAS_64)
+      set(BLA_SIZEOF_INTEGER 8)
+      add_definitions(-DBLA_INT64=1)
+    else()
+      set(BLA_SIZEOF_INTEGER 4)
+    endif()
+    find_package(LAPACK REQUIRED)
+    set(LINALG_LIBS LAPACK::LAPACK)
+  elseif(LINALG STREQUAL "MKL")
+    if (BLAS_64)
+      set(MKL_INTERFACE "ilp64")
+      add_definitions(-DBLA_INT64=1)
+    else()
+      set(MKL_INTERFACE "lp64")
+    endif()
+    find_package(MKL CONFIG REQUIRED)
+    set(LINALG_LIBS MKL::MKL)
+    add_definitions(-DMKL=1)
+  elseif(LINALG STREQUAL "Quantics")
+    if(NOT QUANTICS)
+        message(FATAL_ERROR
+                "QUANTICS=ON needs to be set in order to use LINALG=Quantics.")
+    endif()
+    if(BLAS_64)
+        message(FATAL_ERROR
+                "BLAS_64=ON is not compatible with LINALG=QUANTICS.")
+    endif()
+    message(STATUS Quantics BLAS: $ENV{QUANTICS_DIR})
+    set(LINALG_LIBS
+          ${QUANTICS_OBJ}/libarpack.a
+          ${QUANTICS_OBJ}/liblapack.a
+          ${QUANTICS_OBJ}/libblas.a
+          )
+  endif()
+  target_link_libraries(zaghop PRIVATE ${LINALG_LIBS})
+  target_link_libraries(zagutil ${LINALG_LIBS})
 
   if(STATIC)
     target_link_libraries(zaghop PRIVATE "-static")
@@ -127,20 +135,29 @@ project(ZagHop LANGUAGES Fortran)
 
 ################################################################################
 # Tests.                                                                   #
-enable_testing()
-find_package(Python)
-if(Python_FOUND)
-  message(STATUS "Python executable: ${Python_EXECUTABLE}")
-  add_custom_command(TARGET zaghop POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-            ${CMAKE_SOURCE_DIR}/tests ${CMAKE_BINARY_DIR}/tests)
+  enable_testing()
 
-  add_test(NAME python-zaghop-tests
-    COMMAND ${Python_EXECUTABLE} -m unittest -v test_zaghop
-    WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+  add_executable(util_test tests/unit/util_test.f90)
+  target_link_libraries(util_test zagutil ${LINALG_LIBS})
+  add_test(NAME util_unit_test COMMAND util_test)
 
-  set_tests_properties(python-zaghop-tests PROPERTIES ENVIRONMENT_MODIFICATION
-    PATH=path_list_append:${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
-else()
-   message(STATUS "Python not found.")
-endif()
+  add_executable(linalg_test tests/unit/linalg_test.f90)
+  target_link_libraries(linalg_test zagutil ${LINALG_LIBS})
+  add_test(NAME linalg_unit_test COMMAND linalg_test)
+
+  find_package(Python)
+  if(Python_FOUND)
+    message(STATUS "Python executable: ${Python_EXECUTABLE}")
+    add_custom_command(TARGET zaghop POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_directory
+              ${CMAKE_SOURCE_DIR}/tests/integration ${CMAKE_BINARY_DIR}/tests)
+
+    add_test(NAME python-zaghop-tests
+      COMMAND ${Python_EXECUTABLE} -m unittest -v test_zaghop
+      WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+
+    set_tests_properties(python-zaghop-tests PROPERTIES ENVIRONMENT_MODIFICATION
+      PATH=path_list_append:${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
+  else()
+     message(STATUS "Python not found.")
+  endif()
