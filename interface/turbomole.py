@@ -289,7 +289,7 @@ def get_dft_gradient(log_file, iroot, rdgrad):
         else:
             re_grad = r"SCF ENERGY GRADIENT with respect to NUCLEAR COORDINATES"
     else:
-        re_grad = f"Excited state no.{iroot:5d} chosen for optimization"
+        re_grad = f"Excited state no.{iroot-1:5d} chosen for optimization"
     cfile = file_utils.go_to_keyword(log_file, re_grad)[0]
     grad = get_grad_from_stdout(cfile)
     cfile.close()
@@ -313,7 +313,7 @@ def get_grad_from_stdout(cfile):
 def get_tddft_oscill(fname):
     """ Read oscillator strengths from escf/egrad output file. """
     oscill = file_utils.search_file(fname, "mixed representation:")
-    file_utils.split_columns(oscill, col=2, convert=np.float64)
+    oscill = file_utils.split_columns(oscill, col=2, convert=np.float64)
     return np.array(oscill)
 
 
