@@ -28,7 +28,8 @@ module shzagreb_inter
                         sbaspar,rsbaspar
       use openmpmod, only: lompqc
       
-      use dd_db, only: ddq2x,ddx2q,ddf2x,dddb_gp,ddf2q,getdbnrec,preparedb
+      use dd_db, only: dddb_gp,getdbnrec,preparedb
+      use dbcootrans
       use channels
       use op2lib, only: subvxxdo1
       use xvlib, only: mvxxdd1, mvtxdd1
@@ -144,6 +145,7 @@ contains
             allocate(rsbaspar(sbaspar,maxdim,1))
             call alloc_dirdyn
          endif
+         if (lddtrans) call alloc_dbcootrans
 
 !-----------------------------------------------------------------------
 ! Read system / DVR information
