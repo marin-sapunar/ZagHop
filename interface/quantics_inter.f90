@@ -18,8 +18,8 @@ module shzagreb_inter
       use rddvrmod
       use rdopermod
       use iorst, only: rstinfo
-      use dirdyn, only: ndoftsh,dercpdim,ndofddpes,ltshtrans,ndofdd,&
-                  tshtransb,dbnrec,nactdim,natmtsh,tshxcoo0,ldbsave,&
+      use dirdyn, only: ndoftsh,dercpdim,ndofddpes,ndofdd,&
+                  dbnrec,nactdim,natmtsh,ldbsave,&
                   lupdhes,lnactdb,lddrddb,ddtrajnum,num_gp
       use dirdyn, only: alloc_dirdyn,alloc_dddb,atnam
       use directdyn
@@ -145,7 +145,6 @@ contains
             allocate(rsbaspar(sbaspar,maxdim,1))
             call alloc_dirdyn
          endif
-         if (lddtrans) call alloc_dbcootrans
 
 !-----------------------------------------------------------------------
 ! Read system / DVR information
@@ -180,10 +179,19 @@ contains
          chkdvr=2
          chkgrd=1
          call operinfo(lerr,chkdvr,chkgrd)
+
+!----------------------------------------------------------------------- 
+! read in coordinate transformation information
+!-----------------------------------------------------------------------
+         if (lddtrans .or. ltshtrans) then
+            call alloc_dbcootrans
+            call rdddtrans(ioper)
+         endif
+
          close(ioper)
 
 !-----------------------------------------------------------------------
-! Prepare DB and allocate memory
+! Open DB and find out what it contains before allocating memory
 !-----------------------------------------------------------------------
          if (ldddb) then
             call preparedb(1)
