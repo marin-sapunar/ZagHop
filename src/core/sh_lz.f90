@@ -35,6 +35,10 @@ contains
         allocate(check(t(1)%nstate), source=.false.)
         if (t(1)%step < 2) return
         if (.not. any(check_gap(t(3), t(2), t(1)))) return
+        if (t(1)%substep == -2) then
+            t(1)%substep = -1
+            if (t(2)%cstate == t(3)%cstate) return
+        end if
         allocate(gap_sd(t(1)%nstate))
         allocate(sd_converged(t(1)%nstate), source=.false.)
 
@@ -88,6 +92,7 @@ contains
             &                               t(2)%time * aut_fs, '.'
             call trajectory_rewind(t, 1, .false.)
             t(2)%cstate = istate
+            t(1)%substep = -2
         else
             write(stdout, '(3x,a)') 'Hop probability evaluated, no hop.'
             if (any(check_gap(t1, t2, t(1)))) then
