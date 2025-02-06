@@ -42,6 +42,13 @@ contains
         logical :: check_hop
 
         if (tr1%step < 2) return
+        ! Prevent re-checking at the same gap minimum if the trajectory was rewound
+        ! due to a hop which was rejected due to energy conservation.
+        if (tr1%substep == -2) then
+            tr1%substep = -1
+            i = trajectory_data(index_offset(data_index_1, -2))%cstate
+            if (tr2%cstate == i) return
+        end if
 
         gap_min_before_bisect = .true.
         allocate(check(tr1%nstate))
@@ -191,6 +198,7 @@ contains
                 &                               t1%time * aut_fs, '.'
             end if
             call trajectory_set_current(t1%step)
+            tr1%substep = -2
         else
             if (stdp2) write(stdout, '(3x,a)') 'Hop probability evaluated, no hop.'
             if (tr1%substep > 0) then
@@ -216,11 +224,11 @@ contains
                 write(stdout, '(3x,a,f0.4,a)') 'Resuming trajectory from t=', t2%time * aut_fs, '.'
             end if
             call trajectory_set_current(t2%step)
+            tr1%substep = -1
         end if
 
         ! Reset parameters changed by the adaptive-step LZSH algorithm
         dt = dt_0
-        tr1%substep = -1
         tr1%gap_2deriv = 0.0_dp
     end subroutine lzsh
 
