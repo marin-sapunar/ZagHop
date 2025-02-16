@@ -18,14 +18,19 @@ module shzagreb_inter
       use rddvrmod
       use rdopermod
       use iorst, only: rstinfo
-      use dirdyn
+      use dirdyn, only: ndoftsh,dercpdim,ndofddpes,ndofdd,&
+                  dbnrec,nactdim,natmtsh,ldbsave,&
+                  lupdhes,lnactdb,lddrddb,ddtrajnum,num_gp
+      use dirdyn, only: alloc_dirdyn,alloc_dddb,atnam
       use directdyn
       use potevalmod, only: calcdiab,calcdiabder,calcvreps
-      use psidef, only: qcentdim,gwpdim,zcent,vdimgp,dimgp,ndimgp,zgp,nsgp,totgp
+      use psidef, only: qcentdim,gwpdim,zcent,vdimgp,dimgp,ndimgp,zgp,nsgp,totgp,&
+                        sbaspar,rsbaspar
       use openmpmod, only: lompqc
       use lalib, only: simtranbd
       
-      use dd_db, only: ddq2x, ddx2q, ddf2x, dddb_gp, ddf2q
+      use dd_db, only: dddb_gp,getdbnrec,preparedb
+      use dbcootrans
       use channels
       use op2lib, only: subvxxdo1
       use xvlib, only: mvxxdd1, mvtxdd1
@@ -78,209 +83,214 @@ contains
       open(ilog,file='quantics.log',status='unknown',position='append')
 
       if (.not. initialized) then
-      macheps = dlamch('P')
+         macheps = dlamch('P')
 
-      string='../..'
-      ilbl=5
-      call abspath(string,ilbl)
-      dname = string
-      dlaenge = index(dname,' ')-1
-      oname = string
-      olaenge = index(oname,' ')-1
-      rname = string
-      rlaenge = index(rname,' ')-1
+         string='../..'
+         ilbl=5
+         call abspath(string,ilbl)
+         dname = string
+         dlaenge = index(dname,' ')-1
+         oname = string
+         olaenge = index(oname,' ')-1
+         rname = string
+         rlaenge = index(rname,' ')-1
 
 ! turn off parallelisation of QC calcs (omp threads do separate trajs).
-      lompqc=.false.
+         lompqc=.false.
 
 !-----------------------------------------------------------------------
 ! get array dimensions 
 !-----------------------------------------------------------------------
-      inquire(irst,opened=check)
-      if (check) close(irst)
-      filename=rname(1:rlaenge)//'/restart'
-      ilbl=index(filename,' ')-1
-      open(irst,file=filename(1:ilbl),form='unformatted',status='old',&
-           iostat=ierr)
-      if (ierr .ne. 0) then
-         routine='SHzagreb_interface'
+         inquire(irst,opened=check)
+         if (check) close(irst)
+         filename=rname(1:rlaenge)//'/restart'
          ilbl=index(filename,' ')-1
-         message = 'Cannot open file: '//filename(1:ilbl)
-         call errormsg
-      endif
-      call rdmemdim(irst)
-      close(irst)
+         open(irst,file=filename(1:ilbl),form='unformatted',status='old',&
+              iostat=ierr)
+         if (ierr .ne. 0) then
+            routine='SHzagreb_interface'
+            ilbl=index(filename,' ')-1
+            message = 'Cannot open file: '//filename(1:ilbl)
+            call errormsg
+         endif
+         call rdmemdim(irst)
+         close(irst)
 
 !-----------------------------------------------------------------------
 ! For DD calculations, DB needs to be read into memory
 !-----------------------------------------------------------------------
-      if (ldd) then
-         ldbsave = .true.
-         if (lddrddb) then
-            lupdhes = .true.
-         else
-            lupdhes = .false.
-         endif
+         if (ldd) then
+            ldbsave = .true.
+            if (lddrddb) then
+               lupdhes = .true.
+            else
+               lupdhes = .false.
+            endif
 
 ! if not using a DB, do not allocate large memory
-         if (.not. (lddrddb)) then
-            dbmemdim = 1  
-            ldbsmall = .false.
+            if (.not. (lddrddb)) then
+               dbmemdim = 1  
+               ldbsmall = .false.
+            endif
          endif
       endif
+
 !-----------------------------------------------------------------------
 ! Allocate memory 
 !-----------------------------------------------------------------------
-      allocmemory=0
-      call alloc_dvrdat
-      call alloc_grddat
-      call alloc_operdef
-      if (ldd) then
-         allocate(gwpdim(1,1))
-         allocate(zcent(1,1))
-         allocate(vdimgp(1,1))
-         allocate(dimgp(1,1))
-         allocate(ndimgp(1,1))
-         allocate(zgp(1))
-         allocate(nsgp(1))
-      endif
-! needed for both DD and analytical due to use of DDtrans
-      call alloc_dirdyn
-      if (ldd) then
-         call alloc_dddb
-         call alloc_dercp
-      endif
+         allocmemory=0
+         call alloc_dvrdat
+         call alloc_grddat
+         call alloc_operdef
+         if (ldd .or. ltraj) then
+            allocate(gwpdim(1,1))
+            allocate(zcent(1,1))
+            allocate(vdimgp(1,1))
+            allocate(dimgp(1,1))
+            allocate(ndimgp(1,1))
+            allocate(zgp(1))
+            allocate(nsgp(1))
+            allocate(rsbaspar(sbaspar,maxdim,1))
+            call alloc_dirdyn
+         endif
 
 !-----------------------------------------------------------------------
 ! Read system / DVR information
 !-----------------------------------------------------------------------
-      filename=dname(1:dlaenge)//'/dvr'
-      ilbl=index(filename,' ')-1
-      open(idvr,file=filename,form='unformatted',status='old',iostat=ierr)
-      if (ierr .ne. 0) then
-         routine='SHzagreb_interface'
+         filename=dname(1:dlaenge)//'/dvr'
          ilbl=index(filename,' ')-1
-         message = 'Cannot open file: '//filename(1:ilbl)
-         call errormsg
-      endif
-      chkdvr=1
-      call dvrinfo(lerr,chkdvr)
-      close(idvr)
+         open(idvr,file=filename,form='unformatted',status='old',iostat=ierr)
+         if (ierr .ne. 0) then
+            routine='SHzagreb_interface'
+            ilbl=index(filename,' ')-1
+            message = 'Cannot open file: '//filename(1:ilbl)
+            call errormsg
+         endif
+         chkdvr=1
+         call dvrinfo(lerr,chkdvr)
+         close(idvr)
 
 !-----------------------------------------------------------------------
 ! Read data from oper file
 !-----------------------------------------------------------------------
-    !  ddpath='../../..'
-      ddpath = ' '
-      filename=oname(1:olaenge)//'/oper'
-      ilbl=index(filename,' ')-1
-      open(ioper,file=filename,form='unformatted',status='old',iostat=ierr)
-      if (ierr .ne. 0) then
-         routine='SHzagreb_interface'
+         ddpath = ' '
+         filename=oname(1:olaenge)//'/oper'
          ilbl=index(filename,' ')-1
-         message = 'Cannot open file: '//filename(1:ilbl)
-         call errormsg
-      endif
-      chkdvr=1
-      chkdvr=2
-      chkgrd=1
-      call operinfo(lerr,chkdvr,chkgrd)
-      close(ioper)
-      
+         open(ioper,file=filename,form='unformatted',status='old',iostat=ierr)
+         if (ierr .ne. 0) then
+            routine='SHzagreb_interface'
+            ilbl=index(filename,' ')-1
+            message = 'Cannot open file: '//filename(1:ilbl)
+            call errormsg
+         endif
+         chkdvr=1
+         chkdvr=2
+         chkgrd=1
+         call operinfo(lerr,chkdvr,chkgrd)
+
+!----------------------------------------------------------------------- 
+! read in coordinate transformation information
+!-----------------------------------------------------------------------
+         if (lddtrans .or. ltshtrans) then
+            call alloc_dbcootrans
+            call rdddtrans(ioper)
+         endif
+
+         close(ioper)
+
+!-----------------------------------------------------------------------
+! Open DB and find out what it contains before allocating memory
+!-----------------------------------------------------------------------
+         if (ldddb) then
+            call preparedb(1)
+            call getdbnrec(dbnrec)
+            call alloc_dddb
+         endif
+
 !-----------------------------------------------------------------------
 ! Read data needed by the operator
 !-----------------------------------------------------------------------
-      operfile=oname(1:olaenge)//'/oper'
-      allocate(hops(hopsdim))
-      chkdvr=2
-      chkgrd=1
-      call rdoper(hops,chkdvr,chkgrd)
+         operfile=oname(1:olaenge)//'/oper'
+         allocate(hops(hopsdim))
+         chkdvr=2
+         chkgrd=1
+         call rdoper(hops,chkdvr,chkgrd)
 
 !-----------------------------------------------------------------------
 ! DD needs to read restart file for info on how Shepard Interpolation is 
 ! being done
 !-----------------------------------------------------------------------
-      if (ldd) then
-        filename=rname(1:rlaenge)//'/restart'
-        ilbl=index(filename,' ')-1
-        open(irst,file=filename,form='unformatted',status='old',iostat=ierr)
-        if (ierr .ne. 0) then
-           routine='SHzagreb_interface'
+         if (ldd) then
+           filename=rname(1:rlaenge)//'/restart'
            ilbl=index(filename,' ')-1
-           message = 'Cannot open file: '//filename(1:ilbl)
-           call errormsg
-        endif
-        chkdvr=0
-        chkgrd=0
-        chkpsi=0
-        chkprp=1
-        call rstinfo(linwf,lerr,chkdvr,chkgrd,chkpsi,chkprp)
-        close(irst)
-      endif
+           open(irst,file=filename,form='unformatted',status='old',iostat=ierr)
+           if (ierr .ne. 0) then
+              routine='SHzagreb_interface'
+              ilbl=index(filename,' ')-1
+              message = 'Cannot open file: '//filename(1:ilbl)
+              call errormsg
+           endif
+           chkdvr=0
+           chkgrd=0
+           chkpsi=0
+           chkprp=1
+           call rstinfo(linwf,lerr,chkdvr,chkgrd,chkpsi,chkprp)
+           close(irst)
+         endif
 
 !-----------------------------------------------------------------------
 ! qcentdim is needed in getddpes as dimension of Ndof (effectively 1GWP)
 !-----------------------------------------------------------------------
-      if (ldd) then
-         gwpdim(1,1) = 1
-         zcent(1,1) = 1
-         gwpm(1)=.true.
-         qcentdim = nspfdof(1)
+         if (ldd) then
+            gwpdim(1,1) = 1
+            zcent(1,1) = 1
+            gwpm(1)=.true.
+            qcentdim = nspfdof(1)
 
 !needed for getddpes (No. of configurations is 1)
-         vdimgp(1,1) = 1
-         dimgp(1,1) = 1
-         ndimgp(1,1) = 1
-         nsgp(1)=1
-         totgp = 1
-         zgp(1) = 1
+            vdimgp(1,1) = 1
+            dimgp(1,1) = 1
+            ndimgp(1,1) = 1
+            nsgp(1)=1
+            totgp = 1
+            zgp(1) = 1
 
 ! no. of NACTS
-         if (nddstate .gt. 1) then
-            lnactdb = .true.
-            nactdim = nddstate*(nddstate-1)/2
-         endif
+            if (nddstate .gt. 1) then
+               lnactdb = .true.
+               nactdim = nddstate*(nddstate-1)/2
+            endif
 
 ! get trajectory number from directory name
-         string=ddname
-         call dirpath(string,ilbl)
-         jlbl=ilbl-1
-         ilbl=jlbl
-         do 
-            if (string(ilbl-1:ilbl-1) .eq. '.') exit
-            ilbl=ilbl-1
-         enddo
-         read(string(ilbl:jlbl),*) ddtrajnum
+            string=ddname
+            call dirpath(string,ilbl)
+            jlbl=ilbl-1
+            ilbl=jlbl
+            do 
+               if (string(ilbl-1:ilbl-1) .eq. '.') exit
+               ilbl=ilbl-1
+            enddo
+            read(string(ilbl:jlbl),*) ddtrajnum
 
-      endif
-       
+         endif
 
       
 ! get no. of states and no. of dynamical coordinates
-      nstate = gdim(feb)
-
-      gdof = nspfdof(1)
+         nstate = gdim(feb)
+         gdof = nspfdof(1)
 
 ! Allocate memory
-      allocate(tempvec(gdof,nstate,nstate))
-      allocate(qcoo(ndoftsh))
-      allocate(qcoo1(maxdim))
-      allocate(xgp(maxdim))
-      allocate(rotmatz(maxsta,maxsta))
-      allocate(rotmat(maxsta,maxsta))
-      allocate(crotmat(maxsta,maxsta))
-      allocate(point(maxdim))
-      allocate(derdia(maxsta,maxsta,maxdim))
-      allocate(derad(maxsta,maxsta,maxdim))
+         allocate(tempvec(gdof,nstate,nstate))
+         allocate(qcoo(ndoftsh))
+         allocate(qcoo1(maxdim))
+         allocate(xgp(maxdim))
+         allocate(pesdia(maxsta,maxsta))
+         allocate(rotmatz(maxsta,maxsta))
+         allocate(point(maxdim))
+         allocate(derdia(maxsta,maxsta,maxdim))
+         allocate(derad(maxsta,maxsta,maxdim))
 
-      allocate(pesdia(maxsta,maxsta))
-      allocate(cpesdia(maxsta,maxsta))
-      allocate(pesad(maxsta))
-      allocate(cpesad(maxsta))
-      allocate(pesspdi(maxsta,maxsta))
-      allocate(cpesspdi(maxsta,maxsta))
-
-      initialized = .true.
+         initialized = .true.
       endif ! Initialization done
 
       gra = 0.0_dop
@@ -299,7 +309,6 @@ contains
             enddo
          enddo
       endif
-
 
 ! need to add frozen coordinates to qcoo 
 ! (it assumes coordinates are the centre of a GWP)
