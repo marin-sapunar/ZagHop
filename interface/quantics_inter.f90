@@ -21,7 +21,7 @@ module shzagreb_inter
       use dirdyn, only: ndoftsh,dercpdim,ndofddpes,ndofdd,&
                   dbnrec,nactdim,natmtsh,ldbsave,&
                   lupdhes,lnactdb,lddrddb,ddtrajnum,num_gp
-      use dirdyn, only: alloc_dirdyn,alloc_dddb,atnam
+      use dirdyn, only: alloc_dirdyn,alloc_dddb,atnam,nsmult,imultmap
       use directdyn
       use potevalmod, only: calcdiab,calcdiabder,calcvreps
       use psidef, only: qcentdim,gwpdim,zcent,vdimgp,dimgp,ndimgp,zgp,nsgp,totgp,&
@@ -133,7 +133,6 @@ contains
                ldbsmall = .false.
             endif
          endif
-      endif
 
 !-----------------------------------------------------------------------
 ! Allocate memory 
@@ -280,15 +279,43 @@ contains
          gdof = nspfdof(1)
 
 ! Allocate memory
+         if (allocated(tempvec)) deallocate(tempvec)
+         if (allocated(qcoo)) deallocate(qcoo)
+         if (allocated(qcoo1)) deallocate(qcoo1)
+         if (allocated(xgp)) deallocate(xgp)
+         if (allocated(pesdia)) deallocate(pesdia)
+         if (allocated(rotmatz)) deallocate(rotmatz)
+         if (allocated(rotmat)) deallocate(rotmat)
+         if (allocated(crotmat)) deallocate(crotmat)
+         if (allocated(point)) deallocate(point)
+         if (allocated(derdia)) deallocate(derdia)
+         if (allocated(derad)) deallocate(derad)
+
          allocate(tempvec(gdof,nstate,nstate))
          allocate(qcoo(ndoftsh))
          allocate(qcoo1(maxdim))
          allocate(xgp(maxdim))
          allocate(pesdia(maxsta,maxsta))
          allocate(rotmatz(maxsta,maxsta))
+         allocate(rotmat(maxsta,maxsta))
+         allocate(crotmat(maxsta,maxsta))
          allocate(point(maxdim))
          allocate(derdia(maxsta,maxsta,maxdim))
          allocate(derad(maxsta,maxsta,maxdim))
+
+         if (allocated(pesdia)) deallocate(pesdia)
+         if (allocated(cpesdia)) deallocate(cpesdia)
+         if (allocated(pesad)) deallocate(pesad)
+         if (allocated(cpesad)) deallocate(cpesad)
+         if (allocated(pesspdi)) deallocate(pesspdi)
+         if (allocated(cpesspdi)) deallocate(cpesspdi)
+
+         allocate(pesdia(maxsta,maxsta))
+         allocate(cpesdia(maxsta,maxsta))
+         allocate(pesad(maxsta))
+         allocate(cpesad(maxsta))
+         allocate(pesspdi(maxsta,maxsta))
+         allocate(cpesspdi(maxsta,maxsta))
 
          initialized = .true.
       endif ! Initialization done
