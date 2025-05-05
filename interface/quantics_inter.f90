@@ -275,11 +275,11 @@ contains
          allocate(qcoo(ndoftsh))
          allocate(qcoo1(maxdim))
          allocate(xgp(maxdim))
-         allocate(pesdia(maxsta,maxsta))
-         allocate(rotmatz(maxsta,maxsta))
+         allocate(pesdia(maxddsta,maxddsta))
+         allocate(rotmatz(maxddsta,maxddsta))
          allocate(point(maxdim))
-         allocate(derdia(maxsta,maxsta,maxdim))
-         allocate(derad(maxsta,maxsta,maxdim))
+         allocate(derdia(maxddsta,maxddsta,maxdim))
+         allocate(derad(maxddsta,maxddsta,maxdim))
 
          initialized = .true.
       endif ! Initialization done
@@ -364,10 +364,10 @@ contains
       integer(long)              :: s,s1,f,f1,n,m
       real(dop), dimension(ndoftsh,nddstate,nddstate), intent(out) :: nadvec
       real(dop), dimension(ndof)                                   :: qnadvec
-      real(dop), dimension(ndoftsh),intent(out)              :: gra
-      real(dop), dimension(ndof)                             :: qgra
-      real(dop), dimension(maxsta,maxsta,maxdim), intent(in) :: derad
-      real(dop), dimension(maxsta), intent(in)               :: en
+      real(dop), dimension(ndoftsh),intent(out)                    :: gra
+      real(dop), dimension(ndof)                                   :: qgra
+      real(dop), dimension(maxddsta,maxddsta,maxdim), intent(in)   :: derad
+      real(dop), dimension(maxddsta), intent(in)                   :: en
       real(dop) :: ediff
 
 
@@ -439,8 +439,8 @@ contains
       real(dop), dimension(ndoftsh),intent(out)              :: gra
       real(dop), dimension(ndofddpes)                        :: tmpgra
       real(dop), dimension(ndofdd)                           :: qgra
-      real(dop), dimension(maxsta), intent(out)              :: en
-      real(dop), dimension(nddstate,nddstate), intent(in)       :: av
+      real(dop), dimension(maxddsta), intent(out)            :: en
+      real(dop), dimension(nddstate,nddstate), intent(in)    :: av
       real(dop), dimension(ndofddpes,nddstate,nddstate), intent(in)  :: deriv1
       real(dop), dimension(ndofddpes,dercpdim), intent(in)           :: dercp
       real(dop) :: ediff
