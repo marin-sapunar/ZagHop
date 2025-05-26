@@ -231,6 +231,12 @@ contains
          endif
 
 !-----------------------------------------------------------------------
+! get no. of states and no. of dynamical coordinates
+!-----------------------------------------------------------------------
+         nddstate = gdim(feb)
+         gdof = nspfdof(1)
+
+!-----------------------------------------------------------------------
 ! qcentdim is needed in getddpes as dimension of Ndof (effectively 1GWP)
 !-----------------------------------------------------------------------
          if (ldd) then
@@ -266,20 +272,16 @@ contains
 
          endif
 
-! get no. of states and no. of dynamical coordinates
-         nstate = gdim(feb)
-         gdof = nspfdof(1)
-
 ! Allocate memory
-         allocate(tempvec(gdof,nstate,nstate))
+         allocate(tempvec(gdof,nddstate,nddstate))
          allocate(qcoo(ndoftsh))
          allocate(qcoo1(maxdim))
          allocate(xgp(maxdim))
-         allocate(pesdia(maxddsta,maxddsta))
-         allocate(rotmatz(maxddsta,maxddsta))
+         allocate(pesdia(nddstate,nddstate))
+         allocate(rotmatz(nddstate,nddstate))
          allocate(point(maxdim))
-         allocate(derdia(maxddsta,maxddsta,maxdim))
-         allocate(derad(maxddsta,maxddsta,maxdim))
+         allocate(derdia(nddstate,nddstate,maxdim))
+         allocate(derad(nddstate,nddstate,maxdim))
 
          initialized = .true.
       endif ! Initialization done
@@ -331,23 +333,15 @@ contains
       time=0.0d0
       if (ldd) call getddpes(time,qcoo,1,1)   
 
-    !  if (dddiab .eq. 0) then
-! Extract energies, gradients, nacts from adiabatic data
-    !     call extradgra(cstate,en,gra,nadvec, &
-    !          dbener(1:nddstate,1:nddstate,1), &
-    !          dbgrad(1:ndofddpes,1:nddstate,1:nddstate,1), &
-    !          dbdercp(1:ndofddpes,1:dercpdim,1))
-    !  else
 ! PES matrix in adiabatic (en) and diabatic (pesdia) representations
 ! rotmatz is the ADT matrix (as a complex)
-         call calcdiab(hops,en,pesdia,rotmatz,point,qcoo1,1)
+      call calcdiab(hops,en,pesdia,rotmatz,point,qcoo1,1)
 
 ! Matrix of gradients in adiabatic (derad) and diabatic (derdia).
-         call calcdiabder(hops,derad,derdia,rotmatz,qcoo1,1)
+      call calcdiabder(hops,derad,derdia,rotmatz,qcoo1,1)
 
 ! Convert forces to Cartesian and extract forces / nact
-         call extrgra(cstate,en,gra,nadvec,derad)
-   !   endif
+      call extrgra(cstate,en,gra,nadvec,derad)
 
       close(ilog)
 
@@ -366,8 +360,8 @@ contains
       real(dop), dimension(ndof)                                   :: qnadvec
       real(dop), dimension(ndoftsh),intent(out)                    :: gra
       real(dop), dimension(ndof)                                   :: qgra
-      real(dop), dimension(maxddsta,maxddsta,maxdim), intent(in)   :: derad
-      real(dop), dimension(maxddsta), intent(in)                   :: en
+      real(dop), dimension(nddstate,nddstate,maxdim), intent(in)   :: derad
+      real(dop), dimension(nddstate), intent(in)                   :: en
       real(dop) :: ediff
 
 
@@ -439,7 +433,7 @@ contains
       real(dop), dimension(ndoftsh),intent(out)              :: gra
       real(dop), dimension(ndofddpes)                        :: tmpgra
       real(dop), dimension(ndofdd)                           :: qgra
-      real(dop), dimension(maxddsta), intent(out)            :: en
+      real(dop), dimension(nddstate), intent(out)            :: en
       real(dop), dimension(nddstate,nddstate), intent(in)    :: av
       real(dop), dimension(ndofddpes,nddstate,nddstate), intent(in)  :: deriv1
       real(dop), dimension(ndofddpes,dercpdim), intent(in)           :: dercp
