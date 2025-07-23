@@ -18,7 +18,7 @@ module shzagreb_inter
       use rddvrmod
       use rdopermod
       use iorst, only: rstinfo
-      use dirdyn, only: ndoftsh,dercpdim,ndofddpes,ndofdd,&
+      use dirdyn, only: ndoftsh,dercpdim,ndofddpes,&
                   dbnrec,nactdim,natmtsh,ldbsave,&
                   lupdhes,lnactdb,lddrddb,ddtrajnum,num_gp
       use dirdyn, only: alloc_dirdyn,alloc_dddb,atnam,nsmult,imultmap
@@ -150,7 +150,7 @@ contains
             allocate(zgp(1))
             allocate(nsgp(1))
             allocate(rsbaspar(sbaspar,maxdim,1))
-            call alloc_dirdyn
+            call alloc_dirdyn(ilog)
          endif
 
 !-----------------------------------------------------------------------
@@ -203,7 +203,7 @@ contains
          if (ldddb) then
             call preparedb(1)
             call getdbnrec(dbnrec)
-            call alloc_dddb
+            call alloc_dddb(ilog)
          endif
 
 !-----------------------------------------------------------------------
@@ -236,6 +236,12 @@ contains
            call rstinfo(linwf,lerr,chkdvr,chkgrd,chkpsi,chkprp)
            close(irst)
          endif
+
+!-----------------------------------------------------------------------
+! get no. of states and no. of dynamical coordinates
+!-----------------------------------------------------------------------
+         nddstate = gdim(feb)
+         gdof = nspfdof(1)
 
 !-----------------------------------------------------------------------
 ! qcentdim is needed in getddpes as dimension of Ndof (effectively 1GWP)
@@ -273,49 +279,42 @@ contains
 
          endif
 
-      
-! get no. of states and no. of dynamical coordinates
-         nstate = gdim(feb)
-         gdof = nspfdof(1)
-
-! Allocate memory
+! Check memory is free
          if (allocated(tempvec)) deallocate(tempvec)
          if (allocated(qcoo)) deallocate(qcoo)
          if (allocated(qcoo1)) deallocate(qcoo1)
          if (allocated(xgp)) deallocate(xgp)
-         if (allocated(pesdia)) deallocate(pesdia)
          if (allocated(rotmatz)) deallocate(rotmatz)
          if (allocated(rotmat)) deallocate(rotmat)
          if (allocated(crotmat)) deallocate(crotmat)
          if (allocated(point)) deallocate(point)
-         if (allocated(derdia)) deallocate(derdia)
-         if (allocated(derad)) deallocate(derad)
-
-         allocate(tempvec(gdof,nstate,nstate))
-         allocate(qcoo(ndoftsh))
-         allocate(qcoo1(maxdim))
-         allocate(xgp(maxdim))
-         allocate(pesdia(maxsta,maxsta))
-         allocate(rotmatz(maxsta,maxsta))
-         allocate(rotmat(maxsta,maxsta))
-         allocate(crotmat(maxsta,maxsta))
-         allocate(point(maxdim))
-         allocate(derdia(maxsta,maxsta,maxdim))
-         allocate(derad(maxsta,maxsta,maxdim))
-
          if (allocated(pesdia)) deallocate(pesdia)
          if (allocated(cpesdia)) deallocate(cpesdia)
+         if (allocated(derdia)) deallocate(derdia)
+         if (allocated(derad)) deallocate(derad)
          if (allocated(pesad)) deallocate(pesad)
          if (allocated(cpesad)) deallocate(cpesad)
          if (allocated(pesspdi)) deallocate(pesspdi)
          if (allocated(cpesspdi)) deallocate(cpesspdi)
 
-         allocate(pesdia(maxsta,maxsta))
-         allocate(cpesdia(maxsta,maxsta))
-         allocate(pesad(maxsta))
-         allocate(cpesad(maxsta))
-         allocate(pesspdi(maxsta,maxsta))
-         allocate(cpesspdi(maxsta,maxsta))
+! Allocate memory
+         allocate(tempvec(gdof,nddstate,nddstate))
+         allocate(qcoo(ndoftsh))
+         allocate(qcoo1(maxdim))
+         allocate(xgp(maxdim))
+         allocate(rotmatz(nddstate,nddstate))
+         allocate(rotmat(nddstate,nddstate))
+         allocate(crotmat(nddstate,nddstate))
+         allocate(point(maxdim))
+         allocate(derdia(nddstate,nddstate,maxdim))
+         allocate(derad(nddstate,nddstate,maxdim))
+
+         allocate(pesdia(nddstate,nddstate))
+         allocate(cpesdia(nddstate,nddstate))
+         allocate(pesad(nddstate))
+         allocate(cpesad(nddstate))
+         allocate(pesspdi(nddstate,nddstate))
+         allocate(cpesspdi(nddstate,nddstate))
 
          initialized = .true.
       endif ! Initialization done
@@ -374,9 +373,7 @@ contains
       else
          modus=1
       endif
-  !   call calcdiab(hops,en,pesdia,rotmatz,point,qcoo1,1)
       nham=1
-      
       call calcvreps(hops,pesad,cpesad,pesspdi,cpesspdi,&
            pesdia,cpesdia,rotmat,crotmat,point,qcoo1,nham,&
            izflag,modus)
@@ -453,10 +450,10 @@ contains
       integer(long)              :: s,s1,f,f1,n,m
       real(dop), dimension(ndoftsh,nddstate,nddstate), intent(out) :: nadvec
       real(dop), dimension(ndof)                                   :: qnadvec
-      real(dop), dimension(ndoftsh),intent(out)              :: gra
-      real(dop), dimension(ndof)                             :: qgra
-      real(dop), dimension(maxsta,maxsta,maxdim), intent(in) :: derad
-      real(dop), dimension(maxsta), intent(in)               :: en
+      real(dop), dimension(ndoftsh),intent(out)                    :: gra
+      real(dop), dimension(ndof)                                   :: qgra
+      real(dop), dimension(nddstate,nddstate,maxdim), intent(in)   :: derad
+      real(dop), dimension(nddstate), intent(in)                   :: en
       real(dop) :: ediff
 
 
