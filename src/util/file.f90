@@ -77,7 +77,7 @@ contains
         logical, intent(in), optional :: abort_on_eof !< Abort on eof or return iostat.
         logical, intent(in), optional :: abort_on_error !< Abort on eof or return iostat.
 
-        self%file=file_name
+        self%file=trim(file_name)
         call need_file(self%file)
         open(newunit=self%unit, file=self%file, action='read', status='old')
     
@@ -234,6 +234,7 @@ contains
         logical :: tcase_sensitive
         logical :: check
         integer :: c
+        character(len=:), allocatable :: errmsg
         
         tcase_sensitive = .true.
         if (present(case_sensitive)) tcase_sensitive = case_sensitive
@@ -247,9 +248,8 @@ contains
                     found = .false.
                     return
                 else
-                    write(stderr, *) 'Error in reader_go_to_keyword subroutine.'
-                    write(stderr, *) 'Keyword "', keyword, '" not found in file "', self%file, '".'
-                    call abort()
+                    errmsg = 'Keyword "'//keyword//'" not found in file "'//self%file//'".'
+                    call errstop('reader_go_to_keyword', errmsg, 1)
                 end if
             end if
             if (keyword == '') then

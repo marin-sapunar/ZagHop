@@ -38,15 +38,6 @@ module global_defs
     real(dp), parameter :: pio2 = pi / num2
 
 
-! intel v15.0 doesn't print backtrace with call abort()
-#if __INTEL_COMPILER
-    interface 
-        subroutine abort() bind(C, name="abort")
-        end subroutine
-    end interface
-#endif
-
-
  !  !----------------------------------------------------------------------------------------------
  !  ! TYPE: IVec
  !  !> @brief Array of integer vectors of varying dimensions.
@@ -112,6 +103,7 @@ contains
         write(stderr, '(1x,a)') 'Error in '//errsub//'.'
         if (present(errmsg)) write(stderr, '(3x, a, a)')  'Error: ', errmsg
         if (present(errnum)) write(stderr, '(3x, a, i0)')  'Status: ', errnum
+        flush(stderr)
         call abort()
     end subroutine errstop
 
