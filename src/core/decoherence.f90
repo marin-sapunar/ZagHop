@@ -29,10 +29,12 @@ contains
         use system_var
         use control_var
 
+
         select case(ctrl%decohlvl)
         case(0) ! No decoherence correction.
         case(1) ! Energy based decoherence.
-            call edc(t(1)%cstate, t(1)%qkine(), t(1)%qe, ctrl%dt, t(1)%cwf)
+            if (stdp3) write(stdout, *) ' Dechoerence correction type EDC.'
+            call edc(tr1%cstate, tr1%qkine(), tr1%qe, ctrl%dt, tr1%cwf)
         end select
     end subroutine decoherence
 

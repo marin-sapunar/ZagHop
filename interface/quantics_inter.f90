@@ -53,7 +53,7 @@ module shzagreb_inter
       
 contains
 
-      subroutine shzagreb_run(step, xyz0, cstate, en, gra, nadvec, sovec, spinvec, socbas)
+      subroutine shzagreb_run(step, xyz0, cstate, en, gra, nadvec, sovec, spinvec, socbas, adt)
 
       
       integer, intent(in) :: step
@@ -66,7 +66,8 @@ contains
       real(dop), intent(out) :: sovec(:, :)
       integer, intent(in) :: spinvec(:)
       logical(kind=4), intent(in) :: socbas
-
+      real(dop), intent(out) :: adt(:, :)
+    
       integer :: i,j,ilbl,jlbl,chkdvr,chkgrd,chkpsi,chkprp,n,f,f1,m
       logical(kind=4) :: linwf
       real(dop), allocatable :: xyz(:, :)
@@ -391,6 +392,7 @@ contains
 ! Matrix of gradients in adiabatic (derad) and diabatic (derdia).
       rotmatz = rotmat + (0,1.0_dop)*crotmat
       call calcdiabder(hops,derad,derdia,rotmatz,qcoo1,1)
+!     adt = rotmatz
       
 ! Convert forces to Cartesian and extract forces / nact
       call extrgra(cstate,en,gra,nadvec,derad)

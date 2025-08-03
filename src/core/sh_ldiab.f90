@@ -25,11 +25,12 @@ contains
     !> @details
     !! Propagates electronic wave function coefficients and determines hops for the SH method.
     !----------------------------------------------------------------------------------------------
-    subroutine sh_diabatic(n, dt, qe1, qe2, cwf, tst, olp, fprob)
+    subroutine sh_diabatic(n, dt, qe1, qe2, cwf, tst, olp, fprob, rng)
         use matrix_mod, only : diagonal_mat, &
                                mat_sy_exp
         use orthog_mod, only : orthog_lowdin
         use linalg_wrapper_mod, only : gemm, gemv
+        use random_mod, only : rng_type
         integer, intent(in) :: n !< Number of states.
         real(dp), intent(in) :: dt !< Nuclear dynamics time step.
         real(dp), intent(in) :: olp(n, n) !< Overlap matrix for current step.
@@ -38,6 +39,7 @@ contains
         complex(dp), intent(inout) :: cwf(n) !< WF coefficients in the adiabatic basis.
         integer, intent(inout) :: tst !< Current state.
         real(dp), intent(out) :: fprob(n) !< Final probability for each state.
+        class(rng_type), intent(inout) :: rng
         real(dp) :: t(n, n) !< Orthogonalized overlap matrix.
         real(dp) :: w1(n, n) !< Work array 1.
         real(dp) :: w2(n, n) !< Work array 2.
@@ -94,7 +96,7 @@ contains
         b = b / abs(pwf(k))**2
 
         ! Determine if hop should occur.
-        call random_number(rnum)
+        call rng%uniform(rnum)
         cprob = 0.0_dp
         fprob = 0.0_dp
         hop: do l = 1, n

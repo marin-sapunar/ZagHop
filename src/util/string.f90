@@ -57,7 +57,7 @@ contains
         tempstr = input_string
         call compact(tempstr)
         pquotes = .true.
-        IF (present(protect_quotes)) pquotes = protect_quotes
+        if (present(protect_quotes)) pquotes = protect_quotes
         narg = 0
       
         ! First determine number of arguments.
@@ -97,11 +97,13 @@ contains
         integer :: i, j, i0, last
         integer :: ntot
         integer :: int1, int0
-        integer :: templist(20000)
+        integer, allocatable :: templist(:)
+        integer, parameter :: chunk = 2000
        
         ntot = 0
         tempstr = str
         call compact(tempstr)
+        allocate(templist(chunk))
 
         if (len(tempstr) == 1) then
             allocate(indexlist(1))
@@ -139,6 +141,12 @@ contains
                 range_1 = .false.
                 do j = int0, int1
                     ntot = ntot + 1
+                    if (ntot > size(templist)) then
+                        indexlist = templist
+                        deallocate(templist)
+                        allocate(templist(ntot + chunk))
+                        templist(1:ntot-1) = indexlist
+                    end if
                     templist(ntot) = j
                 end do
             else
@@ -146,12 +154,9 @@ contains
                 templist(ntot) = int1
             end if
         end do
-
        
-        if (allocated(indexlist)) deallocate(indexlist)
-        allocate(indexlist(ntot))
-        call sort(templist(1:ntot))
         indexlist = templist(1:ntot)
+        call sort(indexlist)
  
     end subroutine read_index_list
  

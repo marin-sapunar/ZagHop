@@ -9,6 +9,7 @@
 module control_var
     use global_defs
     use rattle_mod, only : constraint
+    use random_mod, only : rng_type
     implicit none
 
     private
@@ -36,14 +37,18 @@ module control_var
         character(len=:), allocatable :: qmdir !< Work directory for QM calculation.
         character(len=:), allocatable :: bufile !< Backup file name.
         integer :: buinterval !< Number of steps between backup files.
+        integer :: printerval !< Number of steps between printing outputs.
+        real(dp) :: noise = 0.0_dp !< Random noise to add to QM calculation results.
 
         logical :: print(50) = .false. !< Output options (for writestep subroutine).
+        integer :: print_units(50) !< Fortran units for opened output files.
 
         !------------------------------------------------------------------------------------------
         ! Program flow control.
         !------------------------------------------------------------------------------------------
-        integer :: seed(1) = [-1] !< Seed for the random number generator. A new value can be given
-        !! in the input file. If not, random_seed is called to generate a new seed.
+        class(rng_type), allocatable :: rng !< Random number generator to use. Using a custom RNG
+        !! to ensure the results are reproducible since the Fortran `random_number` subroutine is
+        !! compiler dependent.
         logical :: restart = .false. !< Restart from backup of previous run.
         real(dp) :: stop_s0s1_ci = -10000.0_dp !< Threshold to stop program in case of S0/S1 CI.
         integer :: target_state = -1 !< Stop dynamics after reaching target state.

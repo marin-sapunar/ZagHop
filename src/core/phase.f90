@@ -32,20 +32,21 @@ contains
         integer :: st
 
         select case(ctrl%tdc_type)
-        case(1)
+        case(1,3)
+            if (stdp3) write(stdout, *) '  Aligning phase of wave functions between steps.'
 
             ! Swap sign of rows corresponding to states whose sign was changed in the previous step.
-            do st = 1, t(2)%max_nstate
-                t(1)%olap(st, :) = t(1)%olap(st, :) * t(2)%phase(st)
+            do st = 1, tr2%max_nstate
+                tr1%olap(st, :) = tr1%olap(st, :) * tr2%phase(st)
             end do
 
             select case(ctrl%phaselvl)
             case(0)
                 ! Do not change overlap matrix.
             case(1)
-                call phasematch_diagonal(t(1)%olap, t(1)%phase)
+                call phasematch_diagonal(tr1%olap, tr1%phase)
             case(2)
-                call phasematch_assigned_rotation(t(1)%olap, t(1)%phase)
+                call phasematch_assigned_rotation(tr1%olap, tr1%phase)
             case default
                 write(stderr, *) 'Error in phase_mod, phasematch subroutine.'
                 write(stderr, *) ' Unrecognized method.'

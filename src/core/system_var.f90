@@ -3,7 +3,7 @@
 !> @author Marin Sapunar, Ruđer Bošković Institute
 !> @date October, 2017
 !
-! DESCRIPTION: 
+! DESCRIPTION:
 !> @brief Defines type for holding all variables about the system in the dynamics calculation.
 !--------------------------------------------------------------------------------------------------
 module system_var
@@ -13,10 +13,17 @@ module system_var
     implicit none
 
     private
-    public :: t, memory
+    public :: trajectory_data, tr1, tr2
+    public :: memory
+    public :: data_index_1
+    public :: data_index_2
     public :: trajtype
+    public :: allocate_trajectory_data
+    public :: index_offset
+    public :: trajectory_step_index
+    public :: trajectory_set_current
     public :: trajectory_next
-    public :: trajectory_rewind
+    public :: trajectory_slide_forward
     public :: trajectory_write_backup
     public :: trajectory_read_backup
     public :: ekin
@@ -62,14 +69,18 @@ module system_var
         integer, allocatable  :: phase(:) !< Phase of wave functions during previous step.
         real(dp), allocatable :: prob(:) !< Probabilities of hopping during current step.
         real(dp), allocatable :: olap(:, :) !< Overlaps between wfs between this and previous step.
-        real(dp), allocatable :: nadv(:, :, :) !< Nonadiabatic coupling vectors.        
         real(dp), allocatable :: sov(:, :) !< spin-orbit coupling vectors. So far real.
         integer, allocatable :: spinv(:) !< Vector storing the multiplicity of states, need for SOSH
-
+        real(dp), allocatable :: adt(:, :) !< Adiabatic-diabatic transformation matrix.
+        real(dp), allocatable :: nadv(:, :, :) !< Nonadiabatic coupling vectors.
+        real(dp), allocatable :: gap_2deriv(:, :) !< Second derivative of the gap between the active
+                                                  !< and other states. Used for LZSH, only when a
+                                                  !< gap minimum is found.
         real(dp) :: pbcbox(1:6) = 0.0_dp
     contains
         procedure :: writestep => traj_writestep
         procedure :: writeheader => traj_writeheader
+        procedure :: open_files => traj_open_files
         procedure :: tote => traj_tote !< Total energy of the system.
         procedure :: kine => traj_kine !< Kinetic energy of the system.
         procedure :: pote => traj_pote !< Potential energy of the system.
@@ -79,7 +90,11 @@ module system_var
 
 
     integer, parameter :: memory = 5
-    type(trajtype), allocatable :: t(:)
+    type(trajtype), allocatable, target :: trajectory_data(:)
+    type(trajtype), pointer :: tr1 !< Pointer to trajectory data for current time step.
+    type(trajtype), pointer :: tr2 !< Pointer to trajectory data for previous time step.
+    integer :: data_index_1 !< Index of trajectory data for current time step.
+    integer :: data_index_2 !< Index of trajectory data for previous time step.
 
 
 contains
@@ -100,7 +115,6 @@ contains
             en = en + mass(i) * dot_product(velo(:, i), velo(:, i)) * 0.5_dp
         end do
     end function ekin
-
 
     pure function traj_tote(t) result(tote)
         class(trajtype), intent(in) :: t
@@ -133,161 +147,275 @@ contains
     end function traj_mkine
             
 
-    !----------------------------------------------------------------------------------------------
-    ! SUBROUTINE: trajectory_next
-    !> @brief Move array of trajectory values forward by one step at position pos.
-    !----------------------------------------------------------------------------------------------
-    subroutine trajectory_next(pos, t, dt, increment_time)
-        integer, intent(in) :: pos
-        type(trajtype), allocatable :: t(:)
-        real(dp), intent(in) :: dt
-        logical, intent(in) :: increment_time
-        integer :: i
+    !---------------------------------------------------------------------------------------------
+    ! FUNCTION: index_offset
+    !> @brief Return index of data offset from i by step.
+    !> @details
+    !! Ensures that indexing will wrap-around in both directions while going through the
+    !! trajectory_data array.
+    !---------------------------------------------------------------------------------------------
+    function index_offset(i, step) result(j)
+        integer, intent(in) :: i !< Starting index
+        integer, intent(in) :: step !< Offset for new index
+        integer :: j
 
-        do i = size(t), pos+1, -1
-            t(i) = t(i-1)
+        j = abs(mod(i+memory+step-1, memory)) + 1
+    end function index_offset
+
+
+    !---------------------------------------------------------------------------------------------
+    ! FUNCTION: trajectory_step_index
+    !> @brief Return index of step in trajectory_data array.
+    !---------------------------------------------------------------------------------------------
+    function trajectory_step_index(step) result(sindex)
+        integer, intent(in) :: step
+        integer :: sindex
+
+        do sindex = 1, memory+1
+            if (sindex == memory+1) then
+                call errstop("trajectory_step_index", "Step not found.", step)
+            end if
+            if (trajectory_data(sindex)%step == step) return
         end do
-        t(pos)%step = t(pos+1)%step + 1
-        if (increment_time) then
-            t(pos)%time = t(pos)%time + dt
-        end if
+    end function trajectory_step_index
+
+
+    !---------------------------------------------------------------------------------------------
+    ! SUBROUTINE: trajectory_set_current
+    !> @brief Move pointers of current/previous step to `step`.
+    !> @note Does not change any values stored in trajectory_data.
+    !---------------------------------------------------------------------------------------------
+    subroutine trajectory_set_current(step)
+        integer, intent(in) :: step
+        integer :: cindex
+
+        cindex = trajectory_step_index(step)
+        data_index_1 = cindex
+        data_index_2 = index_offset(cindex, -1)
+        tr1 => trajectory_data(data_index_1)
+        tr2 => trajectory_data(data_index_2)
+    end subroutine trajectory_set_current
+
+
+    !---------------------------------------------------------------------------------------------
+    ! SUBROUTINE: allocate_trajectory_data
+    !> @brief Allocate trajectory_data array and associate pointers
+    !---------------------------------------------------------------------------------------------
+    subroutine allocate_trajectory_data()
+        allocate(trajectory_data(memory))
+        data_index_1 = 2
+        data_index_2 = 1
+        tr1 => trajectory_data(data_index_1)
+        tr2 => trajectory_data(data_index_2)
+    end subroutine allocate_trajectory_data
+
+
+    !---------------------------------------------------------------------------------------------
+    ! SUBROUTINE: trajectory_next
+    !> @brief Prepare for next step by moving pointers.
+    !---------------------------------------------------------------------------------------------
+    subroutine trajectory_next(dt)
+        real(dp), intent(in) :: dt
+
+        data_index_2 = data_index_1
+        data_index_1 = index_offset(data_index_1, 1)
+        trajectory_data(data_index_1) = trajectory_data(data_index_2)
+        tr1 => trajectory_data(data_index_1)
+        tr2 => trajectory_data(data_index_2)
+        tr1%step = tr1%step + 1
+        tr1%time = tr1%time + dt
     end subroutine trajectory_next
+
+
+    !---------------------------------------------------------------------------------------------
+    ! SUBROUTINE: trajectory_slide_forward
+    !> @brief Move array of trajectory values forward by one or more steps.
+    !---------------------------------------------------------------------------------------------
+    subroutine trajectory_slide_forward(step, nbump, set_current)
+        integer, intent(in) :: step
+        integer, intent(in) :: nbump
+        logical, intent(in) :: set_current
+        integer :: cind, i, new_j, old_j
+
+        cind = trajectory_step_index(step)
+
+        do i = nbump, 1, -1
+            old_j = index_offset(cind, i)
+            new_j = index_offset(cind, i+1)
+            trajectory_data(new_j) = trajectory_data(old_j)
+        end do
+
+        if (set_current) then
+            call trajectory_set_current(step)
+        end if
+    end subroutine trajectory_slide_forward
+
 
 
     !----------------------------------------------------------------------------------------------
     ! SUBROUTINE: trajectory_rewind
-    !> @brief Move array of trajectory values forward by one or more steps.
+    !> @brief Move pointers to current/previous step backwards by one step.
     !----------------------------------------------------------------------------------------------
-    subroutine trajectory_rewind(t, nstep, increment_step)
-        type(trajtype), allocatable :: t(:)
-        integer, intent(in) :: nstep
+    subroutine trajectory_rewind(increment_step)
         logical :: increment_step !< Increment step instead of copying value.
-        integer :: i, step
+        integer :: step
 
-        step = t(1)%step + 1
-        do i = 1, size(t) - nstep
-            t(i) = t(i+nstep)
-        end do
-        do i = size(t) - nstep + 1, size(t)
-            if (allocated(t(i)%geom)) deallocate(t(i)%geom)
-            if (allocated(t(i)%velo)) deallocate(t(i)%velo)
-            if (allocated(t(i)%grad)) deallocate(t(i)%grad)
-            if (allocated(t(i)%olap)) deallocate(t(i)%olap)
-            if (allocated(t(i)%nadv)) deallocate(t(i)%nadv)
-            if (allocated(t(i)%sov)) deallocate(t(i)%sov)            
-            if (allocated(t(i)%spinv)) deallocate(t(i)%spinv)
-        end do
-        if (increment_step) t(1)%step = step
+        step = tr1%step
+        data_index_1 = data_index_2
+        data_index_2 = index_offset(data_index_1, -1)
+        tr1 => trajectory_data(data_index_1)
+        tr2 => trajectory_data(data_index_2)
+        if (increment_step) tr1%step = step + 1
     end subroutine trajectory_rewind
 
 
     !----------------------------------------------------------------------------------------------
-    ! SUBROUTINE: Traj_WriteStep
-    !            
+    ! SUBROUTINE: traj_open_files
+    !
     ! DESCRIPTION:
-    !> @brief Write requested output from each step.
+    !> @brief Prepare output files for writing dynamics outputs.
     !----------------------------------------------------------------------------------------------
-    subroutine traj_writestep(t, popt, res_dir)
+    subroutine traj_open_files(t, popt, punit, res_dir)
         class(trajtype) :: t
         logical, intent(in) :: popt(:) !< Print options.
+        integer, intent(out) :: punit(:) !< Units for output files.
         character(len=*), intent(in) :: res_dir ! Directory for writing results.
-        integer :: ounit, i
-        real(dp) :: time_fs
 
-        time_fs = t%time * aut_fs
         if (popt(1)) then
-            open(newunit=ounit, file=res_dir//'/energy.dat', action='write', position='append')
-            write(ounit, 1001, advance='no') time_fs, t%cstate
-            write(ounit, 1002, advance='no') t%tote(), t%qe(t%cstate)
-            write(ounit, 1002, advance='no') t%qe(:)
-            write(ounit, *)
-            close(ounit)
+            open(newunit=punit(1), file=res_dir//'/energy.dat', action='write', position='append')
 
             if (t%mnatom > 0) then
-                open(newunit=ounit, file=res_dir//'/mm.dat', action='write', position='append')
-                write(ounit, 1001, advance='no') time_fs
-                write(ounit, 1002, advance='no') t%mkine(), t%me
-                write(ounit, 1002, advance='no') t%pbcbox
-                write(ounit, *)
-                close(ounit)
+                open(newunit=punit(50), file=res_dir//'/mm.dat', action='write', position='append')
             end if
         end if
 
         if (popt(2)) then
-            open(newunit=ounit, file=res_dir//'/trajectory.xyz', action='write', position='append')
-            write(ounit, *) t%natom
-            write(ounit, *) 't= ', time_fs, 'fs, state=', t%cstate
-            do i = 1, t%natom
-                write(ounit, 1003) t%sym(i), t%geom(:, i) * a0_A
-            end do
-            close(ounit)
+            open(newunit=punit(2), file=res_dir//'/trajectory.xyz', action='write', position='append')
         end if
 
         if (popt(3)) then
-            open(newunit=ounit, file=res_dir//'/geometry', action='write', position='append')
-            do i = 1, t%natom
-                write(ounit, 1002) t%geom(:, i)
-            end do
-            close(ounit)
+            open(newunit=punit(3), file=res_dir//'/geometry', action='write', position='append')
         end if
-         
+
         if (popt(4)) then
-            open(newunit=ounit, file=res_dir//'/velocity', action='write', position='append')
-            do i = 1, t%natom
-                write(ounit, 1002) t%velo(:, i)
-            end do
-            close(ounit)
+            open(newunit=punit(4), file=res_dir//'/velocity', action='write', position='append')
         end if
 
         if (popt(5)) then
-            open(newunit=ounit, file=res_dir//'/gradient', action='write', position='append')
-            do i = 1, t%natom
-                write(ounit, 1002) t%grad(:, i)
-            end do
-            close(ounit)
+            open(newunit=punit(5), file=res_dir//'/gradient', action='write', position='append')
         end if
 
         if (popt(6)) then
-            open(newunit=ounit, file=res_dir//'/cwf.dat', action='write', position='append')
-            write(ounit, 1006) abs(t%cwf)
-            close(ounit)
+            open(newunit=punit(6), file=res_dir//'/cwf.dat', action='write', position='append')
         end if
 
-      ! if (popt(8)) then
-      !     open(newunit=ounit, file=res_dir//'/prob.dat', action='write', position='append')
-      !     write(ounit, 1006) t%prob
-      !     close(ounit)
-      ! end if
-
         if (popt(7)) then
-            open(newunit=ounit, file=res_dir//'/overlap', action='write', position='append')
-            write(ounit, *) 't= ', time_fs, 'fs, state=', t%cstate
-            do i = 1, t%nstate
-                write(ounit, 1006) t%olap(i, 1:t%max_nstate)
-            end do
-            close(ounit)
+            open(newunit=punit(7), file=res_dir//'/overlap', action='write', position='append')
+        end if
+
+        if (popt(8)) then
+            open(newunit=punit(8), file=res_dir//'/adt', action='write', position='append')
         end if
 
         if (popt(10)) then
-            open(newunit=ounit, file=res_dir//'/oscill.dat', action='write', position='append')
-            write(ounit, 1006) t%qo
-            close(ounit)
+            open(newunit=punit(10), file=res_dir//'/oscill.dat', action='write', position='append')
         end if
 
         if (popt(11)) then
-            open(newunit=ounit, file=res_dir//'/qm_traj.xyz', action='write', position='append')
-            write(ounit, *) t%qnatom
-            write(ounit, *) 't= ', time_fs, 'fs, state=', t%cstate
-            do i = 1, t%qnatom
-                write(ounit, 1003) t%sym(t%qind(i)), t%geom(:, t%qind(i)) * a0_A
+            open(newunit=punit(11), file=res_dir//'/qm_traj.xyz', action='write', position='append')
+        end if
+    end subroutine traj_open_files
+
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: traj_writestep
+    !
+    ! DESCRIPTION:
+    !> @brief Write requested output from each step.
+    !----------------------------------------------------------------------------------------------
+    subroutine traj_writestep(t, popt, punit)
+        class(trajtype) :: t
+        logical, intent(in) :: popt(:) !< Print options.
+        integer, intent(in) :: punit(:) !< Units for output files.
+        integer :: i
+        real(dp) :: time_fs
+
+        time_fs = t%time * aut_fs
+        if (popt(1)) then
+            write(punit(1), 1001, advance='no') time_fs, t%cstate
+            write(punit(1), 1002, advance='no') t%tote(), t%qe(t%cstate)
+            write(punit(1), 1002, advance='no') t%qe(:)
+            write(punit(1), *)
+
+            if (t%mnatom > 0) then
+                write(punit(50), 1001, advance='no') time_fs
+                write(punit(50), 1002, advance='no') t%mkine(), t%me
+                write(punit(50), 1002, advance='no') t%pbcbox
+                write(punit(50), *)
+            end if
+        end if
+
+        if (popt(2)) then
+            write(punit(2), *) t%natom
+            write(punit(2), *) 't= ', time_fs, 'fs, state=', t%cstate
+            do i = 1, t%natom
+                write(punit(2), 1003) t%sym(i), t%geom(:, i) * a0_A
             end do
-            close(ounit)
+        end if
+
+        if (popt(3)) then
+            do i = 1, t%natom
+                write(punit(3), 1002) t%geom(:, i)
+            end do
+        end if
+
+        if (popt(4)) then
+            do i = 1, t%natom
+                write(punit(4), 1002) t%velo(:, i)
+            end do
+        end if
+
+        if (popt(5)) then
+            do i = 1, t%natom
+                write(punit(5), 1002) t%grad(:, i)
+            end do
+        end if
+
+        if (popt(6)) then
+            write(punit(6), 1006) real(t%cwf), aimag(t%cwf)
+        end if
+
+        if (popt(7)) then
+            write(punit(7), *) 't= ', time_fs, 'fs, state=', t%cstate
+            do i = 1, t%nstate
+                write(punit(7), 1006) t%olap(i, 1:t%max_nstate)
+            end do
+        end if
+
+        if (popt(8)) then
+            write(punit(8), *) 't= ', time_fs, 'fs, state=', t%cstate
+            do i = 1, t%nstate
+                write(punit(8), 1006) t%adt(i, 1:t%max_nstate)
+            end do
+        end if
+
+        if (popt(10)) then
+            write(punit(10), 1006) t%qo
+        end if
+
+        if (popt(11)) then
+            write(punit(11), *) t%qnatom
+            write(punit(11), *) 't= ', time_fs, 'fs, state=', t%cstate
+            do i = 1, t%qnatom
+                write(punit(11), 1003) t%sym(t%qind(i)), t%geom(:, t%qind(i)) * a0_A
+            end do
         end if
 
 
-1001 format (f12.5,2x,i3) 
+1001 format (f12.5,2x,i3)
 1002 format (1x,1000f18.10)
-1003 format (1x,a2,2x,1000f18.10) 
+1003 format (1x,a2,2x,1000f18.10)
 1006 format (1x,1000e22.12)
     end subroutine traj_writestep
 
@@ -465,35 +593,31 @@ contains
     ! DESCRIPTION:
     !> @brief Initialize output files and write column headers.
     !----------------------------------------------------------------------------------------------
-    subroutine traj_writeheader(t, popt, res_dir)
+    subroutine traj_writeheader(t, popt, punit)
         class(trajtype) :: t
         logical, intent(in) :: popt(:) !< Print options.
-        character(len=*), intent(in) :: res_dir ! Directory for writing results.
-        integer :: ounit, i
+        integer, intent(in) :: punit(:) !< Units for output files.
+        integer :: i
         real(dp) :: time_fs
 
         time_fs = t%time * aut_fs
         if (popt(1)) then
-            open(newunit=ounit, file=res_dir//'/energy.dat', action='write', position='append')
-            write(ounit, '(a)', advance='no') '#'
-            write(ounit, '(a12,1x,a4)', advance='no') 't,', 'cst,' 
-            write(ounit, '(1x,2a18)', advance='no') 'etot,', 'epot,'
-            write(ounit, '(1x)', advance='no') 
+            write(punit(1), '(a)', advance='no') '#'
+            write(punit(1), '(a12,1x,a4)', advance='no') 't,', 'cst,'
+            write(punit(1), '(1x,2a18)', advance='no') 'etot,', 'epot,'
+            write(punit(1), '(1x)', advance='no')
             do i = 1, size(t%qe)
-                write(ounit, '(12x,a2,i3.3)', advance='no') 'qe', i
-                if (i < size(t%qe)) write(ounit, '(a)', advance='no') ','
+                write(punit(1), '(12x,a2,i3.3)', advance='no') 'qe', i
+                if (i < size(t%qe)) write(punit(1), '(a)', advance='no') ','
             end do
-            write(ounit, *)
-            close(ounit)
+            write(punit(1), *)
 
             if (t%mnatom > 0) then
-                open(newunit=ounit, file=res_dir//'/mm.dat', action='write', position='append')
-                write(ounit, '(a)', advance='no') '#'
-                write(ounit, '(a12,1x)', advance='no') 't,'
-                write(ounit, '(2x,3a18)', advance='no') 'mekin,', 'me1,', 'me2,'
-                write(ounit, '(1x,5a18,a17)', advance='no') 'pbc1,', 'pbc2,', 'pbc3,', 'pbc4,', 'pbc5,', 'pbc6'
-                write(ounit, *)
-                close(ounit)
+                write(punit(50), '(a)', advance='no') '#'
+                write(punit(50), '(a12,1x)', advance='no') 't,'
+                write(punit(50), '(2x,3a18)', advance='no') 'mekin,', 'me1,', 'me2,'
+                write(punit(50), '(1x,5a18,a17)', advance='no') 'pbc1,', 'pbc2,', 'pbc3,', 'pbc4,', 'pbc5,', 'pbc6'
+                write(punit(50), *)
             end if
         end if
     end subroutine traj_writeheader

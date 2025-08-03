@@ -203,7 +203,6 @@ contains
     !! treated as one. Whitespace at the beginning and end of each argument is removed.
     !----------------------------------------------------------------------------------------------
     subroutine reader_parseline(self, delimiters)
-        use string_mod, only : string_parse
         class(reader) :: self !< Reader instance.
         character(len=*), intent(in), optional :: delimiters !< Delimiters separating arguments.
       
