@@ -20,6 +20,17 @@ project(ZagHop LANGUAGES Fortran)
   include_directories(${CMAKE_Fortran_MODULE_DIRECTORY})
   link_directories(${CMAKE_LIBRARY_OUTPUT_DIRECTORY})
 
+################################################################################
+# Dependencies.                                                                #
+  set(ENABLE_TESTS OFF CACHE BOOL "" FORCE)
+  include(FetchContent)
+  FetchContent_Declare(
+      jsonfortran
+      GIT_REPOSITORY https://github.com/jacobwilliams/json-fortran.git
+      GIT_TAG        9.0.4  # Pin to a specific release
+  )
+  FetchContent_MakeAvailable(jsonfortran)
+
 
 ################################################################################
 # Targets:                                                                     #
@@ -33,6 +44,7 @@ project(ZagHop LANGUAGES Fortran)
 
   add_executable(zaghop ${CORE_SOURCE})
   target_link_libraries(zaghop PRIVATE zagutil)
+  target_link_libraries(zaghop PRIVATE jsonfortran)
 
 ################################################################################
 # Compiler specific options:                                                   #

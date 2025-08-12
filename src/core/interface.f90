@@ -30,10 +30,9 @@ contains
 #endif
         use system_var, only : trajtype
         use matrix_mod, only : unit_mat
-        use file_mod, only : reader
         use model_mod, only : qmodel
+        use json_module, only : json_core, json_file, json_value
         type(trajtype), intent(inout) :: t
-        type(reader) :: readf
         logical :: hop
         integer :: cunit, i, j, d1, d2
         logical :: check(5)
@@ -41,13 +40,11 @@ contains
         real(dp), allocatable :: rn1(:)
         real(dp), allocatable :: rn2(:, :)
         real(dp), allocatable :: rn3(:, :, :)
-
-        if (t%ndim == 1) then
-            write(yamfmt, '(a,i0,a)') "('    - [ ', e22.12, ' ]')"
-        else
-            write(yamfmt, '(a,i0,a)') "('    - [ ',  ", t%ndim-1, "(e22.12, ' ,'), e22.12, ' ]')"
-        end if
-
+        type(json_core) :: json
+        type(json_file) :: read_json
+        type(json_value), pointer :: base, p_top, p_array_i, p_array_j
+        type(json_value), pointer :: p_array_0, p_geom_entry
+        logical :: found
 
         select case (ctrl%qlib)
         case(0)
@@ -56,23 +53,46 @@ contains
                 call system('cp -r '//ctrl%qmdir//' prevstep')
             end if
 
-            open(newunit=cunit, file='qm.yaml', action='write')
-            write(cunit, '(a)') 'system:'
-            write(cunit, '(2x, a, i0)') "step : ", t%step
-            write(cunit, '(2x, a)') "geom : "
-            do i = 1, t%qnatom
-                write(cunit, yamfmt) t%geom(:, t%qind(i))
+            call json%initialize()
+            call json%create_object(base, "")
+
+            call json%create_object(p_top, "step")
+            call json%add(base, p_top)
+            call json%add(p_top, "step", t%step)
+
+            call json%create_array(p_top, "system")
+            call json%add(base, p_top)
+            !@todo Loop over subsystems for QM/MM.
+            call json%create_object(p_array_i, "")
+            call json%add(p_top, p_array_i)
+            call json%add(p_array_i, "natom", t%qnatom)
+            call json%create_array(p_array_j, "geom")
+            call json%add(p_array_i, p_array_j)
+            do j = 1, t%qnatom
+                call json%add(p_array_j, "", t%geom(1, t%qind(j)))
+                call json%add(p_array_j, "", t%geom(2, t%qind(j)))
+                call json%add(p_array_j, "", t%geom(3, t%qind(j)))
             end do
-            write(cunit, '(2x,a)') "states :"
-            write(cunit, '(4x,a,i0)') "- nstate : ", t%nstate
-            write(cunit, *)
-            write(cunit, '(a)') "request : "
-            write(cunit, '(2x,a)') "energy : True"
-            write(cunit, '(2x,a,i0)') "gradient : ", t%cstate
-            if (ctrl%oscill) then
-                write(cunit, '(2x,a)') "oscillator_strength : True"
-            end if
-            close(cunit)
+            ! done
+
+            call json%create_array(p_top, "states")
+            call json%add(base, p_top)
+            !@todo Loop over sets of states if calculated separately
+            call json%create_object(p_array_i, "")
+            call json%add(p_top, p_array_i)
+            call json%add(p_array_i, "system", 1)
+            call json%add(p_array_i, "nstate", t%nstate)
+            call json%add(p_array_i, "energy", .true.)
+            call json%add(p_array_i, "oscillator_strength", ctrl%oscill)
+            ! Having an array for the gradient field allows requesting
+            ! multiple gradients at the same time.
+            call json%create_array(p_array_j, "gradient")
+            call json%add(p_array_i, p_array_j)
+            call json%add(p_array_j, "", t%cstate)
+            ! done
+
+            call json%print(base, "qm.json")
+            call json%destroy(base)
 
             if (ctrl%mm) then
                 open(newunit=cunit, file='mm_geom', action='write')
@@ -83,57 +103,31 @@ contains
             end if
 
             ! Call interface.
-            call system('rm -f qm_out.yaml')
+            call system('rm -f qm_out.json')
             call system(ctrl%qprog)
 
             ! Check if energy and gradient files were created.
-            inquire(file='qm_out.yaml', exist=check(1))
+            inquire(file='qm_out.json', exist=check(1))
             if (.not. check(1)) then
-                write(stderr, *) 'Error, qm_out.yaml file not found after QM calculation.'
+                write(stderr, *) 'Error, qm_out.json file not found after QM calculation.'
                 stop
             end if
 
-            call readf%open('qm_out.yaml', abort_on_eof=.false.)
-            check = .false.
-            do
-                call readf%next()
-                if (is_iostat_end(readf%iostat)) exit
-                call readf%parseline(' :,[]')
-                select case(readf%args(1)%s)
-                case('energy')
-                    t%qe = 0.0_dp
-                    do i = 1, t%nstate
-                        call readf%next()
-                        call readf%parseline(' ')
-                        read(readf%args(2)%s, *) t%qe(i)
-                    end do
-                    check(1) = .true.
-                case('gradient')
-                    t%grad = 0.0_dp
-                    do i = 1, t%qnatom
-                        do j = 1, t%ndim
-                            call readf%next()
-                            call readf%parseline(' ')
-                            read(readf%args(readf%narg)%s, *) t%grad(j, t%qind(i))
-                        end do
-                    end do
-                    check(2) = .true.
-                case('oscillator_strength')
-                    if (.not. ctrl%oscill) continue
-                    t%qo = 0.0_dp
-                    do i = 1, t%nstate - 1
-                        call readf%next()
-                        call readf%parseline(' ')
-                        read(readf%args(2)%s, *) t%qo(i)
-                    end do
-                    check(3) = .true.
-                case default
-                    continue
-                end select
-            end do
-            if (.not. (check(1) .and. check(2))) then
-                write(stderr, *) "Energy/gradient not found in QM output."
-                stop
+            call read_json%load_file("qm_out.json")
+            call read_json%get("states(1).energy", t%qe, found)
+            if (.not. found) then
+                write(stderr, *) "Energy not found in QM output."
+            end if
+            call json_get_2d(read_json, "states(1).gradient(1)", t%grad)
+            if (.not. found) then
+                write(stderr, *) "Gradient not found in QM output."
+            end if
+            if (ctrl%oscill) then
+                call read_json%get("states(1).oscillator_strength", t%qo)
+                if (.not. found) then
+                    write(stderr, *) "Oscillator strength not found in QM output."
+                end if
+
             end if
 
             if ((ctrl%tdc_type == 1) .and. (t%step /= 0)) then
@@ -269,6 +263,42 @@ contains
         if (pbc) write(ounit, relfmt) box
         close(ounit)
     end subroutine nad_interface_write_atoms
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: json_get_2d
+    !
+    ! DESCRIPTION:
+    !> @brief Extract a 2D array of real(dp) values from a json file.
+    !> @details
+    !! This is a hopefully temporary workaround for a feature that is not implemented in the
+    !! json-fortran package.
+    !----------------------------------------------------------------------------------------------
+    subroutine json_get_2d(jsonf, key, array)
+        use json_module
+        type(json_file) :: jsonf
+        type(json_core) :: core
+        type(json_value), pointer :: outer, inner
+        character(len=*), intent(in) :: key
+        real(dp), allocatable, intent(out) :: array(:,:)
+        real(dp), allocatable :: work_vec(:)
+        integer :: i, n1, n2
+        logical :: is_matrix
+
+        call core%initialize()
+        call jsonf%get(key, outer)
+        call core%matrix_info(outer, is_matrix, n_sets=n1, set_size=n2)
+        if (.not. is_matrix) then
+            write(stderr, *) "Error in json_get_2d."
+            write(stderr, *) "  Value in "//key//" is not a matrix."
+        end if
+        allocate(array(n1, n2))
+        do i = 1, n1
+            call core%get_child(outer, i, inner)
+            call core%get(inner, work_vec)
+            array(i, :) = work_vec
+        end do
+    end subroutine json_get_2d
 
 
     !----------------------------------------------------------------------------------------------

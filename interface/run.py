@@ -4,7 +4,7 @@ import os
 import sys
 from pathlib import Path
 from argparse import ArgumentParser
-import yaml
+import json
 import numpy as np
 import file_utils
 from turbomole import Turbomole
@@ -32,12 +32,17 @@ def cli():
 
 def run(args):
     """ Read input files and run the interface. """
-    with open("qm.yaml", "r") as infile:
-        in_data = yaml.safe_load(infile)
-    system = in_data.pop("system")
-    request = in_data.pop("request")
+    with open("qm.json", "r") as infile:
+        in_data = json.load(infile)
+    # @todo This is a messy patch to update new qm.json format
+    #       with qm.yaml format from previous version. Fix.
+    states = in_data.pop("states")[0]
+    sys_index = states.pop("system")
+    system = in_data.pop("system")[sys_index]
+    system["states"] = {"nstate" : states.pop("nstate")}
+    request = states
     if "geom" not in system:
-        print("Error, geom not found in qm_sys.yaml file.")
+        print("Error, geom not found in qm.json file.")
         sys.exit(1)
     system["geom"] = np.array(system["geom"], dtype=float)
 

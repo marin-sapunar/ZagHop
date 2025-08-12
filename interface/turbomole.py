@@ -82,7 +82,7 @@ class Turbomole(QMInterface):
         self.update_nstate()
         # Update iroot
         if "gradient" in self.request:
-            self.options["iroot"] = self.request["gradient"]
+            self.options["iroot"] = self.request["gradient"][0]
             self.update_iroot()
         else:
             self.options["iroot"] = None
@@ -110,7 +110,7 @@ class Turbomole(QMInterface):
             # escf is called if excited state energies are requested without
             #   an excited state gradient.
             if "gradient" in self.request:
-                if self.request["gradient"] == 1:
+                if self.iroot == 1:
                     # Ground state gradient calculation.
                     if self.ri:
                         self.run_prog("rdgrad")
@@ -119,7 +119,7 @@ class Turbomole(QMInterface):
                     # Separate excited state calculation.
                     if self.states.nstate > 1:
                         self.run_prog("escf")
-                elif self.request["gradient"] > 1:
+                elif self.iroot > 1:
                     self.run_prog("egrad")
             elif self.states.nstate > 1:
                 self.run_prog("escf")
