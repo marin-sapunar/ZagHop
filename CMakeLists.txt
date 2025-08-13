@@ -22,7 +22,7 @@ project(ZagHop LANGUAGES Fortran)
 
 ################################################################################
 # Dependencies.                                                                #
-  set(ENABLE_TESTS OFF CACHE BOOL "" FORCE)
+  set(JSONFORTRAN_ENABLE_TESTS OFF CACHE BOOL "" FORCE)
   include(FetchContent)
   FetchContent_Declare(
       jsonfortran
@@ -30,7 +30,6 @@ project(ZagHop LANGUAGES Fortran)
       GIT_TAG        9.0.4  # Pin to a specific release
   )
   FetchContent_MakeAvailable(jsonfortran)
-
 
 ################################################################################
 # Targets:                                                                     #
@@ -45,6 +44,8 @@ project(ZagHop LANGUAGES Fortran)
   add_executable(zaghop ${CORE_SOURCE})
   target_link_libraries(zaghop PRIVATE zagutil)
   target_link_libraries(zaghop PRIVATE jsonfortran)
+  target_include_directories(zaghop PRIVATE
+                             $<TARGET_PROPERTY:jsonfortran,BINARY_DIR>)
 
 ################################################################################
 # Compiler specific options:                                                   #
