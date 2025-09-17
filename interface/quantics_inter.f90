@@ -18,7 +18,7 @@ module shzagreb_inter
       use rddvrmod
       use rdopermod
       use iorst, only: rstinfo
-      use dirdyn, only: ndoftsh,dercpdim,ndofddpes,ndofdd,&
+      use dirdyn, only: ndoftsh,dercpdim,ndofddpes,&
                   dbnrec,nactdim,natmtsh,ldbsave,&
                   lupdhes,lnactdb,lddrddb,ddtrajnum,num_gp
       use dirdyn, only: alloc_dirdyn,alloc_dddb,atnam
@@ -143,7 +143,7 @@ contains
             allocate(zgp(1))
             allocate(nsgp(1))
             allocate(rsbaspar(sbaspar,maxdim,1))
-            call alloc_dirdyn
+            call alloc_dirdyn(ilog)
          endif
 
 !-----------------------------------------------------------------------
@@ -196,7 +196,7 @@ contains
          if (ldddb) then
             call preparedb(1)
             call getdbnrec(dbnrec)
-            call alloc_dddb
+            call alloc_dddb(ilog)
          endif
 
 !-----------------------------------------------------------------------
