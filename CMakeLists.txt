@@ -146,6 +146,7 @@ project(ZagHop LANGUAGES Fortran)
     target_link_libraries(zaghop PRIVATE "-static")
   endif()
 
+  set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 ################################################################################
 # Tests.                                                                   #
   enable_testing()

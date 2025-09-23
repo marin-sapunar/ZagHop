@@ -30,7 +30,7 @@
 !!
 !! Original article: <a href="http://www.dx.doi.org/10.1021/jz5009449">DOI: 10.1021/jz5009449</a>
 ! 
-!> @note The main input_mod for the NPI method is the overlap matrix containing the overlaps between
+!> @note The main input for the NPI method is the overlap matrix containing the overlaps between
 !! the electronic state wave functions at \f$ t_0 \f$ and at \f$ t_0 + \Delta t \f$. It is assumed
 !! that the phases of the two sets of wave functions are matched, meaning that the change from
 !! \f$ \qty{\ket{\psi_i(t_0)}} \f$ to \f$ \qty{\ket{\psi_i(t_0 + \Delta t)}} \f$ is (approximately) 

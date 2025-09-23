@@ -8,7 +8,7 @@
 !--------------------------------------------------------------------------------------------------
 module sh_lz_mod
     use global_defs
-    use system_var, only : trajtype
+    use system_type_mod, only : system_type
     use constants
     implicit none
 
@@ -18,24 +18,26 @@ module sh_lz_mod
 
 contains
 
-    subroutine lzsh(rng, dt, qm_en_err, prob_conv, min_dt, dt_0)
-        use system_var
+    subroutine lzsh(dt, qm_en_err, prob_conv, min_dt, dt_0, rng)
+        use system_type_mod
         use random_mod, only : rng_type
-        class(rng_type), allocatable, intent(inout) :: rng
         real(dp), intent(inout) :: dt
         real(dp), intent(in) :: qm_en_err
         real(dp), intent(in) :: prob_conv
         real(dp), intent(in) :: min_dt
         real(dp), intent(in) :: dt_0
-        type(trajtype), pointer :: t0 !< Trajectory variables before gap minimum.
-        type(trajtype), pointer :: t1 !< Trajectory variables at gap minimum.
-        type(trajtype), pointer :: t2 !< Trajectory variables after gap minimum.
-        type(trajtype), pointer :: t_wrk !< Temporary pointer
+        class(rng_type), allocatable, intent(inout) :: rng
+        type(system_type), pointer :: t0 !< Trajectory variables before gap minimum.
+        type(system_type), pointer :: t1 !< Trajectory variables at gap minimum.
+        type(system_type), pointer :: t2 !< Trajectory variables after gap minimum.
+        type(system_type), pointer :: t_wrk !< Temporary pointer
         logical :: need_bisect
         logical, allocatable :: check(:)
         real(dp) :: prob(3)
         real(dp) :: gap_sd(3)
         real(dp) :: g0, g1, g2, gap_err
+        real(dp), allocatable :: qe0(:), qe1(:), qe2(:)
+        integer :: cstate
         real(dp) :: rnum
         integer :: i
         logical :: gap_min_before_bisect
@@ -46,12 +48,12 @@ contains
         ! due to a hop which was rejected due to energy conservation.
         if (tr1%substep == -2) then
             tr1%substep = -1
-            i = trajectory_data(index_offset(data_index_1, -2))%cstate
-            if (tr2%cstate == i) return
+            i = trajectory_data(index_offset(data_index_1, -2))%wf%active_state
+            if (tr2%wf%active_state == i) return
         end if
 
         gap_min_before_bisect = .true.
-        allocate(check(tr1%nstate))
+        allocate(check(tr1%wf%n_state))
 
         select case(tr1%substep)
         case(-1)
@@ -64,7 +66,11 @@ contains
             t0 => trajectory_data(data_index_2)
             t1 => trajectory_data(data_index_1)
             t2 => trajectory_data(index_offset(data_index_1, 1))
-            check = check_gap(t0, t1, t2)
+            qe0 = t0%wf%qm_state(:)%energy
+            qe1 = t1%wf%qm_state(:)%energy
+            qe2 = t2%wf%qm_state(:)%energy
+            cstate = t1%wf%active_state
+            check = check_gap(t0%wf%active_state, cstate, qe0, qe1, qe2)
             if (.not. any(check)) then
                 ! Now checking for gap between steps 0.5, 1 and 2.
                 t_wrk => trajectory_data(data_index_2)
@@ -79,7 +85,11 @@ contains
             t0 => trajectory_data(index_offset(data_index_1, -2))
             t1 => trajectory_data(data_index_2)
             t2 => trajectory_data(data_index_1)
-            check = check_gap(t0, t1, t2)
+            qe0 = t0%wf%qm_state(:)%energy
+            qe1 = t1%wf%qm_state(:)%energy
+            qe2 = t2%wf%qm_state(:)%energy
+            cstate = t1%wf%active_state
+            check = check_gap(t0%wf%active_state, cstate, qe0, qe1, qe2)
             if (.not. any(check)) then
                 ! Now checking for gap between steps 1, 1.5 and 2.
                 t_wrk => trajectory_data(index_offset(data_index_1, -2))
@@ -90,25 +100,31 @@ contains
             end if
         end select
 
-        check = check_gap(t0, t1, t2)
+        qe0 = t0%wf%qm_state(:)%energy
+        qe1 = t1%wf%qm_state(:)%energy
+        qe2 = t2%wf%qm_state(:)%energy
+        cstate = t1%wf%active_state
+
+        check = check_gap(t0%wf%active_state, cstate, qe0, qe1, qe2)
         if ((tr1%substep > 0) .and. (.not. any(check))) then
             write(stderr, *) 'Warning. Gap minimum not found after adding an extra time step.'
-            write(stderr, '(999(e24.16, 1x))') t_wrk%time, t_wrk%qe
-            write(stderr, '(999(e24.16, 1x))') t0%time, t0%qe
-            write(stderr, '(999(e24.16, 1x))') t1%time, t1%qe
-            write(stderr, '(999(e24.16, 1x))') t2%time, t2%qe
+            write(stderr, '(999(e24.16, 1x))') t_wrk%time, t_wrk%wf%qm_state(:)%energy
+            write(stderr, '(999(e24.16, 1x))') t0%time, qe0
+            write(stderr, '(999(e24.16, 1x))') t1%time, qe1
+            write(stderr, '(999(e24.16, 1x))') t2%time, qe2
         end if
 
         if (.not. any(check)) return
 
 500     need_bisect = .false.
 
+        t1%wf%prob = 0.0_dp
         ! Evaluate hopping probability and decide whether the time step should be reduced
-        do i = 1, t1%nstate
+        do i = 1, t1%wf%n_state
             if (.not. check(i)) cycle
-            g0 = t0%qe(t1%cstate) - t0%qe(i)
-            g1 = t1%qe(t1%cstate) - t1%qe(i)
-            g2 = t2%qe(t1%cstate) - t2%qe(i)
+            g0 = qe0(cstate) - qe0(i)
+            g1 = qe1(cstate) - qe1(i)
+            g2 = qe2(cstate) - qe2(i)
             gap_err = abs((g0 - 2*g1 + g2) / 2)
             if ((t1%gap_2deriv(2, i) == 0.0_dp) .or. (gap_err > 20 * qm_en_err)) then
                 ! Calculate 2nd derivative of the gap if it hasn't already been calculated
@@ -125,8 +141,7 @@ contains
                 continue
             end if
             call lz_prob_err_gap(g1, t1%gap_2deriv(2, i), gap_err, qm_en_err, prob)
-        !   call lz_prob_err_both(g1, t1%gap_2deriv(:, i), gap_err, qm_en_err, prob)
-            t1%prob(i) = prob(2)
+            t1%wf%prob(i) = prob(2)
             if (stdp3) then
                 write(stdout, '(3x,a)') 'LZSH probability estimates:'
                 write(stdout, '(5x,a,e15.7)') 'Pmin = ', prob(1)
@@ -174,20 +189,20 @@ contains
         end if
 
         ! Check if a hop should occur.
-        if (sum(t1%prob) > 1.0_dp) then
+        if (sum(t1%wf%prob) > 1.0_dp) then
             write(stderr, *) ' Warning. Sum of hopping probabilities for all states higher than 1.'
             write(stderr, *) '   time:', t1%time
-            write(stderr, *) '   cstate:', t1%cstate
-            write(stderr, *) '   fprob:', t1%prob
+            write(stderr, *) '   cstate:', t1%wf%active_state
+            write(stderr, *) '   fprob:', t1%wf%prob
         end if
         check_hop = .false.
         prob(2) = 0.0_dp
         call rng%uniform(rnum)
-        do i = 1, size(t1%prob)
-            prob(2) = prob(2) + t1%prob(i)
+        do i = 1, size(t1%wf%prob)
+            prob(2) = prob(2) + t1%wf%prob(i)
             if (rnum < prob(2)) then
                 check_hop = .true.
-                t1%cstate = i
+                t1%wf%active_state = i
                 exit
             end if
         end do
@@ -212,7 +227,11 @@ contains
                         t1 => trajectory_data(data_index_1)
                         t2 => trajectory_data(index_offset(data_index_1, 1))
                     end if
-                    check = check_gap(t0, t1, t2)
+                    qe0 = t0%wf%qm_state(:)%energy
+                    qe1 = t1%wf%qm_state(:)%energy
+                    qe2 = t2%wf%qm_state(:)%energy
+                    cstate = t1%wf%active_state
+                    check = check_gap(t0%wf%active_state, cstate, qe0, qe1, qe2)
                     if (any(check)) then
                         if (stdp2) write(stdout, '(3x,a)') ' Extra gap minimum in same step.'
                         if (stdp2) write(stdout, '(3x,a)') ' Running LZSH procedure for new steps.'
@@ -237,25 +256,24 @@ contains
     ! FUNCTION: check_gap
     !> @brief Check for a gap minimum with the active state during the previous three time steps.
     !----------------------------------------------------------------------------------------------
-    function check_gap(t0, t1, t2) result(check)
-        type(trajtype), intent(in) :: t0
-        type(trajtype), intent(inout) :: t1
-        type(trajtype), intent(in) :: t2
-        logical :: check(t1%nstate)
-        integer :: i, cstate, pstate
+    function check_gap(pstate, cstate, qe0, qe1, qe2) result(check)
+        integer, intent(in) :: pstate !< Previous active state
+        integer, intent(in) :: cstate !< Current active state
+        real(dp), intent(in) :: qe0(:) !< Energies at t0
+        real(dp), intent(in) :: qe1(:) !< Energies at t1
+        real(dp), intent(in) :: qe2(:) !< Energies at t2
+        logical :: check(size(qe1))
+        integer :: i
         real(dp) :: g0, g1, g2
 
-        pstate = t0%cstate
-        cstate = t1%cstate
         check = .false.
-        t1%prob = 0.0_dp
-        do i = 1, t1%nstate
+        do i = 1, size(qe1)
             if (i == cstate) cycle
             if (abs(i-cstate) /= 1) cycle ! Only allow hops to neighbouring states.
             if (i == pstate) cycle ! Prevent hop back to same state after rewinding.
-            g0 = t0%qe(cstate) - t0%qe(i)
-            g1 = t1%qe(cstate) - t1%qe(i)
-            g2 = t2%qe(cstate) - t2%qe(i)
+            g0 = qe0(cstate) - qe0(i)
+            g1 = qe1(cstate) - qe1(i)
+            g2 = qe2(cstate) - qe2(i)
             if ((abs(g1) < abs(g2)) .and. (abs(g1) < abs(g0))) then
                 check(i) = .true.
             end if

@@ -78,7 +78,7 @@ module control_var
         ! QMMM options.
         !------------------------------------------------------------------------------------------
         logical :: qm !< Signal to enable QM calculation.
-        logical :: mm !< Signal to enable MM calculation.
+        logical :: mm = .false. !< Signal to enable MM calculation.
         real(dp) :: mmcut !< Cutoff distance for calculating interactions between the QM and MM
         !! systems. If the distance between two atoms is greater than this value, their interaction
         !! will not affect the energy of the system.
@@ -109,23 +109,9 @@ module control_var
         logical :: socbas ! spin-obit basis representation
         integer :: shnstep !< Number of steps in the integration of the TDSE.
 
-        logical, allocatable :: couple(:) !< Signals that a state is included in the coupling
-        !! calculation. When .false., the state is skipped regardless of other options.
-
         integer :: decohlvl !< Method of decoherence correction during dynamics:
         !!  - 0 - No decoherence correction.
         !!  - 1 - Energy based decoherence scheme (Granucci, Persico; doi: 10.1063/1.2715585).
-
-        integer :: couplvl !< Method of reduction of the coupling matrix calculation. At each step,
-        !! the cmask logical array is created based on the value of this variable:
-        !! - 0 - All matrix elements are calculated.
-        !! - 1 - Only ctrl%coupndiff states around the current state are included.
-        !! - 2 - Only states in a ctrl%coupediff energy window of the current state are included.
-        !! - 3 - Couplings between each state and ctrl%coupndiff states around it are calculated.
-        !! - 4 - Couplings between each states and the states in a ctrl%coupediff energy window
-        !!       around it are calculated.
-        integer :: coupndiff !< Number of states for couplvl 1 and 3.
-        real(dp) :: coupediff !< Energy difference for couplvl 2 and 4.
 
         integer :: tdc_type !< Method for calculating the time-derivative coupling matrix:
         !! - 1 - Use wave function overlaps.

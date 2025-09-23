@@ -19,7 +19,7 @@ program zaghop
     use global_defs
     use constants
     use control_var
-    use system_var
+    use system_type_mod
 
     ! Import subroutines
     use timing_mod, only : timer
@@ -36,7 +36,6 @@ program zaghop
     type(timer) :: stepclock
     real(dp), allocatable :: hop_grad(:, :)
     real(dp) :: tinydp = 1.0e-8_dp
-    integer :: i
 
     ! Allocate main trajectory data array.
     call allocate_trajectory_data()
@@ -47,7 +46,7 @@ program zaghop
     if (stdp1) then
         call mainclock%start()
         write(stdout, *) '-------------------------------------------------------------------------------'
-        write(stdout, *) '                               ZagHop, v0.93                                   '
+        write(stdout, *) '                               ZagHop, v0.94                                   '
         write(stdout, *) 'Program compiled '//__DATE__//' at '//__TIME__//'.'
         write(stdout, *) '-------------------------------------------------------------------------------'
     end if
@@ -58,7 +57,7 @@ program zaghop
     ! Restart old trajectory or open new output file.
     if (ctrl%restart) then
         ! Restart old trajectory.
-        call trajectory_read_backup(ctrl%bufile, trajectory_data)
+      !  call trajectory_read_backup(ctrl%bufile, trajectory_data)
     else
         ! Create output directory.
         if (check_is_dir(ctrl%output_dir)) then
@@ -109,18 +108,19 @@ program zaghop
 
         ! Get new gradients.
         if (ctrl%mm) call run_mm(tr1)
-        if (ctrl%variable_nstate == 1) then
-            do i = tr1%nstate, max(tr1%cstate + 2, -1, tr1%min_nstate), -1
-                ! Remove top states whose contribution to the total wave function is below the
-                ! threshold until the first state which should be kept is reached.
-                if (abs(tr1%cwf(i)) > 0.01) exit
-                if (stdp2) then
-                    write(stdout, '(3x,a, i0, a)') 'Excluding state ', i, ' from calculation.'
-                end if
-                tr1%nstate = i-1
-                tr1%cwf(i) = 0.0_dp
-            end do
-        end if
+        !> @todo Re-check and re-activate variable_nstate option.
+        ! if (ctrl%variable_nstate == 1) then
+        !     do i = tr1%nstate, max(tr1%cstate + 2, -1, tr1%min_nstate), -1
+        !         ! Remove top states whose contribution to the total wave function is below the
+        !         ! threshold until the first state which should be kept is reached.
+        !         if (abs(tr1%cwf(i)) > 0.01) exit
+        !         if (stdp2) then
+        !             write(stdout, '(3x,a, i0, a)') 'Excluding state ', i, ' from calculation.'
+        !         end if
+        !         tr1%nstate = i-1
+        !         tr1%cwf(i) = 0.0_dp
+        !     end do
+        ! end if
         if (stdp2) write(stdout, *) '  Running QM calculation.'
         call run_qm(tr1, .false.)
 
@@ -133,14 +133,14 @@ program zaghop
         if (ctrl%hop) then
             if (stdp2) then
                 write(stdout, '(3x,a)') 'Change of state: '
-                write(stdout, '(5x,a,i0)') 'Previous state: ', tr2%cstate
-                write(stdout, '(5x,a,i0)') 'Current state: ', tr1%cstate
+                write(stdout, '(5x,a,i0)') 'Previous state: ', tr2%wf%active_state
+                write(stdout, '(5x,a,i0)') 'Current state: ', tr1%wf%active_state
                 write(stdout, '(5x,a)') 'Running QM gradient calculation for new state.'
             end if
             allocate(hop_grad, source=tr1%grad)
             call run_qm(tr1, .true.)
-            call sh_rescalevelo(ctrl%vrescale, ctrl%fhop, tr1%qind, tr2%cstate, tr1%cstate,     &
-            &                   tr1%mass, tr1%qe, hop_grad, tr1%grad, tr1%nadv, tr1%velo)
+            call sh_rescalevelo(ctrl%vrescale, ctrl%fhop, tr1%qind, tr2%wf%active_state, tr1%wf, &
+            &                   tr1%mass, tr1%velo)
             deallocate(hop_grad)
         end if
 
@@ -164,15 +164,15 @@ program zaghop
         end if
 
         ! Stop the program at S0/S1 conical intersection.
-        if (tr1%nstate > 1) then
-            if (tr1%qe(2) - tr1%qe(1) < ctrl%stop_s0s1_ci) then
+        if (tr1%wf%n_state > 1) then
+            if (tr1%wf%qm_state(2)%energy - tr1%wf%qm_state(1)%energy < ctrl%stop_s0s1_ci) then
                 if (stdp1) write(stdout, *) '  Intersection with ground state.'
                 abort_flag = .true.
             end if
         end if
 
         ! Stop the program after reaching the target state.
-        if (tr1%cstate == ctrl%target_state) then
+        if (tr1%wf%active_state == ctrl%target_state) then
             if (ctrl%target_state_time == 0.0_dp) then
                 abort_flag = .true.
                 if (stdp1) write(stdout, *) '  Target state reached.'

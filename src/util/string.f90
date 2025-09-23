@@ -179,7 +179,7 @@ contains
         integer :: i, j, i0, last
         integer :: ntot
         integer :: int1, int0
-        integer :: templist(20000)
+        integer :: templist(2000)
        
         ntot = 0
         tempstr = str

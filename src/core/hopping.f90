@@ -27,7 +27,7 @@ contains
     !! calls the decoherence correction subroutine and phase matching subroutine.
     !----------------------------------------------------------------------------------------------
     subroutine hopping()
-        use system_var
+        use system_type_mod
         use control_var
         use decoherence_mod
         use phase_mod
@@ -36,41 +36,53 @@ contains
         use sh_lz_mod
         use tdc_mod
         use constants
-        integer :: tst
+        integer :: i
 
         if ((ctrl%tdc_type == 3) .and. (tr1%step /= 0)) then
-            call adt2overlap(tr2%adt, tr1%adt, tr1%olap)
+            do i = 1, tr1%wf%n_state_group
+                call adt2overlap(tr2%wf%overlap(2*i)%c, tr1%wf%overlap(2*i)%c, tr1%wf%overlap(2*i-1)%c)
+            end do
+        end if
+        !> @todo Move this to more appropriate place.
+        if ((ctrl%tdc_type /= 2 ) .and. (ctrl%vrescale == 3)) then
+            tr1%wf%need_nadv = .false.
         end if
 
-        tst = tr1%cstate
+
         ctrl%hop = .false.
         select case(ctrl%sh)
         case(1)
-            call lzsh(ctrl%rng, ctrl%dt, ctrl%qm_en_err, ctrl%lz_prob_conv, ctrl%lz_min_dt, &
-            &         ctrl%dt_0)
+            call lzsh(ctrl%dt, ctrl%qm_en_err, ctrl%lz_prob_conv, ctrl%lz_min_dt, &
+            &         ctrl%dt_0, ctrl%rng)
         case(2)
             call decoherence()
             call phasematch()
-            call sh_adiabatic(ctrl%tdc_type, ctrl%ene_interpolate, ctrl%tdc_interpolate, &
-            &                 ctrl%tdc_interpolate, ctrl%dt, ctrl%shnstep, tr2%qe, tr1%qe, &
-            &                 tr1%cwf, tr1%cstate, tr2%olap, tr1%olap, tr2%nadv, tr1%nadv, &
-            &                 tr2%velo(:, tr2%qind), tr1%velo(:, tr1%qind), tr1%prob, ctrl%rng)
+            call sh_adiabatic(ctrl%tdc_type, tr2%time, tr1%time, tr2%wf, tr1%wf, ctrl%shnstep, &
+            &                 tr2%velo(:, tr2%qind), tr1%velo(:, tr1%qind), ctrl%rng)
         case(3)
             call decoherence()
             call phasematch()
-            call sh_diabatic(tr1%max_nstate, ctrl%dt, tr2%qe, tr1%qe, tr1%cwf, tr1%cstate, &
-            &                tr1%olap, tr1%prob, ctrl%rng)
+            call sh_diabatic(tr2%time, tr1%time, tr2%wf, tr1%wf, ctrl%rng)
         case(4)
-            call decoherence()
-            call phasematch()
-            call sh_sosh(ctrl%tdc_type, ctrl%ene_interpolate, ctrl%tdc_interpolate,                &
-            &                 ctrl%tdc_interpolate, ctrl%dt, ctrl%shnstep, tr2%qe, tr1%qe,       &
-            &                 tr1%cwf, tr1%cstate, tr2%olap, tr1%olap, tr2%nadv, tr1%nadv,   &
-            &                 tr2%velo(:, tr2%qind), tr1%velo(:, tr1%qind), tr2%sov, tr1%sov,&
-            &                 tr1%spinv , tr1%prob)
+            ! call decoherence()
+            ! call phasematch()
+            ! call sh_sosh(ctrl%tdc_type, ctrl%ene_interpolate, ctrl%tdc_interpolate,                &
+            ! &                 ctrl%tdc_interpolate, ctrl%dt, ctrl%shnstep, tr2%qe, tr1%qe,       &
+            ! &                 tr1%cwf, tr1%cstate, tr2%olap, tr1%olap, tr2%nadv, tr1%nadv,   &
+            ! &                 tr2%velo(:, tr2%qind), tr1%velo(:, tr1%qind), tr2%sov, tr1%sov,&
+            ! &                 tr1%spinv , tr1%prob)
         end select
 
-        if (tst /= tr1%cstate) ctrl%hop = .true.
+        if (tr2%wf%active_state /= tr1%wf%active_state) then
+            ctrl%hop = .true.
+            !> @todo Move this to a more appropriate place.
+            ! If vrescale=3 (rescale along nonadiabatic coupling vector), ensure that the
+            ! nonadiabatic coupling vector between the previous and current state is allocated
+            if (ctrl%vrescale == 3) then
+                tr1%wf%need_nadv(tr1%wf%active_state, tr2%wf%active_state) = .true.
+                tr1%wf%need_nadv(tr2%wf%active_state, tr1%wf%active_state) = .true.
+            end if
+        end if
     end subroutine hopping
 
 
@@ -94,26 +106,36 @@ contains
     !! - 2 - Return to previous state, but also invert the velocity along the rescale direction.
     !!       (this option only makes sense with opt_mc=2 or 3)
     !----------------------------------------------------------------------------------------------
-    subroutine sh_rescalevelo(opt_mc, opt_fh, amask, pst, cst, mass, poten, pgrd, cgrd, nadv, velo)
-        use system_var, only : ekin
+    subroutine sh_rescalevelo(opt_mc, opt_fh, amask, pst, wf, mass, velo)
+        use system_type_mod, only : ekin
+        use mqc_wave_function_mod, only : mqc_wave_function
         integer, intent(in) :: opt_mc !< Type of momentum correction.
         integer, intent(in) :: opt_fh !< Behaviour at frustrated hop.
         integer, intent(in) :: amask(:) !< Atoms considered when rescaling.
         integer, intent(in) :: pst !< Previous state.
-        integer, intent(inout) :: cst !< Current state.
+        type(mqc_wave_function), intent(in) :: wf !< Wave function at previous step.
         real(dp), intent(in) :: mass(:) !< Masses.
-        real(dp), intent(in) :: poten(:) !< Potential energies of the states.
-        real(dp), intent(in) :: pgrd(:, :) !< Gradient on previous state.
-        real(dp), intent(inout) :: cgrd(:, :) !< Gradient on current state.
-        real(dp), intent(in) :: nadv(:, :, :) !< Nonadiabatic coupling vectors
         real(dp), intent(inout) :: velo(:, :) !< Velocities.
+        integer :: cst !< Current state.
         real(dp) :: mvel(size(velo, 1), size(amask)) !< Mass weighted velocity.
+        real(dp) :: pgrd(size(velo, 1), size(amask)) !< Gradient of the previous state.
+        real(dp) :: cgrd(size(velo, 1), size(amask)) !< Gradient of the current state.
         real(dp) :: m(size(velo, 1), size(amask)) !< Temporary mass array.
         real(dp) :: rescale_dir(size(velo, 1), size(amask)) !< Direction along which to rescale.
+        real(dp) :: nadv(size(velo, 1)*size(amask)) !< Nonadiabatic coupling vector between the two states.
+        real(dp) :: poten(size(wf%qm_state)) !< Potential energies of all states.
         real(dp) :: mvel_dir !< Component of mass weighted velocity along rescale direction.
         real(dp) :: delta_e !< Required change in kinetic energy.
 
         if (stdp2) write(stdout, '(5x,a)') 'Ensuring energy conservation.'
+
+        cst = wf%active_state
+        pgrd = wf%qm_state(pst)%gradient
+        cgrd = wf%qm_state(cst)%gradient
+        if (opt_mc == 3) then
+            nadv = wf%qm_state(pst)%nadv(cst)%c
+        end if
+        poten = wf%qm_state(:)%energy
 
         ! Work with temporary arrays and use mass-weighted coordinates.
         m = spread(mass(amask), 1, size(velo, 1))
@@ -127,7 +149,7 @@ contains
         case(2) ! Rescale along gradient difference vector.
             rescale_dir = (pgrd - cgrd) / sqrt(m)
         case(3) ! Rescale along nonadiabatic coupling vector.
-            rescale_dir = reshape(nadv(:, pst, cst), shape(mvel)) / sqrt(m)
+            rescale_dir = reshape(nadv, shape(mvel)) / sqrt(m)
         end select
 
         ! Rescale velocity
@@ -137,7 +159,7 @@ contains
         if (mvel_dir**2 > 2 * delta_e) then
             ! The sign here is based on the work of Herman (see chapter 6 of 10.1007/0-306-46949-9
             ! and references within). Choosing the other direction would also work, but this one
-            ! ensures that the change is momentum is as small as possible (but also means that the
+            ! ensures that the change in momentum is as small as possible (but also means that the
             ! direction of the change doesn't depend on the sign of the vector along which rescaling
             ! is performed).
             mvel = mvel + rescale_dir * (sign(sqrt(mvel_dir**2 - 2*delta_e), mvel_dir) - mvel_dir)

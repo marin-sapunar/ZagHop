@@ -13,7 +13,7 @@
 !--------------------------------------------------------------------------------------------------
 module input_mod
     use global_defs
-    use system_var
+    use system_type_mod
     use control_var
     use string_mod
     use file_mod, only : reader
@@ -129,16 +129,12 @@ contains
         ctrl%socbas = .false.
         ctrl%shnstep = 10000
         ctrl%decohlvl = 1
-        ctrl%couplvl = 0
-        ctrl%coupndiff = 1
-        ctrl%coupediff = 1 / eh_eV
         ctrl%tdc_type = 1
         ctrl%tdc_interpolate = 2
         ctrl%ene_interpolate = 2
         ctrl%vrescale = 2
         ctrl%fhop = 1
         ctrl%phaselvl = 1
-        ctrl%variable_nstate = 0
         ctrl%oscill = .false.
         ! Thermostat
         ctrl%thermostat = 0
@@ -166,7 +162,11 @@ contains
     subroutine read_input()
         use nuclear_dyn_mod
         character(len=1000) :: temp
-        integer :: i
+        integer :: i, j
+        logical :: check
+        logical :: buffer
+        type(reader) :: readf
+        buffer = .false.
 
         ! Get work directory.
         call getcwd(temp)
@@ -176,8 +176,18 @@ contains
         if (stdp1) then
             write(stdout, *)
             write(stdout, '(1x,a,a,a)') 'Reading dynamics input file ', trim(maininp), '.'
+        end if        
+        inquire(file=maininp, exist=check)
+        if (.not. check) then
+            write(stderr,*) 'Error in Input module, read_main subroutine.'
+            write(stderr,*) ' Main input file (', trim(maininp),') not found.'
+            stop
         end if
-        call read_main()
+
+        call readf%open(maininp, comment='#')
+        ! Mandatory keywords are read first:
+        call read_method(readf)
+        call read_system(readf)
 
         ! Start the random number generator.
         call ctrl%rng%init(ctrl%rng%seed)
@@ -199,25 +209,99 @@ contains
         end if
 
         ! If restarting don't read initial conditions.
-        if (ctrl%restart) return
+        if (.not. ctrl%restart) then
 
-        ! Read initial conditions.
-        if (stdp2) then
-            write(stdout, *)
-            write(stdout, '(1x,a,a,a)') 'Reading geometry file ', geominp, '.'
-        end if
-        call read_geom()
-        select case(veloinp)
-        case('maxwell-boltzmann', 'mb')
+            ! Read initial conditions.
             if (stdp2) then
-                write(stdout, '(1x,a,a)') 'Generating random velocities following ', &
-                &                         'Maxwell-Boltzmann distribution.'
+                write(stdout, *)
+                write(stdout, '(1x,a,a,a)') 'Reading geometry file ', geominp, '.'
             end if
-            call maxwell_boltzmann_velo(ctrl%rng, tr1%mass, mb_temperature, tr1%velo)
-        case default
-            if (stdp2) write(stdout, '(1x,a,a,a)') 'Reading velocity file ', veloinp, '.'
-            call read_velo()
+            call read_geom()
+            select case(veloinp)
+            case('maxwell-boltzmann', 'mb')
+                if (stdp2) then
+                    write(stdout, '(1x,a,a)') 'Generating random velocities following ', &
+                    &                         'Maxwell-Boltzmann distribution.'
+                end if
+                call maxwell_boltzmann_velo(ctrl%rng, tr1%mass, mb_temperature, tr1%velo)
+            case default
+                if (stdp2) write(stdout, '(1x,a,a,a)') 'Reading velocity file ', veloinp, '.'
+                call read_velo()
+            end select
+        end if
+
+        ! Followed by optional keywords.
+        call read_dynamics(readf)
+        call read_output(readf)
+        call read_surfhop(readf)
+        call read_mm(readf)
+        call read_constraints(readf, tol_cns)
+        call read_thermostat(readf)
+        call read_restart(readf)
+        call readf%close()
+
+        ! Modify options based on type of calculation.
+        if (tr1%wf%n_state == 1) then
+            ctrl%sh = 0
+            ctrl%print(10) = .false.
+        end if
+        if (ctrl%print(10)) ctrl%oscill = .true.
+        select case(ctrl%sh)
+        case(0)
+            ctrl%print(6:9) = .false.
+        case(1)
+            ctrl%print(6:9) = .false.
+        case(2)
+            if (ctrl%tdc_type == 2) then
+                ctrl%print(7) = .false.
+            end if
         end select
+        if (ctrl%thermostat /= 0) then
+            ctrl%max_tot_en_change = huge(ctrl%max_tot_en_change)
+            ctrl%max_tot_en_change_step = huge(ctrl%max_tot_en_change_step)
+        end if
+
+        ! Allocate all arrays of size tr1%wf%n_state.
+        if (.not. ctrl%restart) then
+            tr1%wf%need_gradient = .false.
+            tr1%wf%need_gradient(tr1%wf%active_state) = .true.
+        !    if (ctrl%oscill) allocate(tr1%qo(tr1%max_nstate - 1))
+            select case(ctrl%sh)
+            case(1)
+                allocate(tr1%gap_2deriv(3, tr1%wf%n_state), source=0.0_dp)
+            case(2, 3, 4)
+                tr1%wf%coeff(tr1%wf%active_state) = cmplx((1.0_dp, 0.0_dp), kind = dp)
+                select case (ctrl%tdc_type)
+                case(1)
+                    allocate(tr1%wf%overlap(tr1%wf%n_state_group))
+                    do i = 1, tr1%wf%n_state_group
+                        allocate(tr1%wf%overlap(i)%c(tr1%wf%n_state_per_group(i), tr1%wf%n_state_per_group(i)))
+                    end do
+                case(2)
+                    do i = 1, tr1%wf%n_state
+                        do j = 1, tr1%wf%n_state
+                            if (i == j) cycle
+                            if (tr1%wf%qm_state(i)%multiplicity /= tr1%wf%qm_state(j)%multiplicity) cycle
+                            tr1%wf%need_nadv(i, j) = .true.
+                        end do
+                    end do
+                case(3)
+                    allocate(tr1%wf%overlap(2*tr1%wf%n_state_group))
+                    do i = 1, tr1%wf%n_state_group
+                        allocate(tr1%wf%overlap(2*i-1)%c(tr1%wf%n_state_per_group(i), tr1%wf%n_state_per_group(i)))
+                        allocate(tr1%wf%overlap(2*i)%c(tr1%wf%n_state_per_group(i), tr1%wf%n_state_per_group(i)))
+                    end do
+                end select
+                if (ctrl%sh == 4) then
+                    do i = 1, tr1%wf%n_state
+                        allocate(tr1%wf%qm_state(i)%soc(tr1%wf%n_state), source=0.0_dp)
+                    end do
+                end if
+                ! if (ctrl%print(8) .and. (.not. allocated(tr1%adt))) then
+                !     allocate(tr1%adt(tr1%max_nstate(), tr1%max_nstate()))
+                ! end if
+            end select
+        end if
 
         ! Reorient the molecule based on orientlvl
         select case(ctrl%orientlvl)
@@ -227,7 +311,6 @@ contains
             call set_geom_center_of_mass(tr1%mass, tr1%geom)
             call project_translation_rotation_from_velocity(tr1%mass, tr1%geom, tr1%velo)
         end select
-
 
         ! Read list of partial charges.
         if (ctrl%pcharge) then
@@ -266,116 +349,6 @@ contains
             end do
         end if
     end subroutine read_input
-
-
-    !----------------------------------------------------------------------------------------------
-    ! SUBROUTINE: read_main
-    !
-    ! DESCRIPTION:
-    !> @brief Read the main program control variables.
-    !> @details
-    !! See manual for details concerning the input.
-    !----------------------------------------------------------------------------------------------
-    subroutine read_main()
-        use matrix_mod, only : unit_mat
-        logical :: check
-        logical :: buffer
-        type(reader) :: readf
-        integer, allocatable :: uncouple_states(:) !< States for which no couplings are calculated.        
-        integer, allocatable :: spinst(:) !< Multiplicity of states calculated
-        integer :: i
-        buffer = .false.
-
-        inquire(file=maininp, exist=check)
-        if (.not. check) then
-            write(stderr,*) 'Error in Input module, read_main subroutine.'
-            write(stderr,*) ' Main input file (', trim(maininp),') not found.'
-            stop
-        end if
-
-        call readf%open(maininp, comment='#')
-        ! Mandatory keywords are read first:
-        call read_method(readf)
-        call read_system(readf)
-
-        ! Followed by optional keywords.
-        call read_dynamics(readf)
-        call read_output(readf)
-        call read_surfhop(readf, uncouple_states,spinst)
-        call read_mm(readf)
-        call read_constraints(readf, tol_cns)
-        call read_thermostat(readf)
-        call read_restart(readf)
-        call readf%close()
-
-        ! Modify options based on type of calculation.
-        if (tr1%max_nstate == 1) then
-            ctrl%sh = 0
-            ctrl%print(10) = .false.
-        end if
-        if (ctrl%print(10)) ctrl%oscill = .true.
-        select case(ctrl%sh)
-        case(0)
-            ctrl%print(6:9) = .false.
-        case(1)
-            ctrl%print(6:9) = .false.
-        case(2)
-            if (ctrl%tdc_type == 2) then
-                ctrl%print(7) = .false.
-            end if
-        end select
-        if (ctrl%thermostat /= 0) then
-            ctrl%max_tot_en_change = huge(ctrl%max_tot_en_change)
-            ctrl%max_tot_en_change_step = huge(ctrl%max_tot_en_change_step)
-        end if
-
-        ! Allocate all arrays of size tr1%max_nstate.
-        if (.not. ctrl%restart) then
-            allocate(tr1%qe(tr1%max_nstate))
-            if (ctrl%oscill) allocate(tr1%qo(tr1%max_nstate - 1))
-            select case(ctrl%sh)
-            case(1)
-                allocate(tr1%prob(tr1%max_nstate), source=0.0_dp)
-                allocate(tr1%gap_2deriv(3, tr1%max_nstate), source=0.0_dp)
-            case(2, 3, 4)
-                allocate(tr1%cwf(tr1%max_nstate))
-                allocate(tr1%prob(tr1%max_nstate), source=0.0_dp)
-                if (ctrl%phaselvl > 0) allocate(tr1%phase(tr1%max_nstate), source=1)
-                select case (ctrl%tdc_type)
-                case(1)
-                    allocate(tr1%olap(tr1%max_nstate, tr1%max_nstate))
-                    tr1%olap = unit_mat(tr1%max_nstate)
-                case(2)
-                    ! Nonadiabatic coupling vecotrs are allocated after reading number of atoms.
-                case(3)
-                    allocate(tr1%olap(tr1%max_nstate, tr1%max_nstate))
-                    allocate(tr1%adt(tr1%max_nstate, tr1%max_nstate))
-                    tr1%olap = unit_mat(tr1%max_nstate)
-                    tr1%adt = unit_mat(tr1%max_nstate)
-                end select
-                tr1%cwf = cmplx((0.0_dp, 0.0_dp), kind = dp)
-                tr1%cwf(tr1%cstate) = cmplx((1.0_dp, 0.0_dp), kind = dp)
-                if (ctrl%print(8) .and. (.not. allocated(tr1%adt))) then
-                    allocate(tr1%adt(tr1%max_nstate, tr1%max_nstate))
-                end if
-            end select
-        end if
-        select case(ctrl%sh)
-        case(2, 3, 4)
-            allocate(ctrl%couple(tr1%max_nstate), source=.true.)
-            if (allocated(uncouple_states)) then
-                do i = 1, size(uncouple_states, 1)
-                    if (uncouple_states(i) > tr1%max_nstate) exit
-                    ctrl%couple(uncouple_states(i)) = .false.
-                end do                
-            end if
-            if(allocated(spinst))then !ctrl%sh=4               
-               allocate(tr1%spinv(size(spinst,1)))              
-               tr1%spinv(:)=spinst(:)
-               allocate(tr1%sov( size(spinst,1),size(spinst,1) ) )
-            endif
-        end select
-    end subroutine read_main
 
 
     !----------------------------------------------------------------------------------------------
@@ -458,9 +431,6 @@ contains
             allocate(tr1%mind(tr1%mnatom))
         else
             ctrl%mm = .false.
-        end if
-        if ((ctrl%tdc_type == 2) .or. (ctrl%vrescale == 3)) then
-            allocate(tr1%nadv(tr1%ndim*tr1%qnatom, tr1%max_nstate, tr1%max_nstate))
         end if
 
         ! Second run through the file to read the atom, mass, position and index of each atom.
@@ -642,6 +612,13 @@ contains
     !----------------------------------------------------------------------------------------------
     subroutine read_system(readf)
         type(reader), intent(inout) :: readf
+        integer :: i
+        integer, parameter :: max_state_groups = 10
+        integer :: n_state_group = 1
+        integer :: max_nstate = 0
+        integer :: min_nstate = 0
+        integer :: nstate(max_state_groups) = 0
+        integer :: multiplicity(max_state_groups) = 1
 
         call readf%rewind()
         call readf%go_to_keyword('$system')
@@ -650,26 +627,32 @@ contains
             if (index(readf%line, '$') == 1) exit
             call readf%parseline(' =')
             select case(readf%args(1)%s)
+            case('n_state_group')
+                read(readf%args(2)%s, *) n_state_group     
             case('nstate')
-                read(readf%args(2)%s, *) tr1%nstate
+                do i = 1, readf%narg - 1
+                    read(readf%args(i+1)%s, *) nstate(i)
+                end do
             case('variable_nstate')
                 read(readf%args(2)%s, *) ctrl%variable_nstate
             case('max_nstate')
-                read(readf%args(2)%s, *) tr1%max_nstate
+                read(readf%args(2)%s, *) max_nstate
             case('min_nstate')
-                read(readf%args(2)%s, *) tr1%min_nstate
+                read(readf%args(2)%s, *) min_nstate
+            case('multiplicity')
+                do i = 1, readf%narg - 1
+                    read(readf%args(i+1)%s, *) multiplicity(i)
+                end do
             case('istate')
-                read(readf%args(2)%s, *) tr1%cstate
+                read(readf%args(2)%s, *) tr1%wf%active_state
             case('geometry')
                 geominp = readf%args(2)%s
             case('velocity')
                 veloinp = readf%args(2)%s
                 if (veloinp == 'maxwell-boltzmann' .or. veloinp == 'mb') then
                     if (readf%narg < 3) then
-                        write(stderr, *) 'Error in Input module, read_system subroutine.'
-                        write(stderr, '(2x,a,a)') 'Maxwell-Boltzmann velocities requested, ', &
-                                                  'but no temperature given'
-                        call abort()
+                        call errstop('read_system', &
+                        &          'Maxwell-Boltzmann velocities requested, but no temperature given.')
                     end if
                     read(readf%args(3)%s, *) mb_temperature
                 end if
@@ -682,38 +665,7 @@ contains
             end select
         end do
 
-        select case (ctrl%variable_nstate)
-        case(0)
-            if (tr1%nstate == 0) then
-                write(stderr, *) 'Error in Input module, read_system subroutine.'
-                write(stderr, *) '  Number of states not defined.'
-                stop
-            end if
-            if ((tr1%max_nstate /= 0) .or. (tr1%min_nstate /= 0)) then
-                write(stderr, *) 'Warning in Input module, read_system subroutine.'
-                write(stderr, *) '  Options max_nstate and min_nstate are ignored when '//&
-                                'variable_nstate = 0.'
-            end if
-            tr1%max_nstate = tr1%nstate
-            tr1%min_nstate = tr1%nstate
-        case(1)
-            if ((tr1%max_nstate == 0) .or. (tr1%min_nstate == 0)) then
-                write(stderr, *) 'Error in Input module, read_system subroutine.'
-                write(stderr, *) '  Maximum/minimum number of states not defined.'
-                stop
-            end if
-            if (tr1%nstate == 0) then
-                write(stderr, *) 'Warning in Input module, read_system subroutine.'
-                write(stderr, *) '  Option nstate is ignored when variable_nstate = 1'
-            end if
-            tr1%nstate = tr1%max_nstate
-        end select
-        if (tr1%cstate == 0) then
-            write(stderr, *) 'Warning in Input module, read_system subroutine.'
-            write(stderr, '(3x,a,i0,a)') 'Initial state not defined, setting initial state = ', &
-            &                            tr1%nstate, '.'
-            tr1%cstate = tr1%nstate
-        end if
+        call tr1%wf%initialize(n_state_group, nstate, multiplicity, tr1%wf%active_state)
 
     end subroutine read_system
 
@@ -868,13 +820,9 @@ contains
     !> @details
     !! See manual for details concerning the input.
     !----------------------------------------------------------------------------------------------
-    subroutine read_surfhop(readf, uncouple_states, spinst)
+    subroutine read_surfhop(readf)
         type(reader), intent(inout) :: readf
-        integer, allocatable, intent(out) :: uncouple_states(:)           
-        integer, allocatable, intent(out) :: spinst(:)   
-        integer, allocatable :: statemult(:)
         logical :: check
-        integer :: i,j,k,s,ss
         
         call readf%rewind()
         call readf%go_to_keyword('$surfhop', found=check)
@@ -885,7 +833,6 @@ contains
             select case(readf%args(2)%s)
             case('off')
                 ctrl%sh = 0
-                ctrl%tdc_type = 0
                 return
             end select
         end if
@@ -897,7 +844,6 @@ contains
             select case(readf%args(1)%s)
             case('lz')
                 ctrl%sh = 1
-                ctrl%tdc_type = 0
             case('fssh')
                 ctrl%sh = 2
                 if (readf%narg > 1) then
@@ -924,94 +870,15 @@ contains
                     write(stderr, '(2x,a)') readf%line
                     stop
                 end select
-            case('overlap')
+            case('overlap', 'overlap_hst', 'overlap_npi', 'overlap_logu')
                 ctrl%tdc_type = 1
-                if (readf%narg > 1) then
-                    select case(readf%args(2)%s)
-                    case('constant')
-                        ctrl%tdc_interpolate = 1
-                    case('linear')
-                        ctrl%tdc_interpolate = 2
-                    case('npi')
-                        ctrl%tdc_interpolate = 4
-                    end select
-                end if
             case('nadvec')
                 ctrl%tdc_type = 2
-                if (readf%narg > 1) then
-                    select case(readf%args(2)%s)
-                    case('constant')
-                        ctrl%tdc_interpolate = 1
-                    case('linear')
-                        ctrl%tdc_interpolate = 2
-                    end select
-                end if
-            case('sovec')
-                ctrl%tdc_type = 2                
-                if (readf%narg > 1) then                    
-                    select case(readf%args(2)%s)                    
-                    case('constant')
-                        ctrl%tdc_interpolate = 1
-                    case('linear')
-                        ctrl%tdc_interpolate = 2
-                    end select
-                end if    
-            case('state_mult') !Reading multiplicity states
-               if (readf%narg > 1) then                   
-                   call read_index_list_unsort(readf%args(2)%s, statemult)
-                   s=0
-                   do i=1,size(statemult)
-                      if(statemult(i).ne.0)s=s+statemult(i)
-                   enddo
-                   allocate(spinst(s))
-                   s=1
-                   do i=1,size(statemult)
-                      if(statemult(i).ne.0)then
-                         do j=1,statemult(i)
-                            spinst(s)=i
-                            s=s+1
-                         enddo
-                      endif                      
-                   enddo                 
-               endif 
-            case('socdegen')
-               if(.not.allocated(spinst)) then
-                  write(stderr, *)'Multiplicity of states has to be given in surfhop section using state_mult=S,D,T,..'
-                  stop
-               endif
-            case('nosocdegen', 'no_socdegen') !Option for non-degenerate spin-orbit states
-               if(.not.allocated(spinst)) then
-                  write(stderr, *)'Multiplicity of states has to be given in surfhop section using state_mult=S,D,T,..'
-                  stop
-               else
-                  deallocate(spinst)
-                  s=0
-                  do i=1,size(statemult,1)                      
-                      if(statemult(i).ne.0)then
-                         do j=1,statemult(i)
-                            do k=1, i
-                               s=s+1
-                            enddo
-                         enddo
-                      endif
-                  enddo
-                
-                  allocate(spinst(s))
-                  s=0
-                  do i=1,size(statemult,1)
-                     if(statemult(i).ne.0)then
-                        do j=1,statemult(i)
-                           do k=1,i
-                              s=s+1 
-                              spinst(s)=i
-                            enddo
-                        enddo
-                     endif                      
-                   enddo                 
-                endif
+            case('soc', 'soc_degen')
+                ctrl%sh = 4
             case('socbas') ! Spin-orbit basis representation
                ctrl%socbas=.true.
-            case('adt')
+            case('adt', 'overlap_adt')
                 ctrl%tdc_type = 3
             case('energy')
                 select case(readf%args(2)%s)
@@ -1062,9 +929,6 @@ contains
             case('stop_s0s1_ci')
                 read(readf%args(2)%s, *) ctrl%stop_s0s1_ci
                 ctrl%stop_s0s1_ci = ctrl%stop_s0s1_ci / eh_eV
-            case('uncouple_state')
-                call compact(readf%line)
-                call read_index_list(readf%line(15:), uncouple_states)
             case default
                 write(stderr, *) 'Warning in Input module, read_surfhop subroutine.'
                 write(stderr, *) '  Skipping line with unrecognized keyword:'

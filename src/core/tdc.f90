@@ -84,38 +84,24 @@ contains
     !! The coupling between states i and j is calculated as a scalar product between the
     !! nonadiabatic coupling vector and the velocity vector.
     !----------------------------------------------------------------------------------------------
-    subroutine nadvec2tdc(nadvec, velo, cmat)
+    subroutine nadvec2tdc(nadvec, velo, tdc)
         real(dp), intent(in) :: nadvec(:, :, :) !< Nonadiabatic coupling vectors.
         real(dp), intent(in) :: velo(:, :) !< Velocities.
-        real(dp), intent(out) :: cmat(:, :) !< Time-derivative couplings.
-        integer :: nstate
-        integer :: natom
-        integer :: ndim
+        real(dp), intent(out) :: tdc(:, :) !< Time-derivative couplings.
+        real(dp), allocatable :: velo_vec(:)
         integer :: i
         integer :: j
-        integer :: k
-        integer :: d
-        integer :: c
 
-        ndim = size(velo, 1)
-        natom = size(velo, 2)
-        nstate = size(cmat,1)
-
-        cmat = 0.0_dp
-        do i = 1, nstate
-        do j = 1, nstate
-            c = 0
-            do k = 1, natom
-                do d = 1, ndim
-                    c = c + 1
-                    cmat(i, j) = cmat(i, j) + nadvec(c, i, j) * velo(d, k)
-                end do
+        !allocate(tdc(size(nadvec, 2), size(nadvec, 3)))
+        velo_vec = reshape(velo, [size(velo, 1)*size(velo, 2)])
+        do i = 1, size(nadvec, 2)
+            do j = 1, size(nadvec, 3)
+                tdc(i, j) = dot_product(nadvec(:, i, j), velo_vec)
             end do
-        end do
         end do
     end subroutine nadvec2tdc
 
-!----------------------------------------------------------------------------------------------
+    !----------------------------------------------------------------------------------------------
     ! SUBROUTINE: SOVec2TDC
     !
     ! DESCRIPTION:

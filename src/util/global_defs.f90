@@ -41,15 +41,6 @@ module global_defs
     real(dp), parameter :: pio2 = pi / num2
 
 
- !  !----------------------------------------------------------------------------------------------
- !  ! TYPE: IVec
- !  !> @brief Array of integer vectors of varying dimensions.
- !  !----------------------------------------------------------------------------------------------
- !  type ivec 
- !     integer, allocatable :: c(:) !< Coefficents of the vectors.
- !  end type ivec
-
-
     !----------------------------------------------------------------------------------------------
     ! TYPE: IMat
     !> @brief Array of integer matrices of varying dimensions.
@@ -66,15 +57,6 @@ module global_defs
     type rvec 
        real(dp), allocatable :: c(:) !< Coefficents of the vectors.
     end type rvec
-
-
-    !----------------------------------------------------------------------------------------------
-    ! TYPE: RMat
-    !> @brief Array of real matrices of varying dimensions.
-    !----------------------------------------------------------------------------------------------
-    type rmat
-        real(dp), allocatable :: c(:, :) !< Coefficients of the matrices.
-    end type rmat
 
 
     !----------------------------------------------------------------------------------------------

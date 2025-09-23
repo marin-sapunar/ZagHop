@@ -151,7 +151,7 @@ contains
 
 
     subroutine berendsen_thermostat(target_t, tau_t, dt, mass, vel)
-        use system_var, only : ekin
+        use system_type_mod, only : ekin
         real(dp), intent(in) :: tau_t
         real(dp), intent(in) :: target_t
         real(dp), intent(in) :: dt

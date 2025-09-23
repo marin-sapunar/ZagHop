@@ -28,15 +28,15 @@ contains
 #ifdef QUANTICS
         use shzagreb_inter, only : shzagreb_run
 #endif
-        use system_var, only : trajtype
+        use system_type_mod, only : system_type
         use matrix_mod, only : unit_mat
         use model_mod, only : qmodel
         use json_module, only : json_core, json_file, json_value
-        type(trajtype), intent(inout) :: t
-        logical :: hop
-        integer :: cunit, i, j, d1, d2
+        type(system_type), intent(inout) :: t
+        logical, intent(in) :: hop
+        integer :: cunit, i, j, d1, d2, d3, d4
         logical :: check(5)
-        character(len=200) :: yamfmt
+        character(len=200) :: json_str
         real(dp), allocatable :: rn1(:)
         real(dp), allocatable :: rn2(:, :)
         real(dp), allocatable :: rn3(:, :, :)
@@ -44,7 +44,33 @@ contains
         type(json_file) :: read_json
         type(json_value), pointer :: base, p_top, p_array_i, p_array_j
         type(json_value), pointer :: p_array_0, p_geom_entry
+        real(dp), allocatable :: wrk_en(:)
+        real(dp), allocatable :: wrk_nadv(:, :, :)
+        real(dp), allocatable :: wrk_soc(:, :)
+        real(dp), allocatable :: wrk_adt(:, :)
+        integer, allocatable :: spinv(:)
         logical :: found
+
+        !> @todo Move this allocation check to wf object?
+        do i = 1, t%wf%n_state
+            if (t%wf%need_gradient(i)) then
+                if (.not. allocated(t%wf%qm_state(i)%gradient)) then
+                    allocate(t%wf%qm_state(i)%gradient(t%ndim, t%qnatom))
+                end if
+            end if
+            do j = 1, t%wf%n_state
+                if (t%wf%need_nadv(i, j)) then
+                    if (.not. allocated(t%wf%qm_state(i)%nadv(j)%c)) then
+                        allocate(t%wf%qm_state(i)%nadv(j)%c(t%ndim * t%qnatom))
+                    end if
+                end if
+            end do
+            if (t%wf%need_soc(i)) then
+                if (.not. allocated(t%wf%qm_state(i)%soc)) then
+                    allocate(t%wf%qm_state(i)%soc(t%wf%n_state))
+                end if
+            end if
+        end do
 
         select case (ctrl%qlib)
         case(0)
@@ -77,20 +103,22 @@ contains
 
             call json%create_array(p_top, "states")
             call json%add(base, p_top)
-            !@todo Loop over sets of states if calculated separately
-            call json%create_object(p_array_i, "")
-            call json%add(p_top, p_array_i)
-            call json%add(p_array_i, "system", 1)
-            call json%add(p_array_i, "nstate", t%nstate)
-            call json%add(p_array_i, "energy", .true.)
-            call json%add(p_array_i, "oscillator_strength", ctrl%oscill)
-            ! Having an array for the gradient field allows requesting
-            ! multiple gradients at the same time.
-            call json%create_array(p_array_j, "gradient")
-            call json%add(p_array_i, p_array_j)
-            call json%add(p_array_j, "", t%cstate)
-            ! done
-
+            do i = 1, t%wf%n_state_group
+                ! Create entry for each state group.
+                call json%create_object(p_array_i, "")
+                call json%add(p_top, p_array_i)
+                call json%add(p_array_i, "system", 1)
+                call json%add(p_array_i, "nstate", t%wf%n_state_per_group(i))
+                call json%add(p_array_i, "multiplicity", t%wf%qm_state(t%wf%index(i, 1))%multiplicity)
+                call json%add(p_array_i, "energy", .true.)
+                call json%add(p_array_i, "oscillator_strength", ctrl%oscill)
+                call json%create_array(p_array_j, "gradient")
+                call json%add(p_array_i, p_array_j)
+                do j = 1, t%wf%n_state_per_group(i)
+                    if (t%wf%index(i, j) == t%wf%active_state) call json%add(p_array_j, "", j)
+                end do
+                !> @todo Add requests for NACs and SOCs if needed.
+            end do
             call json%print(base, "qm.json")
             call json%destroy(base)
 
@@ -109,83 +137,121 @@ contains
             ! Check if energy and gradient files were created.
             inquire(file='qm_out.json', exist=check(1))
             if (.not. check(1)) then
-                write(stderr, *) 'Error, qm_out.json file not found after QM calculation.'
-                stop
+                call errstop("run_qm", "File qm_out.json not found after QM calculation.", 1)
             end if
 
             call read_json%load_file("qm_out.json")
-            call read_json%get("states(1).energy", t%qe, found)
-            if (.not. found) then
-                write(stderr, *) "Energy not found in QM output."
-            end if
-            call json_get_2d(read_json, "states(1).gradient(1)", t%grad)
-            if (.not. found) then
-                write(stderr, *) "Gradient not found in QM output."
-            end if
-            if (ctrl%oscill) then
-                call read_json%get("states(1).oscillator_strength", t%qo)
+            do i = 1, t%wf%n_state
+                write(json_str, '(a,i0,a,i0,a)') "states(", t%wf%qm_state(i)%group, ").energy(", &
+                &                                t%wf%qm_state(i)%group_state, ")"
+
+                call read_json%get(json_str, t%wf%qm_state(i)%energy, found)
                 if (.not. found) then
-                    write(stderr, *) "Oscillator strength not found in QM output."
+                    call errstop("run_qm", "Energy not found in QM output.", i)
                 end if
-
+            end do
+            call json_get_2d(read_json, "states(1).gradient(1)", t%wf%qm_state(t%wf%active_state)%gradient)
+            if (ctrl%oscill) then
+            !    call read_json%get("states(1).oscillator_strength", t%qo)
+                if (.not. found) then
+                    call errstop("run_qm", "Oscillator strength not found in QM output.", 1)
+                end if
             end if
 
-            if ((ctrl%tdc_type == 1) .and. (t%step /= 0)) then
-                call system(ctrl%oprog)
-                t%olap = unit_mat(t%max_nstate)
-                open(newunit=cunit, file='qm_olap', action='read')
-                read(cunit, *) d1, d2
-                do i = 1, min(d1, d2)
-                    read(cunit, *) t%olap(i, 1:min(d1, d2))
-                end do
-                close(cunit)
-
-                do i = 1, t%max_nstate
-                    if (.not. ctrl%couple(i)) then
-                        t%olap(i, :) = 0.0_dp
-                        t%olap(:, i) = 0.0_dp
-                    end if
-                end do
-            else if (ctrl%tdc_type == 2) then
-                open(newunit=cunit, file='qm_nadvec', action='read')
-                do i = 1, t%max_nstate
-                    do j = 1, t%max_nstate
-                        read(cunit, *) t%nadv(:, i, j)
-                    end do
-                end do
-                close(cunit)
-            end if
+            ! @todo these loops are not functional for now since the files can have only
+            ! one set of couplings. Need to add this information to the json input and output.
+            ! do i = 1, t%wf%n_state_group
+            !     do j = 1, t%wf%n_state_group
+            !         if ((t%couplings(i, j) == "overlap") .and. t%step /= 0) then
+            !             call system(ctrl%oprog)
+            !             open(newunit=cunit, file='qm_olap', action='read')
+            !             read(cunit, *) d1, d2
+            !             allocate(t%wf%overlap(1)%c(d1, d2))
+            !             do i = 1, d1
+            !                 read(cunit, *) t%wf%overlap(1)%c(i, :)
+            !             end do
+            !             close(cunit)
+            !             ! @todo Check dimensions for variable_nstate runs, previous versions
+            !             ! had min(d1, d2) for the loop and set the rest to a unit matrix.
+            !         else if (t%couplings(i, j) == "nadvec") then
+            !             open(newunit=cunit, file='qm_nadvec', action='read')
+            !             do i = 1, t%max_nstate
+            !                 do j = 1, t%max_nstate
+            !                     read(cunit, *) t%couplings(i, j)%term(:, i, j)
+            !                 end do
+            !             end do
+            !             close(cunit)
+            !         end if
+            !     end do
+            ! end do
         case(1)
 #ifdef QUANTICS
-            ! Assume all atoms are QM so no temporary arrays need to be created.
-            call shzagreb_run(t%step, t%geom, t%cstate, t%qe, t%grad, t%nadv, t%sov,t%spinv,ctrl%socbas, t%adt)
+            !> @todo This is a workaround which avoids changing quantics_inter.f90 for now,
+            ! but the interface should be modified so temporary arrays are not required.
+            d1 = t%wf%n_state
+            allocate(wrk_en(d1))
+            allocate(wrk_nadv(t%natom * t%ndim, d1, d1))
+            allocate(wrk_soc(d1, d1))
+            spinv = t%wf%qm_state(:)%multiplicity
+            call shzagreb_run(t%step, t%geom, t%wf%active_state, wrk_en, t%wf%qm_state(t%wf%active_state)%gradient, wrk_nadv, &
+            &                 wrk_soc, spinv, ctrl%socbas, t%adt)
+            t%wf%qm_state(:)%energy = wrk_en
+            do i = 1, t%wf%n_state
+                do j = 1, t%wf%n_state
+                    if (i == j) cycle
+                    if (t%wf%qm_state(i)%group == t%wf%qm_state(j)%group) then
+                        d1 = d1 + 1
+                        t%wf%qm_state(i)%nadv(j)%c = wrk_nadv(:, i, j)
+                    end if
+                    if (t%wf%qm_state(i)%multiplicity /= t%wf%qm_state(j)%multiplicity) then
+                        t%wf%qm_state(i)%soc(j) = wrk_soc(i, j)
+                    end if
+                end do
+            end do
 #else
-            write(stderr, *) 'Error in run_qm. Code not compiled with quantics interface.'         
-            stop
+            call errstop("run_qm", "Code not compiled with quantics interface.", 1)
 #endif
         case(2)
-            call qmodel%eval(t%geom, t%cstate, t%qe, t%grad, t%nadv, t%adt)
+            !> @todo This is a workaround which avoids changing qmodel%eval for now,
+            ! but the interface should be modified so temporary arrays are not required.
+            wrk_en = t%wf%qm_state(:)%energy
+            if (ctrl%tdc_type == 2 .or. ctrl%vrescale == 3) then
+                allocate(wrk_nadv(t%natom * t%ndim, t%wf%n_state, t%wf%n_state))
+            end if
+            if (ctrl%tdc_type == 3) then
+                allocate(wrk_adt(t%wf%n_state, t%wf%n_state))
+            end if
+            if (.not. allocated(t%wf%qm_state(t%wf%active_state)%gradient)) then
+                allocate(t%wf%qm_state(t%wf%active_state)%gradient(t%ndim, t%qnatom))
+            end if
+            call qmodel%eval(t%geom, t%wf%active_state, wrk_en, t%wf%qm_state(t%wf%active_state)%gradient, &
+            &                wrk_nadv, wrk_adt)
+            t%wf%qm_state(:)%energy = wrk_en
+            if ((ctrl%tdc_type == 2 ) .or. (ctrl%vrescale == 3)) then
+                do i = 1, t%wf%n_state
+                    do j = 1, t%wf%n_state
+                        if (.not. t%wf%need_nadv(i, j)) cycle
+                        t%wf%qm_state(i)%nadv(j)%c = wrk_nadv(:, i, j)
+                    end do
+                end do
+            end if
+            if (ctrl%tdc_type == 3) then
+                t%wf%overlap(2)%c = wrk_adt
+            end if
         case default
-            write(stderr, *) 'Error in run_qm. Unrecognized QM interface.'
-            stop
+            call errstop("run_qm", "Unrecognized QM interface.", 1)
         end select
+
+        do i = 1, t%qnatom
+            t%grad(:, t%qind(i)) = t%wf%qm_state(t%wf%active_state)%gradient(:, i)
+        end do
 
         ! Add random noise to evaluated values if requested.
         if (ctrl%noise > 0.0_dp) then
-            allocate(rn1(t%nstate))
-            allocate(rn2(t%ndim, t%natom))
-            call ctrl%rng%uniform(rn1)
-            call ctrl%rng%uniform(rn2)
-            rn1 = (rn1 - 0.5_dp) * ctrl%noise
-            rn2 = (rn2 - 0.5_dp) * ctrl%noise
-            t%qe = t%qe + rn1
-            t%grad = t%grad + rn2
-            if (allocated(t%nadv)) then
-                allocate(rn3(t%natom * t%ndim, t%nstate, t%nstate))
-                call ctrl%rng%uniform(rn3)
-                rn3 = (rn3 - 0.5_dp) * ctrl%noise
-                t%nadv = t%nadv + rn3
-            end if
+            allocate(wrk_en(t%wf%n_state))
+            call ctrl%rng%uniform(wrk_en)
+            wrk_en = (wrk_en - 0.5_dp) * ctrl%noise
+            t%wf%qm_state(:)%energy = t%wf%qm_state(:)%energy + wrk_en
         end if
     end subroutine run_qm
 
@@ -194,8 +260,8 @@ contains
     ! SUBROUTINE: Interface_MMRun
     !----------------------------------------------------------------------------------------------
     subroutine run_mm(t)
-        use system_var, only : trajtype
-        type(trajtype), intent(inout) :: t
+        use system_type_mod, only : system_type
+        type(system_type), intent(inout) :: t
         integer :: i, cunit
         logical :: check1, check2, check3
 
