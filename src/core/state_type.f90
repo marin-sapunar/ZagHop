@@ -26,7 +26,6 @@ module state_mod
         integer :: i_state = 0 !< Index of this state in the overall state list.
         integer :: n_state = 0 !< Total number of states in the system.
         integer :: multiplicity = 1
-        real(dp) :: energy
         logical :: need_gradient = .false.
         real(dp), allocatable :: gradient(:, :) !< Gradient of the state.
         type(rvec), allocatable :: nadv(:) !< Non-adiabatic vectors involving this state.

@@ -14,13 +14,13 @@ module sh_fssh_mod
     implicit none
 
     private
-    public :: sh_adiabatic!, sh_sosh
+    public :: sh_adiabatic
     
 
 contains
 
     !----------------------------------------------------------------------------------------------
-    ! SUBROUTINE: sh_fssh
+    ! SUBROUTINE: sh_adiabatic
     !
     ! DESCRIPTION:
     !> @brief Tully's Fewest Switches Surface Hopping Method.
@@ -113,7 +113,7 @@ contains
 
         do i = 1, nstep
             ! Get energies and TDCs for current substep.
-            call sh_interpolate_energy(interpolation_en, t1, t2, tt, wf_t1%qm_state(:)%energy, wf_t2%qm_state(:)%energy, en_t)
+            call sh_interpolate_energy(interpolation_en, t1, t2, tt, wf_t1%en, wf_t2%en, en_t)
             call sh_interpolate_tdc(interpolation_tdc, t1, t2, tt, tdc_t1, tdc_t2, tdc_t)
             odecmat = cmplx(0.0_dp, -diagonal_mat(en_t), kind=dp) - tdc_t
             if (any(wf_t2%need_soc)) then

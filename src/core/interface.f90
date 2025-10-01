@@ -34,16 +34,13 @@ contains
         use json_module, only : json_core, json_file, json_value
         type(system_type), intent(inout) :: t
         logical, intent(in) :: hop
-        integer :: cunit, i, j, d1, d2, d3, d4
+        integer :: cunit, i, j
         logical :: check(5)
         character(len=200) :: json_str
-        real(dp), allocatable :: rn1(:)
-        real(dp), allocatable :: rn2(:, :)
-        real(dp), allocatable :: rn3(:, :, :)
         type(json_core) :: json
         type(json_file) :: read_json
         type(json_value), pointer :: base, p_top, p_array_i, p_array_j
-        type(json_value), pointer :: p_array_0, p_geom_entry
+      !  type(json_value), pointer :: p_array_0, p_geom_entry
         real(dp), allocatable :: wrk_en(:)
         real(dp), allocatable :: wrk_nadv(:, :, :)
         real(dp), allocatable :: wrk_soc(:, :)
@@ -145,7 +142,7 @@ contains
                 write(json_str, '(a,i0,a,i0,a)') "states(", t%wf%qm_state(i)%group, ").energy(", &
                 &                                t%wf%qm_state(i)%group_state, ")"
 
-                call read_json%get(json_str, t%wf%qm_state(i)%energy, found)
+                call read_json%get(json_str, t%wf%en(i), found)
                 if (.not. found) then
                     call errstop("run_qm", "Energy not found in QM output.", i)
                 end if
@@ -188,33 +185,6 @@ contains
 #ifdef QUANTICS
             !> @todo This is a workaround which avoids changing quantics_inter.f90 for now,
             ! but the interface should be modified so temporary arrays are not required.
-            d1 = t%wf%n_state
-            allocate(wrk_en(d1))
-            allocate(wrk_nadv(t%natom * t%ndim, d1, d1))
-            allocate(wrk_soc(d1, d1))
-            spinv = t%wf%qm_state(:)%multiplicity
-            call shzagreb_run(t%step, t%geom, t%wf%active_state, wrk_en, t%wf%qm_state(t%wf%active_state)%gradient, wrk_nadv, &
-            &                 wrk_soc, spinv, ctrl%socbas, t%adt)
-            t%wf%qm_state(:)%energy = wrk_en
-            do i = 1, t%wf%n_state
-                do j = 1, t%wf%n_state
-                    if (i == j) cycle
-                    if (t%wf%qm_state(i)%group == t%wf%qm_state(j)%group) then
-                        d1 = d1 + 1
-                        t%wf%qm_state(i)%nadv(j)%c = wrk_nadv(:, i, j)
-                    end if
-                    if (t%wf%qm_state(i)%multiplicity /= t%wf%qm_state(j)%multiplicity) then
-                        t%wf%qm_state(i)%soc(j) = wrk_soc(i, j)
-                    end if
-                end do
-            end do
-#else
-            call errstop("run_qm", "Code not compiled with quantics interface.", 1)
-#endif
-        case(2)
-            !> @todo This is a workaround which avoids changing qmodel%eval for now,
-            ! but the interface should be modified so temporary arrays are not required.
-            wrk_en = t%wf%qm_state(:)%energy
             if (ctrl%tdc_type == "nadvec" .or. ctrl%vrescale == 3) then
                 allocate(wrk_nadv(t%natom * t%ndim, t%wf%n_state, t%wf%n_state))
             end if
@@ -224,17 +194,55 @@ contains
             if (.not. allocated(t%wf%qm_state(t%wf%active_state)%gradient)) then
                 allocate(t%wf%qm_state(t%wf%active_state)%gradient(t%ndim, t%qnatom))
             end if
-            call qmodel%eval(t%geom, t%wf%active_state, wrk_en, t%wf%qm_state(t%wf%active_state)%gradient, &
-            &                wrk_nadv, wrk_adt)
-            t%wf%qm_state(:)%energy = wrk_en
-            if ((ctrl%tdc_type == "nadvec") .or. (ctrl%vrescale == 3)) then
-                do i = 1, t%wf%n_state
-                    do j = 1, t%wf%n_state
-                        if (.not. t%wf%need_nadv(i, j)) cycle
-                        t%wf%qm_state(i)%nadv(j)%c = wrk_nadv(:, i, j)
-                    end do
-                end do
+            if (ctrl%soc) then
+                allocate(wrk_soc(t%wf%n_state, t%wf%n_state))
             end if
+            spinv = t%wf%qm_state(:)%multiplicity
+            call shzagreb_run(t%step, t%geom, t%wf%active_state, t%wf%en, t%wf%qm_state(t%wf%active_state)%gradient, wrk_nadv, &
+            &                 wrk_soc, spinv, ctrl%socbas, wrk_adt)
+            write(stderr, *) "QM calculation completed.", t%wf%active_state
+            write(stderr, *) "QM energies:", (t%wf%en(i), i = 1, t%wf%n_state)
+            write(stderr, *) "Active state gradient:", t%wf%qm_state(t%wf%active_state)%gradient
+            do i = 1, t%wf%n_state
+                do j = 1, t%wf%n_state
+                    if (t%wf%need_nadv(i, j)) then
+                        t%wf%qm_state(i)%nadv(j)%c = wrk_nadv(:, i, j)
+                    end if
+                    if (t%wf%need_soc(i, j)) then
+                        t%wf%qm_state(i)%soc(j) = wrk_soc(i, j)
+                    end if
+                end do
+            end do
+            if (ctrl%adt) then
+                t%wf%overlap(2)%c = wrk_adt
+            end if
+#else
+            call errstop("run_qm", "Code not compiled with quantics interface.", 1)
+#endif
+        case(2)
+            !> @todo This is a workaround which avoids changing qmodel%eval for now,
+            ! but the interface should be modified so temporary arrays are not required.
+            if (ctrl%tdc_type == "nadvec" .or. ctrl%vrescale == 3) then
+                allocate(wrk_nadv(t%natom * t%ndim, t%wf%n_state, t%wf%n_state))
+            end if
+            if (ctrl%adt) then
+                allocate(wrk_adt(t%wf%n_state, t%wf%n_state))
+            end if
+            if (.not. allocated(t%wf%qm_state(t%wf%active_state)%gradient)) then
+                allocate(t%wf%qm_state(t%wf%active_state)%gradient(t%ndim, t%qnatom))
+            end if
+            call qmodel%eval(t%geom, t%wf%active_state, t%wf%en, t%wf%qm_state(t%wf%active_state)%gradient, &
+            &                wrk_nadv, wrk_adt)
+            do i = 1, t%wf%n_state
+                do j = 1, t%wf%n_state
+                    if (t%wf%need_nadv(i, j)) then
+                        t%wf%qm_state(i)%nadv(j)%c = wrk_nadv(:, i, j)
+                    end if
+                    if (t%wf%need_soc(i, j)) then
+                        t%wf%qm_state(i)%soc(j) = wrk_soc(i, j)
+                    end if
+                end do
+            end do
             if (ctrl%adt) then
                 t%wf%overlap(2)%c = wrk_adt
             end if
@@ -251,7 +259,7 @@ contains
             allocate(wrk_en(t%wf%n_state))
             call ctrl%rng%uniform(wrk_en)
             wrk_en = (wrk_en - 0.5_dp) * ctrl%noise
-            t%wf%qm_state(:)%energy = t%wf%qm_state(:)%energy + wrk_en
+            t%wf%en = t%wf%en + wrk_en
         end if
     end subroutine run_qm
 
@@ -289,7 +297,7 @@ contains
         end if
 
         open(newunit=cunit, file='mm_energy', action='read')
-        read(cunit, *) t%me
+        read(cunit, *) t%men
         close(cunit)
 
         open(newunit=cunit, file='mm_grad', action='read')
@@ -302,7 +310,7 @@ contains
         read(cunit, *) t%pbcbox
         close(cunit)
 
-        t%me(1) = t%me(1) - eelp(t%geom(:, t%qind), t%geom(:, t%mind), t%chrg(t%qind),             &
+        t%men(1) = t%men(1) - eelp(t%geom(:, t%qind), t%geom(:, t%mind), t%chrg(t%qind),             &
         &         t%chrg(t%mind), ctrl%mmcut)
     end subroutine run_mm
 

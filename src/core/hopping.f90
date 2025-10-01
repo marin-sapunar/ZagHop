@@ -118,7 +118,6 @@ contains
         real(dp) :: m(size(velo, 1), size(amask)) !< Temporary mass array.
         real(dp) :: rescale_dir(size(velo, 1), size(amask)) !< Direction along which to rescale.
         real(dp) :: nadv(size(velo, 1)*size(amask)) !< Nonadiabatic coupling vector between the two states.
-        real(dp) :: poten(size(wf%qm_state)) !< Potential energies of all states.
         real(dp) :: mvel_dir !< Component of mass weighted velocity along rescale direction.
         real(dp) :: delta_e !< Required change in kinetic energy.
 
@@ -130,7 +129,6 @@ contains
         if (opt_mc == 3) then
             nadv = wf%qm_state(pst)%nadv(cst)%c
         end if
-        poten = wf%qm_state(:)%energy
 
         ! Work with temporary arrays and use mass-weighted coordinates.
         m = spread(mass(amask), 1, size(velo, 1))
@@ -148,7 +146,7 @@ contains
         end select
 
         ! Rescale velocity
-        delta_e = poten(cst) - poten(pst)
+        delta_e = wf%en(cst) - wf%en(pst)
         rescale_dir = rescale_dir / sqrt(sum(rescale_dir**2))
         mvel_dir = sum(rescale_dir * mvel)
         if (mvel_dir**2 > 2 * delta_e) then

@@ -57,7 +57,7 @@ module system_type_mod
         ! MM system:
         integer :: mnatom = 0 !< Number of MM atoms.
         integer, allocatable :: mind(:) !< Indexes of the MM atoms in the full system.
-        real(dp) :: me(2) = 0.0_dp !< MM energies (1 - QM model sys, 2 - MM sys).
+        real(dp) :: men(2) = 0.0_dp !< MM energies (1 - QM model sys, 2 - MM sys).
 
         !> @todo Move this to more appropriate place.
         real(dp), allocatable :: gap_2deriv(:, :) !< Second derivative of the gap between the active
@@ -111,7 +111,7 @@ contains
     pure function traj_pote(t) result(pote)
         class(system_type), intent(in) :: t
         real(dp) :: pote
-        pote = t%wf%qm_state(t%wf%active_state)%energy + t%me(2) - t%me(1)
+        pote = t%wf%en(t%wf%active_state) + t%men(2) - t%men(1)
     end function traj_pote
 
     pure function traj_kine(t) result(kine)
@@ -331,12 +331,12 @@ contains
         if (popt(1)) then
             write(punit(1), 1001, advance='no') time_fs, t%wf%active_state
             write(punit(1), 1002, advance='no') t%tote(), t%pote()
-            write(punit(1), 1002, advance='no') t%wf%qm_state(:)%energy
+            write(punit(1), 1002, advance='no') t%wf%en
             write(punit(1), *)
 
             if (t%mnatom > 0) then
                 write(punit(50), 1001, advance='no') time_fs
-                write(punit(50), 1002, advance='no') t%mkine(), t%me
+                write(punit(50), 1002, advance='no') t%mkine(), t%men
                 write(punit(50), 1002, advance='no') t%pbcbox
                 write(punit(50), *)
             end if
@@ -399,7 +399,7 @@ contains
         end if
 
 
-1001 format (f12.5,x,i4)
+1001 format (f12.5,1x,i4)
 1002 format (1x,1000f18.10)
 1003 format (1x,a2,2x,1000f18.10)
 1006 format (1x,1000e22.12)

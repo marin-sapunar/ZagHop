@@ -34,7 +34,7 @@ contains
         case(0) ! No decoherence correction.
         case(1) ! Energy based decoherence.
             if (stdp3) write(stdout, *) ' Dechoerence correction type EDC.'
-            call edc(tr1%wf%active_state, tr1%qkine(), tr1%wf%qm_state(:)%energy, ctrl%dt, tr1%wf%coeff)
+            call edc(tr1%wf%active_state, tr1%qkine(), tr1%wf%en, ctrl%dt, tr1%wf%coeff)
         end select
     end subroutine decoherence
 

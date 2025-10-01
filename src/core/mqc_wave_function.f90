@@ -11,6 +11,7 @@ module mqc_wave_function_mod
         integer :: n_state = 0 !< Total number of basis states in the wave function.
         integer, allocatable :: n_state_per_group(:) !< Number of states in each state group.
         type(state), allocatable :: qm_state(:) !< States as given by the quantum method. Dimension: n_state
+        real(dp), allocatable :: en(:) !< Energies of the states. Dimension: n_state
         complex(dp), allocatable :: coeff(:) !< Coeffs of the el. states in the total wf.
                                              !! Dimension: n_state
         integer :: active_state !< Index of the active state.
@@ -47,6 +48,7 @@ contains
         self%n_state_per_group = n_state(1:n_state_group) * multiplicity(1:n_state_group)
         self%n_state = sum(self%n_state_per_group)
         allocate(self%qm_state(self%n_state))
+        allocate(self%en(self%n_state), source=0.0_dp)
         allocate(self%coeff(self%n_state), source=(0.0_dp, 0.0_dp))
         allocate(self%prob(self%n_state), source=0.0_dp)
         allocate(self%phase(self%n_state), source=1)

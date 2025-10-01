@@ -36,7 +36,6 @@ contains
         real(dp) :: prob(3)
         real(dp) :: gap_sd(3)
         real(dp) :: g0, g1, g2, gap_err
-        real(dp), allocatable :: qe0(:), qe1(:), qe2(:)
         integer :: cstate
         real(dp) :: rnum
         integer :: i
@@ -66,11 +65,8 @@ contains
             t0 => trajectory_data(data_index_2)
             t1 => trajectory_data(data_index_1)
             t2 => trajectory_data(index_offset(data_index_1, 1))
-            qe0 = t0%wf%qm_state(:)%energy
-            qe1 = t1%wf%qm_state(:)%energy
-            qe2 = t2%wf%qm_state(:)%energy
             cstate = t1%wf%active_state
-            check = check_gap(t0%wf%active_state, cstate, qe0, qe1, qe2)
+            check = check_gap(t0%wf%active_state, cstate, t0%wf%en, t1%wf%en, t2%wf%en)
             if (.not. any(check)) then
                 ! Now checking for gap between steps 0.5, 1 and 2.
                 t_wrk => trajectory_data(data_index_2)
@@ -85,11 +81,8 @@ contains
             t0 => trajectory_data(index_offset(data_index_1, -2))
             t1 => trajectory_data(data_index_2)
             t2 => trajectory_data(data_index_1)
-            qe0 = t0%wf%qm_state(:)%energy
-            qe1 = t1%wf%qm_state(:)%energy
-            qe2 = t2%wf%qm_state(:)%energy
             cstate = t1%wf%active_state
-            check = check_gap(t0%wf%active_state, cstate, qe0, qe1, qe2)
+            check = check_gap(t0%wf%active_state, cstate, t0%wf%en, t1%wf%en, t2%wf%en)
             if (.not. any(check)) then
                 ! Now checking for gap between steps 1, 1.5 and 2.
                 t_wrk => trajectory_data(index_offset(data_index_1, -2))
@@ -100,18 +93,15 @@ contains
             end if
         end select
 
-        qe0 = t0%wf%qm_state(:)%energy
-        qe1 = t1%wf%qm_state(:)%energy
-        qe2 = t2%wf%qm_state(:)%energy
         cstate = t1%wf%active_state
 
-        check = check_gap(t0%wf%active_state, cstate, qe0, qe1, qe2)
+        check = check_gap(t0%wf%active_state, cstate, t0%wf%en, t1%wf%en, t2%wf%en)
         if ((tr1%substep > 0) .and. (.not. any(check))) then
             write(stderr, *) 'Warning. Gap minimum not found after adding an extra time step.'
-            write(stderr, '(999(e24.16, 1x))') t_wrk%time, t_wrk%wf%qm_state(:)%energy
-            write(stderr, '(999(e24.16, 1x))') t0%time, qe0
-            write(stderr, '(999(e24.16, 1x))') t1%time, qe1
-            write(stderr, '(999(e24.16, 1x))') t2%time, qe2
+            write(stderr, '(999(e24.16, 1x))') t_wrk%time, t_wrk%wf%en
+            write(stderr, '(999(e24.16, 1x))') t0%time, t0%wf%en
+            write(stderr, '(999(e24.16, 1x))') t1%time, t1%wf%en
+            write(stderr, '(999(e24.16, 1x))') t2%time, t2%wf%en
         end if
 
         if (.not. any(check)) return
@@ -122,9 +112,9 @@ contains
         ! Evaluate hopping probability and decide whether the time step should be reduced
         do i = 1, t1%wf%n_state
             if (.not. check(i)) cycle
-            g0 = qe0(cstate) - qe0(i)
-            g1 = qe1(cstate) - qe1(i)
-            g2 = qe2(cstate) - qe2(i)
+            g0 = t0%wf%en(cstate) - t0%wf%en(i)
+            g1 = t1%wf%en(cstate) - t1%wf%en(i)
+            g2 = t2%wf%en(cstate) - t2%wf%en(i)
             gap_err = abs((g0 - 2*g1 + g2) / 2)
             if ((t1%gap_2deriv(2, i) == 0.0_dp) .or. (gap_err > 20 * qm_en_err)) then
                 ! Calculate 2nd derivative of the gap if it hasn't already been calculated
@@ -227,11 +217,8 @@ contains
                         t1 => trajectory_data(data_index_1)
                         t2 => trajectory_data(index_offset(data_index_1, 1))
                     end if
-                    qe0 = t0%wf%qm_state(:)%energy
-                    qe1 = t1%wf%qm_state(:)%energy
-                    qe2 = t2%wf%qm_state(:)%energy
                     cstate = t1%wf%active_state
-                    check = check_gap(t0%wf%active_state, cstate, qe0, qe1, qe2)
+                    check = check_gap(t0%wf%active_state, cstate, t0%wf%en, t1%wf%en, t2%wf%en)
                     if (any(check)) then
                         if (stdp2) write(stdout, '(3x,a)') ' Extra gap minimum in same step.'
                         if (stdp2) write(stdout, '(3x,a)') ' Running LZSH procedure for new steps.'
