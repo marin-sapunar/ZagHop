@@ -15,7 +15,7 @@ module sh_fssh_mod
 
     private
     public :: sh_adiabatic!, sh_sosh
-
+    
 
 contains
 
@@ -31,21 +31,25 @@ contains
     !! The nuclear time step (dt) is split into smaller time steps for which the coefficients and
     !! hopping probabilities are calculated.
     !----------------------------------------------------------------------------------------------
-    subroutine sh_adiabatic(opt_clvl, t0, t1, wf_t0, wf_t1, nstep, vel_t0, vel_t1, rng)
+    subroutine sh_adiabatic(opt_clvl, interpolation_en, interpolation_tdc, t0, t1, t2, wf_t1, &
+    &                       wf_t2, nstep, vel_t1, vel_t2, rng)
         use ode_call_mod ! Interface to Shampine/Gordon ODE solver.
         use mqc_wave_function_mod, only : mqc_wave_function
         use random_mod, only : rng_type
-        integer, intent(in) :: opt_clvl !< Method for calculating time-derivative couplings.
-        real(dp), intent(in) :: t0 !< Initial time step index.
-        real(dp), intent(in) :: t1 !< Final time step index.
-        type(mqc_wave_function), intent(in) :: wf_t0 !< Wave function at t0.
-        type(mqc_wave_function), intent(inout) :: wf_t1 !< Wave function at t0 + dt.
+        use matrix_mod, only : diagonal_mat
+        use tdc_mod, only : hst_tdc, nadvec2tdc, npi_tdc_integrated
+        character(len=*), intent(in) :: opt_clvl !< Method for calculating time-derivative couplings.
+        integer, intent(in) :: interpolation_en !< Method for interpolating energies during the time step.
+        integer, intent(in) :: interpolation_tdc !< Method for interpolating overlaps during the time step.
+        real(dp), intent(in) :: t0 !< Time at previous step.
+        real(dp), intent(in) :: t1 !< Time at current step.
+        real(dp), intent(in) :: t2 !< Time at next step.
+        type(mqc_wave_function), intent(in) :: wf_t1 !< Wave function at t1.
+        type(mqc_wave_function), intent(inout) :: wf_t2 !< Wave function at t2.
         integer, intent(in) :: nstep !< Number of substeps.
-        real(dp), intent(in) :: vel_t0(:, :) !< Velocities at t0.
-        real(dp), intent(in) :: vel_t1(:, :) !< Velocities at t0 + dt.
-        class(rng_type), allocatable, intent(inout) :: rng
-       ! real(dp), intent(out) :: fprob(:) !< Final probability for each state.
-        real(dp) :: dt !< Nuclear dynamics time step.
+        real(dp), intent(in) :: vel_t1(:, :) !< Velocities at t1.
+        real(dp), intent(in) :: vel_t2(:, :) !< Velocities at t2.
+        class(rng_type), allocatable, intent(inout) :: rng !< Random number generator to use.
         
         real(dp) :: edt !< Time step for the propagation of the electronic WF.
         real(dp) :: tt !< Current time during propagation.
@@ -57,45 +61,68 @@ contains
         integer :: st
         integer :: de_flag
         real(dp) :: rnum !< Random number for surface hopping.
-        real(dp), allocatable :: nadv1(:, :, :) !< Nonadiabatic coupling vectors at t0.
-        real(dp), allocatable :: nadv2(:, :, :) !< Nonadiabatic coupling vectors at t0 + dt.
-        real(dp), allocatable :: olp1(:, :) !< Overlap matrix between wfs at t0 - dt and t0.
-        real(dp), allocatable :: olp2(:, :) !< Overlap matrix between wfs at t0 and t0 + dt.
+        real(dp), allocatable :: nadv1(:, :, :) !< Nonadiabatic coupling vectors at t1.
+        real(dp), allocatable :: nadv2(:, :, :) !< Nonadiabatic coupling vectors at t2.
+        real(dp), allocatable :: en_t(:) !< Energies at current time.
+        real(dp), allocatable :: tdc_t1(:, :) !< TDC matrix at t1.
+        real(dp), allocatable :: tdc_t2(:, :) !< TDC matrix at t2.
+        real(dp), allocatable :: tdc_t(:, :) !< TDC matrix at current time.
+        real(dp), allocatable :: wrk_1(:, :) !< Work array for storing TDCs at half step.
+        real(dp), allocatable :: wrk_2(:, :) !< Work array for storing TDCs at half step.
+        complex(dp), allocatable :: soc_t1(:, :) !< Spin-orbit coupling matrix at t1.
+        complex(dp), allocatable :: soc_t2(:, :) !< Spin-orbit coupling matrix at t2.
+        complex(dp), allocatable :: soc_t(:, :) !< Spin-orbit coupling matrix at current time.
+        integer, parameter :: im_i = cmplx(0.0_dp, 1.0_dp, kind=dp)
 
-        odens = size(wf_t1%coeff)
-        allocate(odeen(odens))
+        odens = size(wf_t2%coeff)
         allocate(odecmat(odens, odens))
 
         ! Propagation time step.
-        tt = 0.0_dp
-        dt = t1 - t0
-        edt = dt / nstep
-        cstate = wf_t0%active_state
+        tt = t1
+        edt = (t2 - t1) / nstep
+        cstate = wf_t1%active_state
 
         select case(opt_clvl)
-        case(1)
-            olp1 = wf_t0%overlap(1)%c
-            olp2 = wf_t1%overlap(1)%c
-        case(2)
-            nadv1 = build_nadvec_matrix(wf_t0%need_nadv, wf_t0%qm_state)
-            nadv2 = build_nadvec_matrix(wf_t1%need_nadv, wf_t1%qm_state)
+        case("hst")
+            call hst_tdc(t1-t0, wf_t1%overlap(1)%c, wrk_1)
+            call hst_tdc(t2-t1, wf_t2%overlap(1)%c, wrk_2)
+            call sh_interpolate_tdc(interpolation_tdc, 0.5_dp*(t0 + t1), 0.5_dp*(t1 + t2), &
+            &                       t1, wrk_1, wrk_2, tdc_t1)
+            call sh_interpolate_tdc(interpolation_tdc, 0.5_dp*(t0 + t1), 0.5_dp*(t1 + t2), &
+            &                       t2, wrk_1, wrk_2, tdc_t2)
+        case("npi")
+            call npi_tdc_integrated(t1-t0, wf_t1%overlap(1)%c, wrk_1)
+            call npi_tdc_integrated(t2-t1, wf_t2%overlap(1)%c, wrk_2)
+            call sh_interpolate_tdc(interpolation_tdc, 0.5_dp*(t0 + t1), 0.5_dp*(t1 + t2), &
+            &                       t1, wrk_1, wrk_2, tdc_t1)
+            call sh_interpolate_tdc(interpolation_tdc, 0.5_dp*(t0 + t1), 0.5_dp*(t1 + t2), &
+            &                       t2, wrk_1, wrk_2, tdc_t2)
+        case("nadvec")
+            nadv1 = build_nadvec_matrix(wf_t1%need_nadv, wf_t1%qm_state)
+            nadv2 = build_nadvec_matrix(wf_t2%need_nadv, wf_t2%qm_state)
+            call nadvec2tdc(nadv1, vel_t1, tdc_t1)
+            call nadvec2tdc(nadv2, vel_t2, tdc_t2)
         end select
 
-        wf_t1%prob = 0.0_dp
+        if (any(wf_t2%need_soc)) then
+            soc_t1 = build_soc_matrix(wf_t1%need_soc, wf_t1%qm_state)
+            soc_t2 = build_soc_matrix(wf_t2%need_soc, wf_t2%qm_state)
+        end if
+
+        wf_t2%prob = 0.0_dp
 
         do i = 1, nstep
             ! Get energies and TDCs for current substep.
-            !> @todo Re-activate interpolation options.
-            call sh_interpolate_energy(2, nstep, i, wf_t0%qm_state(:)%energy, wf_t1%qm_state(:)%energy, odeen)
-            select case(opt_clvl)
-            case(1)
-                call sh_interpolate_overlap(2, nstep, i, dt, olp1, olp2, odecmat)
-            case(2)
-                call sh_interpolate_nadvec(1, nstep, i, dt, nadv1, nadv2, vel_t0, vel_t1, odecmat)
-            end select
+            call sh_interpolate_energy(interpolation_en, t1, t2, tt, wf_t1%qm_state(:)%energy, wf_t2%qm_state(:)%energy, en_t)
+            call sh_interpolate_tdc(interpolation_tdc, t1, t2, tt, tdc_t1, tdc_t2, tdc_t)
+            odecmat = cmplx(0.0_dp, -diagonal_mat(en_t), kind=dp) - tdc_t
+            if (any(wf_t2%need_soc)) then
+                call sh_interpolate_soc(interpolation_tdc, t1, t2, tt, soc_t1, soc_t2, soc_t)
+                odecmat = odecmat - im_i * soc_t
+            end if
             
             ! Propagate wf coefficients.
-            call callode(odens, wf_t1%coeff, tt, edt, de_flag)
+            call callode(odens, wf_t2%coeff, tt, edt, de_flag)
             tt = tt + edt
 
             ! Determine hopping probabilities.
@@ -103,11 +130,11 @@ contains
             cprob = 0.0_dp
             hop: do st = 1, odens
                 if (st == cstate) cycle
-                prob = - 2 * edt * odecmat(st, cstate) * real(conjg(wf_t1%coeff(st)) * wf_t1%coeff(cstate)) / &
-                     & (abs(wf_t1%coeff(cstate))**2)
+                prob = - 2 * edt * odecmat(st, cstate) * real(conjg(wf_t2%coeff(st)) * wf_t2%coeff(cstate)) / &
+                     & (abs(wf_t2%coeff(cstate))**2)
                 if (prob > 0.0_dp) then ! Not actual probability, can be negative.
                     cprob = cprob + prob
-                    wf_t1%prob(st) = wf_t1%prob(st) + prob
+                    wf_t2%prob(st) = wf_t2%prob(st) + prob
                     if (rnum < cprob) then
                         cstate = st
                         exit hop
@@ -117,9 +144,8 @@ contains
             
         end do
 
-        wf_t1%active_state = cstate
+        wf_t2%active_state = cstate
 
-        deallocate(odeen)
         deallocate(odecmat)
     end subroutine sh_adiabatic
 
@@ -156,127 +182,34 @@ contains
     end function build_nadvec_matrix
 
 
-!> @todo Re-check and re-activate SOSH
-!     !----------------------------------------------------------------------------------------------
-!     ! SUBROUTINE: SH_sosh
-!     !
-!     ! DESCRIPTION:
-!     !> @brief Tully's Fewest Switches Surface Hopping Method.
-!     !> @details
-!     !! Propagates electronic wave function coefficients and determines hops for the FSSH method.
-!     !! The coefficients are propagated using an external subroutine for solving the system of
-!     !! ordinary differential equations.
-!     !! The nuclear time step (dt) is split into smaller time steps for which the coefficients and
-!     !! hopping probabilities are calculated.
-!     !----------------------------------------------------------------------------------------------
-!     subroutine sh_sosh(opt_clvl, opt_inte, opt_into, opt_intv, dt, nstep, qe1, qe2, cwf, tst, &
-!     &      olp1, olp2, nadv1, nadv2, vel1, vel2, sov1, sov2, spinst, fprob)
-!         use ode_call_mod ! Interface to Shampine/Gordon ODE solver.
-!         integer, intent(in) :: opt_clvl !< Method for calculating time-derivative couplings.
-!         integer, intent(in) :: opt_inte !< Method for interpolating energies during the time step.
-!         integer, intent(in) :: opt_into !< Method for interpolating overlaps during the time step.
-!         integer, intent(in) :: opt_intv !< Method for interpolating nad and soc vecs during the time step.
-!         real(dp), intent(in) :: dt !< Nuclear dynamics time step.
-!         integer, intent(in) :: nstep !< Number of substeps.
-!         real(dp), intent(in) :: qe1(:) !< Energies at t0.
-!         real(dp), intent(in) :: qe2(:) !< Energies at t0 + dt.
-!         complex(dp), intent(inout) :: cwf(:) !< WF coefficients.
-!         integer, intent(inout) :: tst !< Current state.
-!         real(dp), intent(in) :: olp1(:, :) !< Overlap matrix between wfs at t0 - dt and t0.
-!         real(dp), intent(in) :: olp2(:, :) !< Overlap matrix between wfs at t0 and t0 + dt.
-!         real(dp), intent(in) :: nadv1(:, :, :) !< Nonadiabatic coupling vectors at t0.
-!         real(dp), intent(in) :: nadv2(:, :, :) !< Nonadiabatic coupling vectors at t0 + dt.
-!         real(dp), intent(in) :: vel1(:, :) !< Velocities at t0.
-!         real(dp), intent(in) :: vel2(:, :) !< Velocities at t0 + dt.
-!         real(dp), intent(in) :: sov1(:, :) !< spin-orbit coupling vectors at t0.
-!         real(dp), intent(in) :: sov2(:, :) !< spin-orbit coupling vectors at t0 + dt.
-!         real(dp), intent(out) :: fprob(:) !< Final probability for each state.
-!         real(dp) :: edt !< Time step for the propagation of the electronic WF.
-!         real(dp) :: tt !< Current time during propagation.
-!         real(dp) :: prob !< Probability of hopping into a state.
-!         real(dp) :: cprob !< Cumulative probability of hopping into any state.
-!         integer, intent(in) :: spinst(:) !< Multiplicity of each state/block (ask Graham)
+    function build_soc_matrix(need_soc, states) result(soc_mat)
+        use state_mod, only : state
+        logical, intent(in) :: need_soc(:, :)
+        type(state), intent(in) :: states(:)
+        complex(dp), allocatable :: soc_mat(:, :)
+        integer :: i, j, n_states
 
-!         integer :: i
-!         integer :: st,st2
-!         integer :: de_flag
-!         real(dp) :: rnum !< Random number for surface hopping.
+        if (.not. any(need_soc)) then
+            call errstop("sh_fssh_mod", "No spin-orbit couplings requested.", 1)
+        end if
+        n_states = size(states)
+        do i = 1, n_states
+            if (any(need_soc(i, :))) then
+                if (.not. allocated(states(i)%soc)) then
+                    call errstop("sh_fssh_mod", "Spin-orbit couplings not allocated.", 1)
+                end if
+            end if
+        end do
 
-! !        write(69,*)nadv1(:,:,:),nadv2(:,:,:),spinst(:),qe1(:),qe2(:)
-! !        call flush(69)
-        
-!         odens = size(qe1)
-!         allocate(odeen(odens))
-!         allocate(odecmat(odens, odens))
-
-!         ! Propagation time step.
-!         tt = 0.0_dp
-!         edt = dt / nstep
-       
-!         do i = 1, nstep
-!              fprob = 0.0_dp
-!             ! Get energies and TDCs for current substep.
-!             call sh_interpolate_energy(opt_inte, nstep, i, qe1, qe2, odeen)
-            
-!             !Checking the type of hopping, non-adiabatic or spin-orbit
-!             hop: do st = 1, odens               
-!                if(st == tst) cycle hop 
-!                if ((spinst(st) == spinst(tst))) then !NAC
-!                   select case(opt_clvl)
-!                   case(1)
-!                      call sh_interpolate_overlap(opt_into, nstep, i, dt, olp1, olp2, odecmat)
-!                   case(2)
-!                      call sh_interpolate_nadvec(opt_intv, nstep, i, dt, nadv1, nadv2, vel1, vel2, odecmat)
-!                   end select
-!                   ! Propagate wf coefficients.
-!                   call callode(odens, cwf, tt, edt, de_flag)
-
-!                   ! Determine hopping probabilities.
-!                  call random_number(rnum)
-!                  cprob = 0.0_dp
-!                    prob = - 2 * edt * odecmat(st, tst) * real(conjg(cwf(st)) * cwf(tst)) / &
-!                      & (abs(cwf(tst))**2)
-!                  if (prob > 0.0_dp) then ! Not actual probability, can be negative.
-!                     cprob = cprob + prob
-!                     fprob(st) = fprob(st) + prob
-!                     if (rnum < cprob) then
-!                         tst = st
-!                         exit hop
-!                     end if
-!                  end if                  
-!                else  !spin-orbit
-! !                   write(69,*) "else ",st,tst,spinst(st),spinst(tst)
-! !                   call flush(69)
-!                    call sh_interpolate_sovec(opt_intv, nstep, i, dt, sov1, sov2, odecmat)
-       
-                  
-!                    ! Propagatre wf coefficients.
-!                    call callode(odens, cwf, tt, edt, de_flag)    
-!                                write(69,*) 'INTERPOLATE',odeen,odecmat,cwf
-                   
-!                    ! Determine hopping probabilities.
-!                    call random_number(rnum)
-!                    cprob = 0.0_dp
-!                    prob = - 2 * edt * aimag( odecmat(tst, st) * (conjg(cwf(tst)) * cwf(st)) ) / &
-!                    & (abs(cwf(tst))**2)
-!                    if (prob > 0.0_dp) then ! Not actual probability, can be negative.
-!                       cprob = cprob + prob
-!                       fprob(st) = fprob(st) + prob
-!                       if (rnum < cprob) then
-!                          tst = st
-!                          exit hop
-!                       end if
-!                     end if
-!                endif               
-!             end do hop
-!         enddo
-
-!         write(69,*)"Probability calculated with SH ", prob,tst, cwf,odecmat
-!         call flush(69)
-        
-!         deallocate(odeen)
-!         deallocate(odecmat)
-!     end subroutine sh_sosh
+        allocate(soc_mat(n_states, n_states), source=(0.0_dp, 0.0_dp))
+        do i = 1, n_states
+            do j = 1, n_states
+                if (need_soc(i, j)) then
+                    soc_mat(i, j) = states(i)%soc(j)
+                end if
+            end do
+        end do
+    end function build_soc_matrix
 
     !----------------------------------------------------------------------------------------------
     ! SUBROUTINE: SH_Interpolate_Energy
@@ -293,175 +226,103 @@ contains
     !! - 1 - The energies are equal to E(t) until t + dt/2, and to E(t + dt) afterwards.
     !! - 2 - The energies are a linear interpolation between E(t) and E(t + dt).
     !----------------------------------------------------------------------------------------------
-    subroutine sh_interpolate_energy(opt, ni, i, en1, en2, ien)
+    subroutine sh_interpolate_energy(opt, t1, t2, tt, en1, en2, ien)
         integer, intent(in) :: opt !< Type of interpolation.
-        integer, intent(in) :: ni !< Number of electronic time steps.
-        integer, intent(in) :: i !< Current electronic time step.
+        real(dp), intent(in) :: t1 !< Time at which en1 is evaluated.
+        real(dp), intent(in) :: t2 !< Time at which en2 is evaluated.
+        real(dp), intent(in) :: tt !< Current time during propagation.
         real(dp), intent(in) :: en1(:) !< Energies in previous nuclear time step.
         real(dp), intent(in) :: en2(:) !< Energies in current nuclear time step.
-        real(dp), intent(out) :: ien(:) !< Interpolated energies.
+        real(dp), allocatable, intent(out) :: ien(:) !< Interpolated energies.
 
         select case(opt)
         ! Constant value.
         case(0)
-            if (i == 1) ien = en2
-        ! Constant with step in middle.
+            ien = en2
+        ! Step function in middle of time step.
         case(1)
-            if (i < ni / 2) then
+            if (tt < (t1 + t2) / 2) then
                 ien = en1
             else
                 ien = en2
             end if
         ! Linear interpolation.
         case(2)
-            ien = en1 + (en2 - en1) * (i - 1) / ni
+            ien = en1 + (en2 - en1) * (tt - t1) / (t2 - t1)
         end select
     end subroutine sh_interpolate_energy
 
 
     !----------------------------------------------------------------------------------------------
-    ! SUBROUTINE: SH_Interpolate_Overlap
+    ! SUBROUTINE: sh_interpolate_tdc
     !
     ! DESCRIPTION:
     !> @brief TDC interpolation during single nuclear time step in surface hopping.
     !> @details
     !! Returns time-derivative couplings during the propagation of wave function coefficients in a
-    !! surface hopping calculation. The interpolation is done based on the overlaps of the wfs at
-    !! the beginning and end of the nuclear time step.
-    !!
-    !! The behaviour of the subroutine is determined by the value of opt:
-    !! - 1 - Finite differences method to calculate tdc at \f$ t_0 + dt/2 \f$.
-    !! - 2 - Finite differences method to calculate tdc at \f$ t_0 - dt/2 \f$ and \f$ t_0 + dt/2 \f$
-    !!       and then use linear inter(extra)polation between \f$ t_0 \f$ and \f$ t_0 + dt \f$.
-    !! - 4 - Norm-preserving interpolation of Meek and Levine. (10.1021/jz5009449).
+    !! surface hopping calculation.
     !----------------------------------------------------------------------------------------------
-    subroutine sh_interpolate_overlap(opt, ni, i, dt, olp1, olp2, itdc)
-        use tdc_mod
+    subroutine sh_interpolate_tdc(opt, t1, t2, tt, tdc1, tdc2, itdc)
         integer, intent(in) :: opt !< Type of interpolation.
-        integer, intent(in) :: ni !< Number of electronic time steps.
-        integer, intent(in) :: i !< Current electronic time step.
-        real(dp), intent(in) :: dt !< Nuclear time step.
-        real(dp), intent(in) :: olp1(:, :) !< Overlaps between wfs at t0 - dt and t0.
-        real(dp), intent(in) :: olp2(:, :) !< Overlaps between wfs at t0 and t0 + dt.
+        real(dp), intent(in) :: t1 !< Time at which en1 is evaluated.
+        real(dp), intent(in) :: t2 !< Time at which en2 is evaluated.
+        real(dp), intent(in) :: tt !< Current time during propagation.
+        real(dp), intent(in) :: tdc1(:, :) !< Overlaps between wfs at t0 - dt and t0.
+        real(dp), intent(in) :: tdc2(:, :) !< Overlaps between wfs at t0 and t0 + dt.
         real(dp), allocatable, intent(inout) :: itdc(:, :) !< Time-derivative couplings.
-        real(dp), allocatable, save :: prev(:, :) !< TDCs at t0 - dt/2.
-        real(dp), allocatable, save :: crnt(:, :) !< TDCs at t0 + dt/2.
-
         
         select case(opt)
         ! Constant value.
+        case(0)
+            itdc = tdc2
+        ! Step function in middle of time step.
         case(1)
-            if (i == 1) call overlap2tdc(dt, olp2, itdc)
-        ! Linear interpolation using coupling matrix.
-        case(2)
-            if (i == 1) then
-                call overlap2tdc(dt, olp1, prev)
-                call overlap2tdc(dt, olp2, crnt)
+            if (tt < (t1 + t2) / 2) then
+                itdc = tdc1
+            else
+                itdc = tdc2
             end if
-            itdc = prev + (crnt - prev) * (0.5_dp + (i - 1) / ni)
-        ! Norm-preserving interpolation (based on 10.1021/jz5009449).
-        case(4)
-            if (i == 1) call npi_tdc_integrated(dt, olp2, itdc)
+        ! Linear interpolation.
+        case(2)
+            itdc = tdc1 + (tdc2 - tdc1) * (tt - t1) / (t2 - t1)
         end select
-    end subroutine sh_interpolate_overlap
-    
+    end subroutine sh_interpolate_tdc
+
 
     !----------------------------------------------------------------------------------------------
-    ! SUBROUTINE: SH_Interpolate_NadVec
+    ! SUBROUTINE: sh_interpolate_soc
     !
     ! DESCRIPTION:
-    !> @brief TDC interpolation during single nuclear time step in surface hopping.
+    !> @brief SOC interpolation during single nuclear time step in surface hopping.
     !> @details
-    !! Returns time-derivative couplings during the propagation of wave function coefficients in a
-    !! surface hopping calculation. The interpolation is done based on the nonadiabatic coupling 
-    !! vectors at the beginning and end of the nuclear time step.
-    !!
-    !! The behaviour of the subroutine is determined by the value of opt:
-    !! - 1 - Constant TDCs at t0 + dt.
-    !! - 2 - Linear interpolation between TDCs at t0 and at t0 + dt.
+    !! Returns spin-orbit couplings during the propagation of wave function coefficients in a
+    !! surface hopping calculation.
     !----------------------------------------------------------------------------------------------
-    subroutine sh_interpolate_nadvec(opt, ni, i, dt, nadv1, nadv2, vel1, vel2, itdc)
-        use tdc_mod
+    subroutine sh_interpolate_soc(opt, t1, t2, tt, soc1, soc2, isoc)
         integer, intent(in) :: opt !< Type of interpolation.
-        integer, intent(in) :: ni !< Number of electronic time steps.
-        integer, intent(in) :: i !< Current electronic time step.
-        real(dp), intent(in) :: dt !< Nuclear time step.
-        real(dp), intent(in) :: nadv1(:, :, :) !< Coupling vectors at t0.
-        real(dp), intent(in) :: nadv2(:, :, :) !< Coupling vectors at t0 + dt.
-        real(dp), intent(in) :: vel1(:, :) !< Velocities at t0.
-        real(dp), intent(in) :: vel2(:, :) !< Velocities at t0 + dt.
-        real(dp), intent(inout) :: itdc(:, :) !< Time-derivative couplings.
-        real(dp), allocatable, save :: prev(:, :) !< TDCs at t0.
-        real(dp), allocatable, save :: crnt(:, :) !< TDCs at t0 + dt.
-        integer :: nstate
+        real(dp), intent(in) :: t1 !< Time at which en1 is evaluated.
+        real(dp), intent(in) :: t2 !< Time at which en2 is evaluated.
+        real(dp), intent(in) :: tt !< Current time during propagation.
+        complex(dp), intent(in) :: soc1(:, :) !< Overlaps between wfs at t0 - dt and t0.
+        complex(dp), intent(in) :: soc2(:, :) !< Overlaps between wfs at t0 and t0 + dt.
+        complex(dp), allocatable, intent(inout) :: isoc(:, :) !< Spin-orbit couplings.
 
-        
         select case(opt)
         ! Constant value.
+        case(0)
+            isoc = soc2
+        ! Step function in middle of time step.
         case(1)
-            if (i == 1) call nadvec2tdc(nadv2, vel2, itdc)
-        ! Linear interpolation using coupling matrix.
-        case(2)
-            if (.not. allocated(prev)) then
-               nstate=size(nadv1,2)
-               allocate(prev(nstate,nstate))
-               allocate(crnt(nstate,nstate))
-            endif
-            if (i == 1) then
-                call nadvec2tdc(nadv1, vel1, prev)
-                call nadvec2tdc(nadv2, vel2, crnt)
+            if (tt < (t1 + t2) / 2) then
+                isoc = soc1
+            else
+                isoc = soc2
             end if
-            itdc = prev + (crnt - prev) * (i - 1) / ni
-        end select
-    end subroutine sh_interpolate_nadvec
-
- !----------------------------------------------------------------------------------------------
-    ! SUBROUTINE: SH_Interpolate_SOVec
-    !
-    ! DESCRIPTION:
-    !> @brief TDC interpolation during single nuclear time step in surface hopping.
-    !> @details
-    !! Returns time-derivative couplings during the propagation of wave function coefficients in a
-    !! surface hopping calculation. The interpolation is done based on the nonadiabatic coupling 
-    !! vectors at the beginning and end of the nuclear time step.
-    !!
-    !! The behaviour of the subroutine is determined by the value of opt:
-    !! - 1 - Constant TDCs at t0 + dt.
-    !! - 2 - Linear interpolation between TDCs at t0 and at t0 + dt.
-    !----------------------------------------------------------------------------------------------
-    subroutine sh_interpolate_sovec(opt, ni, i, dt, sov1, sov2, itdc)
-        use tdc_mod
-        integer, intent(in) :: opt !< Type of interpolation.
-        integer, intent(in) :: ni !< Number of electronic time steps.
-        integer, intent(in) :: i !< Current electronic time step.
-        real(dp), intent(in) :: dt !< Nuclear time step.
-        real(dp), intent(in) :: sov1(:, :) !< Coupling vectors at t0.
-        real(dp), intent(in) :: sov2(:, :) !< Coupling vectors at t0 + dt.
-        real(dp), intent(inout) :: itdc(:, :) !< Time-derivative couplings.
-        real(dp), allocatable, save :: prev(:, :) !< TDCs at t0.
-        real(dp), allocatable, save :: crnt(:, :) !< TDCs at t0 + dt.
-        integer :: nstate
-
-        
-        select case(opt)
-        ! Constant value.
-        case(1)
-            if (i == 1) call sovec2tdc(sov2, itdc)
-        ! Linear interpolation using coupling matrix.
+        ! Linear interpolation.
         case(2)
-            if (.not. allocated(prev)) then
-               nstate=size(sov1,2)
-               allocate(prev(nstate,nstate))
-               allocate(crnt(nstate,nstate))
-            endif
-            if (i == 1) then
-                call sovec2tdc(sov1, prev)
-                call sovec2tdc(sov2, crnt)
-            end if
-            itdc = prev + (crnt - prev) * (i - 1) / ni
+            isoc = soc1 + (soc2 - soc1) * (tt - t1) / (t2 - t1)
         end select
-    end subroutine sh_interpolate_sovec
-
+    end subroutine sh_interpolate_soc
  
  
 end module sh_fssh_mod

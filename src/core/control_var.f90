@@ -105,6 +105,7 @@ module control_var
                       !! - 2 - Fewest switches surface hopping in the adiabatic representation.
                       !! - 3 - FSSH in the locally diabatic representation.
                       !! - 4 - FSSH in the adiabatic representation and/or spin-orbit 
+        logical :: soc !< Signal to include spin-orbit coupling in the Hamiltonian.
         logical :: sodegen ! spin-orbit degeneration treatment 
         logical :: socbas ! spin-obit basis representation
         integer :: shnstep !< Number of steps in the integration of the TDSE.
@@ -113,19 +114,21 @@ module control_var
         !!  - 0 - No decoherence correction.
         !!  - 1 - Energy based decoherence scheme (Granucci, Persico; doi: 10.1063/1.2715585).
 
-        integer :: tdc_type !< Method for calculating the time-derivative coupling matrix:
-        !! - 1 - Use wave function overlaps.
-        !! - 2 - Use nonadiabatic coupling vectors.
-
-        integer :: tdc_interpolate !< Method for interpolating tdcs during time step.
-        !! - 1 - Finite differences method to calculate tdc at t0 + dt/2.
-        !! - 2 - Linear interpolation of finite differences tdcs at t0 - dt/2 and t0 + dt/2.
-        !! - 4 - Norm-preserving interpolation of Meek and Levine. (10.1021/jz5009449).
+        character(len=:), allocatable :: tdc_type !< Method for calculating the time-derivative coupling matrix:
+        !! - 'hst' - Use wave function overlaps with the Hammes-Schiffer/Tully method.
+        !! - 'npi' - Use wave function overlaps with the norm-preserving interpolation method of Meek and Levine.
+        !! - 'nadvec' - Use nonadiabatic coupling vectors.
+        logical :: adt = .false. !< Signal to use adiabatic-to-diabatic transformation for calculating overlaps.
 
         integer :: ene_interpolate !< Method for interpolating energies during time step.
         !! - 0 - Constant energies equal to E(t + dt).
         !! - 1 - Energies equal to E(t) until t + dt/2, and to E(t + dt) afterwards.
         !! - 2 - Linear interpolation between E(t) and E(t + dt)
+
+        integer :: tdc_interpolate !< Method for interpolating TDCs during time step.
+        !! - 0 - Constant TDCs equal to values at t + dt.
+        !! - 1 - TDCs equal to values at t until t + dt/2, and to values at t + dt afterwards.
+        !! - 2 - Linear interpolation between TDCs at t and t + dt.
 
         integer :: vrescale !< Method for rescaling velocities after hop.
         !! - 0 - No velocity rescaling.

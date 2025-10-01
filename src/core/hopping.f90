@@ -37,14 +37,15 @@ contains
         use tdc_mod
         use constants
         integer :: i
+        real(dp) :: t0
 
-        if ((ctrl%tdc_type == 3) .and. (tr1%step /= 0)) then
+        if ((ctrl%adt) .and. (tr1%step /= 0)) then
             do i = 1, tr1%wf%n_state_group
                 call adt2overlap(tr2%wf%overlap(2*i)%c, tr1%wf%overlap(2*i)%c, tr1%wf%overlap(2*i-1)%c)
             end do
         end if
         !> @todo Move this to more appropriate place.
-        if ((ctrl%tdc_type /= 2 ) .and. (ctrl%vrescale == 3)) then
+        if ((ctrl%tdc_type /= 'nadvec') .and. (ctrl%vrescale == 3)) then
             tr1%wf%need_nadv = .false.
         end if
 
@@ -57,20 +58,14 @@ contains
         case(2)
             call decoherence()
             call phasematch()
-            call sh_adiabatic(ctrl%tdc_type, tr2%time, tr1%time, tr2%wf, tr1%wf, ctrl%shnstep, &
+            t0 = trajectory_data(index_offset(data_index_1, -2))%time !< @todo Clean up this type of indexing.
+            call sh_adiabatic(ctrl%tdc_type, ctrl%ene_interpolate, ctrl%tdc_interpolate, t0, &
+            &                 tr2%time, tr1%time, tr2%wf, tr1%wf, ctrl%shnstep, &
             &                 tr2%velo(:, tr2%qind), tr1%velo(:, tr1%qind), ctrl%rng)
         case(3)
             call decoherence()
             call phasematch()
             call sh_diabatic(tr2%time, tr1%time, tr2%wf, tr1%wf, ctrl%rng)
-        case(4)
-            ! call decoherence()
-            ! call phasematch()
-            ! call sh_sosh(ctrl%tdc_type, ctrl%ene_interpolate, ctrl%tdc_interpolate,                &
-            ! &                 ctrl%tdc_interpolate, ctrl%dt, ctrl%shnstep, tr2%qe, tr1%qe,       &
-            ! &                 tr1%cwf, tr1%cstate, tr2%olap, tr1%olap, tr2%nadv, tr1%nadv,   &
-            ! &                 tr2%velo(:, tr2%qind), tr1%velo(:, tr1%qind), tr2%sov, tr1%sov,&
-            ! &                 tr1%spinv , tr1%prob)
         end select
 
         if (tr2%wf%active_state /= tr1%wf%active_state) then

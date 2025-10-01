@@ -126,10 +126,11 @@ contains
         ! Surface hopping options.
         ctrl%sh = 2
         ctrl%sodegen = .true.
+        ctrl%soc = .false.
         ctrl%socbas = .false.
         ctrl%shnstep = 10000
         ctrl%decohlvl = 1
-        ctrl%tdc_type = 1
+        ctrl%tdc_type = 'hst'
         ctrl%tdc_interpolate = 2
         ctrl%ene_interpolate = 2
         ctrl%vrescale = 2
@@ -252,7 +253,7 @@ contains
         case(1)
             ctrl%print(6:9) = .false.
         case(2)
-            if (ctrl%tdc_type == 2) then
+            if (ctrl%tdc_type == 'nadvec') then
                 ctrl%print(7) = .false.
             end if
         end select
@@ -272,12 +273,20 @@ contains
             case(2, 3, 4)
                 tr1%wf%coeff(tr1%wf%active_state) = cmplx((1.0_dp, 0.0_dp), kind = dp)
                 select case (ctrl%tdc_type)
-                case(1)
-                    allocate(tr1%wf%overlap(tr1%wf%n_state_group))
-                    do i = 1, tr1%wf%n_state_group
-                        allocate(tr1%wf%overlap(i)%c(tr1%wf%n_state_per_group(i), tr1%wf%n_state_per_group(i)))
-                    end do
-                case(2)
+                case('hst', 'npi')
+                    if (ctrl%adt) then
+                        allocate(tr1%wf%overlap(2*tr1%wf%n_state_group))
+                        do i = 1, tr1%wf%n_state_group
+                            allocate(tr1%wf%overlap(2*i-1)%c(tr1%wf%n_state_per_group(i), tr1%wf%n_state_per_group(i)))
+                            allocate(tr1%wf%overlap(2*i)%c(tr1%wf%n_state_per_group(i), tr1%wf%n_state_per_group(i)))
+                        end do
+                    else
+                        allocate(tr1%wf%overlap(tr1%wf%n_state_group))
+                        do i = 1, tr1%wf%n_state_group
+                            allocate(tr1%wf%overlap(i)%c(tr1%wf%n_state_per_group(i), tr1%wf%n_state_per_group(i)))
+                        end do
+                    end if
+                case('nadvec')
                     do i = 1, tr1%wf%n_state
                         do j = 1, tr1%wf%n_state
                             if (i == j) cycle
@@ -285,14 +294,8 @@ contains
                             tr1%wf%need_nadv(i, j) = .true.
                         end do
                     end do
-                case(3)
-                    allocate(tr1%wf%overlap(2*tr1%wf%n_state_group))
-                    do i = 1, tr1%wf%n_state_group
-                        allocate(tr1%wf%overlap(2*i-1)%c(tr1%wf%n_state_per_group(i), tr1%wf%n_state_per_group(i)))
-                        allocate(tr1%wf%overlap(2*i)%c(tr1%wf%n_state_per_group(i), tr1%wf%n_state_per_group(i)))
-                    end do
                 end select
-                if (ctrl%sh == 4) then
+                if (ctrl%soc) then
                     do i = 1, tr1%wf%n_state
                         allocate(tr1%wf%qm_state(i)%soc(tr1%wf%n_state), source=0.0_dp)
                     end do
@@ -870,16 +873,18 @@ contains
                     write(stderr, '(2x,a)') readf%line
                     stop
                 end select
-            case('overlap', 'overlap_hst', 'overlap_npi', 'overlap_logu')
-                ctrl%tdc_type = 1
+            case('hst', 'overlap', 'overlap_hst')
+                ctrl%tdc_type = "hst"
             case('nadvec')
-                ctrl%tdc_type = 2
+                ctrl%tdc_type = "nadvec"
+            case('npi', 'overlap_npi')
+                ctrl%tdc_type = "npi"
             case('soc', 'soc_degen')
-                ctrl%sh = 4
+                ctrl%soc= .true.
             case('socbas') ! Spin-orbit basis representation
                ctrl%socbas=.true.
             case('adt', 'overlap_adt')
-                ctrl%tdc_type = 3
+                ctrl%adt = .true.
             case('energy')
                 select case(readf%args(2)%s)
                 case('constant')

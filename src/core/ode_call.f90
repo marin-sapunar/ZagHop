@@ -4,8 +4,7 @@ module ode_call_mod
 
 
     integer :: odens !< Number of states for the ODE function.
-    real(dp), allocatable :: odeen(:) !< Energies for the ODE function.
-    real(dp), allocatable :: odecmat(:,:) !< Couplings for the ODE function.
+    complex(dp), allocatable :: odecmat(:,:) !< Couplings for the ODE function.
 
     contains
 
@@ -77,30 +76,18 @@ module ode_call_mod
         real(dp) :: ttt !< Time.
         real(dp), intent(in) :: y(2*odens) !< Dependent variable.
         real(dp), intent(inout) :: y_der(2*odens) !< Value of the derivative.
-        integer :: i1
-        integer :: i2
-        complex(dp) :: ccc(odens)
-        complex(dp) :: ccc_der(odens)
-
-        ccc = cmplx((0.0_dp, 0.0_dp), kind = dp)
-        ccc_der = cmplx((0.0_dp, 0.0_dp), kind = dp)
-
-        do i1 = 1, odens
-            ccc(i1) = cmplx(y(2*i1-1), y(2*i1), kind = dp)
-        end do
-
-        do i1 = 1, odens
-            do i2 = 1, odens
-                ccc_der(i1) = ccc_der(i1) - cmplx(odecmat(i1, i2), 0.0_dp, kind = dp) * ccc(i2)
-            end do
-            ccc_der(i1) = ccc_der(i1) - cmplx(0.0_dp, odeen(i1), kind = dp) * ccc(i1)
-        end do
+        integer :: i, j
 
         y_der = 0.0_dp
-        do i1 = 1, odens
-            y_der(2*i1 - 1) = real(ccc_der(i1))
-            y_der(2*i1) = aimag(ccc_der(i1))
+        do j = 1, odens
+            do i = 1, odens
+                y_der(2*j - 1) = y_der(2*j - 1) + real(odecmat(j, i)) * y(2*i - 1)
+                y_der(2*j - 1) = y_der(2*j - 1) - aimag(odecmat(j, i)) * y(2*i)
+                y_der(2*j) = y_der(2*j) + aimag(odecmat(j, i)) * y(2*i - 1)
+                y_der(2*j) = y_der(2*j) + real(odecmat(j, i)) * y(2*i)
+            end do
         end do
+
     end subroutine sgrhs
 
 end module ode_call_mod

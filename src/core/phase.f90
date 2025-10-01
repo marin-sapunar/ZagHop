@@ -31,8 +31,10 @@ contains
         use control_var
         integer :: st
 
+        !> @todo Do anything for analytic NAD vectors?
+        !> @todo Different check for ADT option?
         select case(ctrl%tdc_type)
-        case(1,3)
+        case('hst', 'npi')
             if (stdp3) write(stdout, *) '  Aligning phase of wave functions between steps.'
 
             ! Swap sign of rows corresponding to states whose sign was changed in the previous step.
@@ -52,11 +54,6 @@ contains
                 write(stderr, *) ' Unrecognized method.'
                 stop
             end select
-
-        case(2)
-
-            !> @todo Do anything for analytic NAD vectors?
-
         end select
     end subroutine phasematch
 

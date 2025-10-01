@@ -23,8 +23,8 @@ module mqc_wave_function_mod
                                         !! Dimension: n_state
         logical, allocatable :: need_nadv(:, :) !< Whether non-adiabatic vectors are needed.
                                         !! Dimension: (n_state, n_state)
-        logical, allocatable :: need_soc(:) !< Whether spin-orbit couplings are needed.
-                                        !! Dimension: n_state
+        logical, allocatable :: need_soc(:, :) !< Whether spin-orbit couplings are needed.
+                                        !! Dimension: (n_state, n_state)
     contains
         procedure :: initialize
         procedure :: index => index_group_state_to_full, index_full_to_group_state
@@ -38,7 +38,7 @@ contains
         integer, intent(in) :: n_state(:)
         integer, intent(in) :: multiplicity(:)
         integer, intent(in), optional :: active_state
-        integer :: i, j, n, n_tot
+        integer :: i, j, n
 
         self%n_state_group = n_state_group
         if (any(n_state(1:n_state_group) < 1)) then
@@ -52,7 +52,7 @@ contains
         allocate(self%phase(self%n_state), source=1)
         allocate(self%need_gradient(self%n_state), source=.false.)
         allocate(self%need_nadv(self%n_state, self%n_state), source=.false.)
-        allocate(self%need_soc(self%n_state), source=.false.)
+        allocate(self%need_soc(self%n_state, self%n_state), source=.false.)
         n = 0
         do i = 1, self%n_state_group
             do j = 1, self%n_state_per_group(i)
@@ -74,7 +74,6 @@ contains
         class(mqc_wave_function), intent(in) :: self
         integer, intent(in) :: i_state
         integer :: group_state(2)
-        integer :: i, n_sum
 
         if (i_state < 1 .or. i_state > self%n_state) then
             call errstop("mqc_wave_function_mod", "State index out of bounds.", 1)

@@ -65,7 +65,7 @@ contains
                     end if
                 end if
             end do
-            if (t%wf%need_soc(i)) then
+            if (any(t%wf%need_soc(i, :))) then
                 if (.not. allocated(t%wf%qm_state(i)%soc)) then
                     allocate(t%wf%qm_state(i)%soc(t%wf%n_state))
                 end if
@@ -215,10 +215,10 @@ contains
             !> @todo This is a workaround which avoids changing qmodel%eval for now,
             ! but the interface should be modified so temporary arrays are not required.
             wrk_en = t%wf%qm_state(:)%energy
-            if (ctrl%tdc_type == 2 .or. ctrl%vrescale == 3) then
+            if (ctrl%tdc_type == "nadvec" .or. ctrl%vrescale == 3) then
                 allocate(wrk_nadv(t%natom * t%ndim, t%wf%n_state, t%wf%n_state))
             end if
-            if (ctrl%tdc_type == 3) then
+            if (ctrl%adt) then
                 allocate(wrk_adt(t%wf%n_state, t%wf%n_state))
             end if
             if (.not. allocated(t%wf%qm_state(t%wf%active_state)%gradient)) then
@@ -227,7 +227,7 @@ contains
             call qmodel%eval(t%geom, t%wf%active_state, wrk_en, t%wf%qm_state(t%wf%active_state)%gradient, &
             &                wrk_nadv, wrk_adt)
             t%wf%qm_state(:)%energy = wrk_en
-            if ((ctrl%tdc_type == 2 ) .or. (ctrl%vrescale == 3)) then
+            if ((ctrl%tdc_type == "nadvec") .or. (ctrl%vrescale == 3)) then
                 do i = 1, t%wf%n_state
                     do j = 1, t%wf%n_state
                         if (.not. t%wf%need_nadv(i, j)) cycle
@@ -235,7 +235,7 @@ contains
                     end do
                 end do
             end if
-            if (ctrl%tdc_type == 3) then
+            if (ctrl%adt) then
                 t%wf%overlap(2)%c = wrk_adt
             end if
         case default
