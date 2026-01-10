@@ -266,9 +266,11 @@ l,m,l_x,l_y,l_z
         factorial(2 * l) * factorial(l_x) * factorial(l_y) *
         factorial(l_z) * factorial(l + abs_m) * factorial(l)
         )
-    ) /(2**l)
+    ) /(2**l) 
     # Factorial(l) is in denominator instead sqrt(l!) up and
     # 1/l! outside the root - in case something needs to be fixed
+    if m>0:
+        coeff_prefactor *= (-1)**(abs_m)
     sum_1 = 0
     for i in range((l-abs_m)//2+1):
         sum_1 += (binom(l,i) * binom(i,j) * (-1)**i *
@@ -296,78 +298,84 @@ def cartesian_to_spherical_transformation_matrix(l):
             )
             
     return transformation_matrix
-transformation_matrix = cartesian_to_spherical_transformation_matrix(2)
-print(transformation_matrix)
+# TESTING PART
 
-#AO_basis = read_basis(os.path.join("WATER_TESTS","original","basis"))
-#atom_list,coords_initial = read_coord(os.path.join("WATER_TESTS","original","coord"))
-#initial_MO_coeffs = read_MOs(os.path.join("WATER_TESTS","original","mos"))
-
-# CHECKING PHASE
-"""
-AO_basis = read_basis(os.path.join("WATER_TESTS","rotated","basis"))
-atom_list,coords_initial = read_coord(os.path.join("WATER_TESTS","rotated","coord"))
-initial_MO_coeffs = read_MOs(os.path.join("WATER_TESTS","rotated","mos"))
-atoms,coords_rotated = read_coord(os.path.join("WATER_TESTS","3rd_rotated","coord"))
-ROTATED_MO_coeffs = read_MOs(os.path.join("WATER_TESTS","3rd_rotated","mos"))
-"""
-"""
-AO_basis = read_basis(os.path.join("WATER_TESTS","3rd_rotated","basis"))
-atom_list,coords_initial = read_coord(os.path.join("WATER_TESTS","3rd_rotated","coord"))
-initial_MO_coeffs = read_MOs(os.path.join("WATER_TESTS","3rd_rotated","mos"))
-atoms,coords_rotated = read_coord(os.path.join("WATER_TESTS","2nd_rotated","coord"))
-ROTATED_MO_coeffs = read_MOs(os.path.join("WATER_TESTS","2nd_rotated","mos"))
-"""
-AO_basis = read_basis(os.path.join("WATER_TESTS","3rd_rotated","basis"))
-atom_list,coords_initial = read_coord(os.path.join("WATER_TESTS","3rd_rotated","coord"))
-initial_MO_coeffs = read_MOs(os.path.join("WATER_TESTS","3rd_rotated","mos"))
-atoms,coords_rotated = read_coord(os.path.join("WATER_TESTS","ANOTHER_ACTUAL_ROTATION","coord"))
-ROTATED_MO_coeffs = read_MOs(os.path.join("WATER_TESTS","ANOTHER_ACTUAL_ROTATION","mos"))
-azimuthal_quantum_number_list = get_azimuthal_q_num_list(AO_basis, atom_list)
-COEFFS_SPHE_HARM = rotate_orbitals(
-    initial_MO_coeffs,
-    coords_initial,
-    coords_rotated,
-    azimuthal_quantum_number_list
-)[:,0]
-#print("41")
-#print(rotate_orbitals(
+#transformation_matrix = cartesian_to_spherical_transformation_matrix(2)
+#print(transformation_matrix)
+#
+##AO_basis = read_basis(os.path.join("WATER_TESTS","original","basis"))
+##atom_list,coords_initial = read_coord(os.path.join("WATER_TESTS","original","coord"))
+##initial_MO_coeffs = read_MOs(os.path.join("WATER_TESTS","original","mos"))
+#
+## CHECKING PHASE
+#"""
+#AO_basis = read_basis(os.path.join("WATER_TESTS","rotated","basis"))
+#atom_list,coords_initial = read_coord(os.path.join("WATER_TESTS","rotated","coord"))
+#initial_MO_coeffs = read_MOs(os.path.join("WATER_TESTS","rotated","mos"))
+#atoms,coords_rotated = read_coord(os.path.join("WATER_TESTS","3rd_rotated","coord"))
+#ROTATED_MO_coeffs = read_MOs(os.path.join("WATER_TESTS","3rd_rotated","mos"))
+#"""
+#"""
+#AO_basis = read_basis(os.path.join("WATER_TESTS","3rd_rotated","basis"))
+#atom_list,coords_initial = read_coord(os.path.join("WATER_TESTS","3rd_rotated","coord"))
+#initial_MO_coeffs = read_MOs(os.path.join("WATER_TESTS","3rd_rotated","mos"))
+#atoms,coords_rotated = read_coord(os.path.join("WATER_TESTS","2nd_rotated","coord"))
+#ROTATED_MO_coeffs = read_MOs(os.path.join("WATER_TESTS","2nd_rotated","mos"))
+#"""
+#AO_basis = read_basis(os.path.join("WATER_TESTS","3rd_rotated","basis"))
+#atom_list,coords_initial = read_coord(os.path.join("WATER_TESTS","3rd_rotated","coord"))
+#initial_MO_coeffs = read_MOs(os.path.join("WATER_TESTS","3rd_rotated","mos"))
+#atoms,coords_rotated = read_coord(os.path.join("WATER_TESTS","ANOTHER_ACTUAL_ROTATION","coord"))
+#ROTATED_MO_coeffs = read_MOs(os.path.join("WATER_TESTS","ANOTHER_ACTUAL_ROTATION","mos"))
+#azimuthal_quantum_number_list = get_azimuthal_q_num_list(AO_basis, atom_list)
+#COEFFS_SPHE_HARM = rotate_orbitals(
 #    initial_MO_coeffs,
 #    coords_initial,
 #    coords_rotated,
 #    azimuthal_quantum_number_list
-#)[:,-1])
-# 13 0.35208720192995E-03
-d_ORBS_GAUSSIAN_STRING  = np.array("""
-    14 0.36466688672864E-04
-    15 -.14648409405826E-04
-    16 -.21818279267038E-04
-    17 -.68963261488800E-05
-    18 -.29307987727516E-04
-    19 -.25761806553887E-04
-    20 -.11154121028243E-03
-    21 0.48087658203949E-04
-    22 0.63453552078483E-04
-    23 0.17017962033446E-04
-    24 0.88519404928930E-04
-    25 0.68705698372418E-04
-    """.split(),dtype = float).reshape(-1,2)
-d_ORBS_GAUSSIAN_COEFFS = d_ORBS_GAUSSIAN_STRING[:,1]
-d_ORBS_1_GAUSS = d_ORBS_GAUSSIAN_COEFFS[0:6]
-d_ORBS_2_GAUSS = d_ORBS_GAUSSIAN_COEFFS[6:]
-#print(d_ORBS_2_GAUSS)
-print("OG",COEFFS_SPHE_HARM[13:18])
-print("OG",ROTATED_MO_coeffs[:,0][13:18])
-#print("ROTATED",ROTATED_MO_coeffs[:,0])
+#)[:,0]
+##print("41")
+##print(rotate_orbitals(
+##    initial_MO_coeffs,
+##    coords_initial,
+##    coords_rotated,
+##    azimuthal_quantum_number_list
+##)[:,-1])
+## 13 0.35208720192995E-03
+#d_ORBS_GAUSSIAN_STRING  = np.array("""
+#    14 0.36466688672864E-04
+#    15 -.14648409405826E-04
+#    16 -.21818279267038E-04
+#    17 -.68963261488800E-05
+#    18 -.29307987727516E-04
+#    19 -.25761806553887E-04
+#    20 -.11154121028243E-03
+#    21 0.48087658203949E-04
+#    22 0.63453552078483E-04
+#    23 0.17017962033446E-04
+#    24 0.88519404928930E-04
+#    25 0.68705698372418E-04
+#    """.split(),dtype = float).reshape(-1,2)
+#d_ORBS_GAUSSIAN_COEFFS = d_ORBS_GAUSSIAN_STRING[:,1]
+#d_ORBS_1_GAUSS = d_ORBS_GAUSSIAN_COEFFS[0:6]
+#d_ORBS_2_GAUSS = d_ORBS_GAUSSIAN_COEFFS[6:]
+##print(d_ORBS_2_GAUSS)
+#print("OG",COEFFS_SPHE_HARM[13:18])
+#print("OG",ROTATED_MO_coeffs[:,0][13:18])
+##print("ROTATED",ROTATED_MO_coeffs[:,0])
+##d_ORBS_SPHE_HARM_1 = COEFFS_SPHE_HARM[13:18]
 #d_ORBS_SPHE_HARM_1 = COEFFS_SPHE_HARM[13:18]
-d_ORBS_SPHE_HARM_1 = COEFFS_SPHE_HARM[13:18]
-#print(d_ORBS_1_GAUSS)
-#print("OG",d_ORBS_SPHE_HARM_1)
-#print(transformation_matrix)
-d_ORBS_SPHE_HARM_1 = ROTATED_MO_coeffs[:,0][13:18]
-print("TRANSFORMATION",transformation_matrix.T[4])
-print("HERE",np.matmul(transformation_matrix.T,real_to_complex_spherical_harmonics(d_ORBS_SPHE_HARM_1))/np.sqrt(3))
-VORW_TRANS = np.matmul(transformation_matrix.T,real_to_complex_spherical_harmonics(d_ORBS_SPHE_HARM_1))/np.sqrt(3)
-rev_tranf = np.linalg.pinv(transformation_matrix.T)
-print(complex_to_real_spherical_harmonics(np.matmul(rev_tranf,d_ORBS_1_GAUSS))*np.sqrt(3))#/np.sqrt(2*2-1))
-print(complex_to_real_spherical_harmonics(np.matmul(rev_tranf,VORW_TRANS))*np.sqrt(3))#/np.sqrt(2*2-1))
+##print(d_ORBS_1_GAUSS)
+##print("OG",d_ORBS_SPHE_HARM_1)
+##print(transformation_matrix)
+#d_ORBS_SPHE_HARM_1 = ROTATED_MO_coeffs[:,0][13:18]
+##print("TRANSFORMATION",transformation_matrix.T[4])
+#print("HERE",np.matmul(transformation_matrix.T,real_to_complex_spherical_harmonics(d_ORBS_SPHE_HARM_1))/np.sqrt(3))
+#VORW_TRANS = np.matmul(transformation_matrix.T,real_to_complex_spherical_harmonics(d_ORBS_SPHE_HARM_1))/np.sqrt(3)
+#rev_tranf = np.linalg.pinv(transformation_matrix.T)
+##print(complex_to_real_spherical_harmonics(np.matmul(rev_tranf,d_ORBS_1_GAUSS))*np.sqrt(3))#/np.sqrt(2*2-1))
+##print(complex_to_real_spherical_harmonics(np.matmul(rev_tranf,VORW_TRANS))*np.sqrt(3))#/np.sqrt(2*2-1))
+#np.savetxt("TRANSFORMATION.dat",transformation_matrix.T)
+#hmm_trans = np.linalg.pinv(transformation_matrix)
+##print("HERE",np.matmul(hmm_trans,real_to_complex_spherical_harmonics(d_ORBS_SPHE_HARM_1))/np.sqrt(3))
+#
