@@ -1,0 +1,16 @@
+$method
+ qm "run.py turbomole qmdir"
+ seed 100
+$system
+ velocity maxwell-boltzmann 300.0
+ nstate = 1
+$surfhop off
+$dynamics
+ time = 10.0
+ tstep = 1.
+ orient = 2
+$thermostat
+ target_t = 300.0
+$output
+ noprint 2,4,5,11
+$end

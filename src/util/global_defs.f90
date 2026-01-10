@@ -13,12 +13,15 @@ module global_defs
         sp => real32, & 
         dp => real64, & 
         qp => real128, &
-        i4 => int32, &
-        i8 => int64
+        int32, &
+        int64
 
 
     integer, parameter :: j15 = selected_int_kind(15)
-    integer :: print_level !< Global print level option for programs.
+    logical :: stdp1 = .true.
+    logical :: stdp2 = .true.
+    logical :: stdp3 = .false.
+    logical :: stdp4 = .false.
 
     ! Number constants.
     real(dp), parameter :: num0 = 0.0_dp
@@ -106,6 +109,18 @@ contains
         flush(stderr)
         call abort()
     end subroutine errstop
+
+
+    elemental function truefalse_str(bool) result(tf)
+        logical, intent(in) :: bool
+        character(len=5) :: tf
+
+        if (bool) then
+            tf = "True "
+        else
+            tf = "False"
+        end if
+    end function truefalse_str
 
 
 end module global_defs

@@ -34,29 +34,43 @@ contains
         use sh_ldiab_mod
         use sh_fssh_mod
         use sh_lz_mod
+        use tdc_mod
         use constants
         integer :: tst
 
-        tst = t(1)%cstate
+        if ((ctrl%tdc_type == 3) .and. (tr1%step /= 0)) then
+            call adt2overlap(tr2%adt, tr1%adt, tr1%olap)
+        end if
+
+        tst = tr1%cstate
         ctrl%hop = .false.
         select case(ctrl%sh)
         case(1)
-            call lzsh()
+            call lzsh(ctrl%rng, ctrl%dt, ctrl%qm_en_err, ctrl%lz_prob_conv, ctrl%lz_min_dt, &
+            &         ctrl%dt_0)
         case(2)
             call decoherence()
             call phasematch()
-            call sh_adiabatic(ctrl%tdc_type, ctrl%ene_interpolate, ctrl%tdc_interpolate,           &
-            &                 ctrl%tdc_interpolate, ctrl%dt, ctrl%shnstep, t(2)%qe, t(1)%qe,       &
-            &                 t(1)%cwf, t(1)%cstate, t(2)%olap, t(1)%olap, t(2)%nadv, t(1)%nadv,   &
-            &                 t(2)%velo(:, t(2)%qind), t(1)%velo(:, t(1)%qind), t(1)%prob)
+            call sh_adiabatic(ctrl%tdc_type, ctrl%ene_interpolate, ctrl%tdc_interpolate, &
+            &                 ctrl%tdc_interpolate, ctrl%dt, ctrl%shnstep, tr2%qe, tr1%qe, &
+            &                 tr1%cwf, tr1%cstate, tr2%olap, tr1%olap, tr2%nadv, tr1%nadv, &
+            &                 tr2%velo(:, tr2%qind), tr1%velo(:, tr1%qind), tr1%prob, ctrl%rng)
         case(3)
             call decoherence()
             call phasematch()
-            call sh_diabatic(t(1)%max_nstate, ctrl%dt, t(2)%qe, t(1)%qe, t(1)%cwf, t(1)%cstate,    &
-            &                t(1)%olap, t(1)%prob)
+            call sh_diabatic(tr1%max_nstate, ctrl%dt, tr2%qe, tr1%qe, tr1%cwf, tr1%cstate, &
+            &                tr1%olap, tr1%prob, ctrl%rng)
+        case(4)
+            call decoherence()
+            call phasematch()
+            call sh_sosh(ctrl%tdc_type, ctrl%ene_interpolate, ctrl%tdc_interpolate,                &
+            &                 ctrl%tdc_interpolate, ctrl%dt, ctrl%shnstep, tr2%qe, tr1%qe,       &
+            &                 tr1%cwf, tr1%cstate, tr2%olap, tr1%olap, tr2%nadv, tr1%nadv,   &
+            &                 tr2%velo(:, tr2%qind), tr1%velo(:, tr1%qind), tr2%sov, tr1%sov,&
+            &                 tr1%spinv , tr1%prob)
         end select
 
-        if (tst /= t(1)%cstate) ctrl%hop = .true.
+        if (tst /= tr1%cstate) ctrl%hop = .true.
     end subroutine hopping
 
 
@@ -99,13 +113,15 @@ contains
         real(dp) :: mvel_dir !< Component of mass weighted velocity along rescale direction.
         real(dp) :: delta_e !< Required change in kinetic energy.
 
+        if (stdp2) write(stdout, '(5x,a)') 'Ensuring energy conservation.'
+
         ! Work with temporary arrays and use mass-weighted coordinates.
         m = spread(mass(amask), 1, size(velo, 1))
         mvel = velo(:, amask) * sqrt(m)
 
         select case(opt_mc)
         case(0) ! No rescaling.
-            continue
+            return
         case(1) ! Rescale along velocity vector.
             rescale_dir = mvel
         case(2) ! Rescale along gradient difference vector.
@@ -126,9 +142,11 @@ contains
             ! is performed).
             mvel = mvel + rescale_dir * (sign(sqrt(mvel_dir**2 - 2*delta_e), mvel_dir) - mvel_dir)
         else
-            write(stdout, '(7x,a)') 'Insufficient energy for hop.'
-            write(stdout, '(7x,a,e16.8)') 'Energy difference:', delta_e
-            write(stdout, '(7x,a,e16.8)') 'Available energy:', mvel_dir**2 / 2
+            if (stdp1) then
+                write(stdout, '(7x,a)') 'Insufficient energy for hop.'
+                write(stdout, '(7x,a,e16.8)') 'Energy difference:', delta_e
+                write(stdout, '(7x,a,e16.8)') 'Available energy:', mvel_dir**2 / 2
+            end if
 
             cgrd = pgrd
             cst = pst

@@ -2,6 +2,8 @@
 ! MODULE: tdc_mod
 !> @author Marin Sapunar, Ruđer Bošković Institute
 !> @date December, 2017
+!> @author Cristina Sanz, Autonoma University Madrid
+!> @date May, 2024: sovec2tdc added for the time derivative couplings using spin-orbit couplings
 !
 ! DESCRIPTION: 
 !> @brief Contains subroutines for calculating the time-derivative couplings.
@@ -13,10 +15,28 @@ module tdc_mod
 
     private
     public :: npi_tdc_integrated
+    public :: adt2overlap
     public :: overlap2tdc
-    public :: nadvec2tdc
+    public :: nadvec2tdc, sovec2tdc
 
 contains
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: adt2overlap
+    !
+    ! DESCRIPTION:
+    !> @brief Calculate the overlap matrix from the adiabatic-to-diabaitc transform matrix.
+    !----------------------------------------------------------------------------------------------
+    subroutine adt2overlap(adt0, adt1, olap)
+        use linalg_wrapper_mod
+        real(dp), intent(in) :: adt0(:, :) !< A2D transform matrix at previous step.
+        real(dp), intent(in) :: adt1(:, :) !< A2D transform matrix at current step.
+        real(dp), allocatable, intent(out) :: olap(:, :) !< Adiabatic WF overlap matrix.
+
+        if (.not. allocated(olap)) allocate(olap, mold=adt1)
+        call gemm(adt0, adt1, olap, transa='T')
+    end subroutine adt2overlap
 
 
     !----------------------------------------------------------------------------------------------
@@ -95,5 +115,33 @@ contains
         end do
     end subroutine nadvec2tdc
 
+!----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: SOVec2TDC
+    !
+    ! DESCRIPTION:
+    !> @brief Calculate the time-derivative couplings using the spin-orbit coupling vectors.
+    !> @details
+    !! The coupling between states i and j is calculated as a scalar product between the
+    !! spin-orbit coupling vector.
+    !----------------------------------------------------------------------------------------------
+    subroutine sovec2tdc(sovec, cmat)
+        real(dp), intent(in) :: sovec(:, :) !< spin-orbit coupling vectors.
+        real(dp), intent(out) :: cmat(:, :) !< Time-derivative couplings.
+        integer :: nstate
+        integer :: i
+        integer :: j
+        integer :: k
+        integer :: d
+        integer :: c
+
+        nstate = size(cmat,1)
+
+        cmat = 0.0_dp
+        do i = 1, nstate
+        do j = 1, nstate           
+           cmat(i, j) = cmat(i, j) + sovec(i, j) 
+        end do
+        end do
+    end subroutine sovec2tdc
 
 end module tdc_mod

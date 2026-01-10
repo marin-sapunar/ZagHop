@@ -18,13 +18,19 @@ module shzagreb_inter
       use rddvrmod
       use rdopermod
       use iorst, only: rstinfo
-      use dirdyn
+      use dirdyn, only: ndoftsh,dercpdim,ndofddpes,&
+                  dbnrec,nactdim,natmtsh,ldbsave,&
+                  lupdhes,lnactdb,lddrddb,ddtrajnum,num_gp
+      use dirdyn, only: alloc_dirdyn,alloc_dddb,atnam,nsmult,imultmap
       use directdyn
-      use potevalmod, only: calcdiab,calcdiabder
-      use psidef, only: qcentdim,gwpdim,zcent,vdimgp,dimgp,ndimgp,zgp,nsgp,totgp
+      use potevalmod, only: calcdiab,calcdiabder,calcvreps
+      use psidef, only: qcentdim,gwpdim,zcent,vdimgp,dimgp,ndimgp,zgp,nsgp,totgp,&
+                        sbaspar,rsbaspar
       use openmpmod, only: lompqc
+      use lalib, only: simtranbd
       
-      use dd_db, only: ddq2x, ddx2q, ddf2x, dddb_gp, ddf2q
+      use dd_db, only: dddb_gp,getdbnrec,preparedb
+      use dbcootrans
       use channels
       use op2lib, only: subvxxdo1
       use xvlib, only: mvxxdd1, mvtxdd1
@@ -34,17 +40,20 @@ module shzagreb_inter
 
       real(dop), allocatable :: qcoo(:),qcoo1(:),xgp(:)
       real(dop), allocatable :: tempvec(:, :, :)
-      real(dop), allocatable :: pesdia(:,:)
+      real(dop), allocatable :: pesdia(:,:),cpesdia(:,:)
+      real(dop), allocatable :: pesad(:),cpesad(:)
+      real(dop), allocatable :: pesspdi(:,:),cpesspdi(:,:)
       real(dop), allocatable :: derdia(:,:,:)
       real(dop), allocatable :: derad(:,:,:)
+      real(dop), allocatable :: rotmat(:,:),crotmat(:,:)
       complex(dop), allocatable :: rotmatz(:,:)
       integer(long), allocatable :: point(:)
       real(dop), allocatable :: hops(:)
       integer :: gdof
-
+      
 contains
 
-      subroutine shzagreb_run(step, xyz0, cstate, en, gra, nadvec)
+      subroutine shzagreb_run(step, xyz0, cstate, en, gra, nadvec, sovec, spinvec, socbas, adt)
 
       
       integer, intent(in) :: step
@@ -53,15 +62,19 @@ contains
       real(dop), intent(out) :: gra(:, :)
       real(dop), intent(out) :: en(:)
       real(dop), intent(out) :: nadvec(:, :, :)
+! GW: NEED TO PASS SOVEC FROM ZAGHOP
+      real(dop), intent(out) :: sovec(:, :)
+      integer, intent(in) :: spinvec(:)
+      logical(kind=4), intent(in) :: socbas
+      real(dop), intent(out) :: adt(:, :)
     
-
       integer :: i,j,ilbl,jlbl,chkdvr,chkgrd,chkpsi,chkprp,n,f,f1,m
       logical(kind=4) :: linwf
       real(dop), allocatable :: xyz(:, :)
 
       real(dop) :: time
 
-      integer             :: ierr
+      integer             :: ierr,izflag,nham,modus,s
       character(len=c5)   :: filename,string
       logical(kind=4)     :: check,lerr
       real(dop), external :: dlamch
@@ -71,200 +84,240 @@ contains
       open(ilog,file='quantics.log',status='unknown',position='append')
 
       if (.not. initialized) then
-      macheps = dlamch('P')
+         macheps = dlamch('P')
 
-      string='../..'
-      ilbl=5
-      call abspath(string,ilbl)
-      dname = string
-      dlaenge = index(dname,' ')-1
-      oname = string
-      olaenge = index(oname,' ')-1
-      rname = string
-      rlaenge = index(rname,' ')-1
+         string='../..'
+         ilbl=5
+         call abspath(string,ilbl)
+         dname = string
+         dlaenge = index(dname,' ')-1
+         oname = string
+         olaenge = index(oname,' ')-1
+         rname = string
+         rlaenge = index(rname,' ')-1
 
 ! turn off parallelisation of QC calcs (omp threads do separate trajs).
-      lompqc=.false.
+         lompqc=.false.
 
 !-----------------------------------------------------------------------
 ! get array dimensions 
 !-----------------------------------------------------------------------
-      inquire(irst,opened=check)
-      if (check) close(irst)
-      filename=rname(1:rlaenge)//'/restart'
-      ilbl=index(filename,' ')-1
-      open(irst,file=filename(1:ilbl),form='unformatted',status='old',&
-           iostat=ierr)
-      if (ierr .ne. 0) then
-         routine='SHzagreb_interface'
+         inquire(irst,opened=check)
+         if (check) close(irst)
+         filename=rname(1:rlaenge)//'/restart'
          ilbl=index(filename,' ')-1
-         message = 'Cannot open file: '//filename(1:ilbl)
-         call errormsg
-      endif
-      call rdmemdim(irst)
-      close(irst)
+         open(irst,file=filename(1:ilbl),form='unformatted',status='old',&
+              iostat=ierr)
+         if (ierr .ne. 0) then
+            routine='SHzagreb_interface'
+            ilbl=index(filename,' ')-1
+            message = 'Cannot open file: '//filename(1:ilbl)
+            call errormsg
+         endif
+         call rdmemdim(irst)
+         close(irst)
 
 !-----------------------------------------------------------------------
 ! For DD calculations, DB needs to be read into memory
 !-----------------------------------------------------------------------
-      if (ldd) then
-         ldbsave = .true.
-         if (lddrddb) then
-            lupdhes = .true.
-         else
-            lupdhes = .false.
-         endif
+         if (ldd) then
+            ldbsave = .true.
+            if (lddrddb) then
+               lupdhes = .true.
+            else
+               lupdhes = .false.
+            endif
 
 ! if not using a DB, do not allocate large memory
-         if (.not. (lddrddb)) then
-            dbmemdim = 1  
-            ldbsmall = .false.
+            if (.not. (lddrddb)) then
+               dbmemdim = 1  
+               ldbsmall = .false.
+            endif
          endif
-      endif
 
 !-----------------------------------------------------------------------
 ! Allocate memory 
 !-----------------------------------------------------------------------
-      allocmemory=0
-      call alloc_dvrdat
-      call alloc_grddat
-      call alloc_operdef
-      if (ldd) then
-         allocate(gwpdim(1,1))
-         allocate(zcent(1,1))
-         allocate(vdimgp(1,1))
-         allocate(dimgp(1,1))
-         allocate(ndimgp(1,1))
-         allocate(zgp(1))
-         allocate(nsgp(1))
-      endif
-! needed for both DD and analytical due to use of DDtrans
-      call alloc_dirdyn
-      if (ldd) then
-         call alloc_dddb
-         call alloc_dercp
-      endif
+         allocmemory=0
+         call alloc_dvrdat
+         call alloc_grddat
+         call alloc_operdef
+         if (ldd .or. ltraj) then
+            allocate(gwpdim(1,1))
+            allocate(zcent(1,1))
+            allocate(vdimgp(1,1))
+            allocate(dimgp(1,1))
+            allocate(ndimgp(1,1))
+            allocate(zgp(1))
+            allocate(nsgp(1))
+            allocate(rsbaspar(sbaspar,maxdim,1))
+            call alloc_dirdyn(ilog)
+         endif
 
 !-----------------------------------------------------------------------
 ! Read system / DVR information
 !-----------------------------------------------------------------------
-      filename=dname(1:dlaenge)//'/dvr'
-      ilbl=index(filename,' ')-1
-      open(idvr,file=filename,form='unformatted',status='old',iostat=ierr)
-      if (ierr .ne. 0) then
-         routine='SHzagreb_interface'
+         filename=dname(1:dlaenge)//'/dvr'
          ilbl=index(filename,' ')-1
-         message = 'Cannot open file: '//filename(1:ilbl)
-         call errormsg
-      endif
-      chkdvr=1
-      call dvrinfo(lerr,chkdvr)
-      close(idvr)
+         open(idvr,file=filename,form='unformatted',status='old',iostat=ierr)
+         if (ierr .ne. 0) then
+            routine='SHzagreb_interface'
+            ilbl=index(filename,' ')-1
+            message = 'Cannot open file: '//filename(1:ilbl)
+            call errormsg
+         endif
+         chkdvr=1
+         call dvrinfo(lerr,chkdvr)
+         close(idvr)
 
 !-----------------------------------------------------------------------
 ! Read data from oper file
 !-----------------------------------------------------------------------
-    !  ddpath='../../..'
-      ddpath = ' '
-      filename=oname(1:olaenge)//'/oper'
-      ilbl=index(filename,' ')-1
-      open(ioper,file=filename,form='unformatted',status='old',iostat=ierr)
-      if (ierr .ne. 0) then
-         routine='SHzagreb_interface'
+         ddpath = ' '
+         filename=oname(1:olaenge)//'/oper'
          ilbl=index(filename,' ')-1
-         message = 'Cannot open file: '//filename(1:ilbl)
-         call errormsg
-      endif
-      chkdvr=1
-      chkdvr=2
-      chkgrd=1
-      call operinfo(lerr,chkdvr,chkgrd)
-      close(ioper)
+         open(ioper,file=filename,form='unformatted',status='old',iostat=ierr)
+         if (ierr .ne. 0) then
+            routine='SHzagreb_interface'
+            ilbl=index(filename,' ')-1
+            message = 'Cannot open file: '//filename(1:ilbl)
+            call errormsg
+         endif
+         chkdvr=1
+         chkdvr=2
+         chkgrd=1
+         call operinfo(lerr,chkdvr,chkgrd)
+
+!----------------------------------------------------------------------- 
+! read in coordinate transformation information
+!-----------------------------------------------------------------------
+         if (lddtrans .or. ltshtrans) then
+            call alloc_dbcootrans
+            call rdddtrans(ioper)
+         endif
+
+         close(ioper)
+
+!-----------------------------------------------------------------------
+! Open DB and find out what it contains before allocating memory
+!-----------------------------------------------------------------------
+         if (ldddb) then
+            call preparedb(1)
+            call getdbnrec(dbnrec)
+            call alloc_dddb(ilog)
+         endif
 
 !-----------------------------------------------------------------------
 ! Read data needed by the operator
 !-----------------------------------------------------------------------
-      operfile=oname(1:olaenge)//'/oper'
-      allocate(hops(hopsdim))
-      chkdvr=2
-      chkgrd=1
-      call rdoper(hops,chkdvr,chkgrd)
+         operfile=oname(1:olaenge)//'/oper'
+         allocate(hops(hopsdim))
+         chkdvr=2
+         chkgrd=1
+         call rdoper(hops,chkdvr,chkgrd)
 
 !-----------------------------------------------------------------------
 ! DD needs to read restart file for info on how Shepard Interpolation is 
 ! being done
 !-----------------------------------------------------------------------
-      if (ldd) then
-        filename=rname(1:rlaenge)//'/restart'
-        ilbl=index(filename,' ')-1
-        open(irst,file=filename,form='unformatted',status='old',iostat=ierr)
-        if (ierr .ne. 0) then
-           routine='SHzagreb_interface'
+         if (ldd) then
+           filename=rname(1:rlaenge)//'/restart'
            ilbl=index(filename,' ')-1
-           message = 'Cannot open file: '//filename(1:ilbl)
-           call errormsg
-        endif
-        chkdvr=0
-        chkgrd=0
-        chkpsi=0
-        chkprp=1
-        call rstinfo(linwf,lerr,chkdvr,chkgrd,chkpsi,chkprp)
-        close(irst)
-      endif
+           open(irst,file=filename,form='unformatted',status='old',iostat=ierr)
+           if (ierr .ne. 0) then
+              routine='SHzagreb_interface'
+              ilbl=index(filename,' ')-1
+              message = 'Cannot open file: '//filename(1:ilbl)
+              call errormsg
+           endif
+           chkdvr=0
+           chkgrd=0
+           chkpsi=0
+           chkprp=1
+           call rstinfo(linwf,lerr,chkdvr,chkgrd,chkpsi,chkprp)
+           close(irst)
+         endif
+
+!-----------------------------------------------------------------------
+! get no. of states and no. of dynamical coordinates
+!-----------------------------------------------------------------------
+         nddstate = gdim(feb)
+         gdof = nspfdof(1)
 
 !-----------------------------------------------------------------------
 ! qcentdim is needed in getddpes as dimension of Ndof (effectively 1GWP)
 !-----------------------------------------------------------------------
-      if (ldd) then
-         gwpdim(1,1) = 1
-         zcent(1,1) = 1
-         gwpm(1)=.true.
-         qcentdim = nspfdof(1)
+         if (ldd) then
+            gwpdim(1,1) = 1
+            zcent(1,1) = 1
+            gwpm(1)=.true.
+            qcentdim = nspfdof(1)
 
 !needed for getddpes (No. of configurations is 1)
-         vdimgp(1,1) = 1
-         dimgp(1,1) = 1
-         ndimgp(1,1) = 1
-         nsgp(1)=1
-         totgp = 1
-         zgp(1) = 1
+            vdimgp(1,1) = 1
+            dimgp(1,1) = 1
+            ndimgp(1,1) = 1
+            nsgp(1)=1
+            totgp = 1
+            zgp(1) = 1
 
 ! no. of NACTS
-         if (nddstate .gt. 1) then
-            lnactdb = .true.
-            nactdim = nddstate*(nddstate-1)/2
-         endif
+            if (nddstate .gt. 1) then
+               lnactdb = .true.
+               nactdim = nddstate*(nddstate-1)/2
+            endif
 
 ! get trajectory number from directory name
-         string=ddname
-         call dirpath(string,ilbl)
-         jlbl=ilbl-1
-         ilbl=jlbl
-         do 
-            if (string(ilbl-1:ilbl-1) .eq. '.') exit
-            ilbl=ilbl-1
-         enddo
-         read(string(ilbl:jlbl),*) ddtrajnum
+            string=ddname
+            call dirpath(string,ilbl)
+            jlbl=ilbl-1
+            ilbl=jlbl
+            do 
+               if (string(ilbl-1:ilbl-1) .eq. '.') exit
+               ilbl=ilbl-1
+            enddo
+            read(string(ilbl:jlbl),*) ddtrajnum
 
-      endif
+         endif
 
-! get no. of states and no. of dynamical coordinates
-      nstate = gdim(feb)
-
-      gdof = nspfdof(1)
+! Check memory is free
+         if (allocated(tempvec)) deallocate(tempvec)
+         if (allocated(qcoo)) deallocate(qcoo)
+         if (allocated(qcoo1)) deallocate(qcoo1)
+         if (allocated(xgp)) deallocate(xgp)
+         if (allocated(rotmatz)) deallocate(rotmatz)
+         if (allocated(rotmat)) deallocate(rotmat)
+         if (allocated(crotmat)) deallocate(crotmat)
+         if (allocated(point)) deallocate(point)
+         if (allocated(pesdia)) deallocate(pesdia)
+         if (allocated(cpesdia)) deallocate(cpesdia)
+         if (allocated(derdia)) deallocate(derdia)
+         if (allocated(derad)) deallocate(derad)
+         if (allocated(pesad)) deallocate(pesad)
+         if (allocated(cpesad)) deallocate(cpesad)
+         if (allocated(pesspdi)) deallocate(pesspdi)
+         if (allocated(cpesspdi)) deallocate(cpesspdi)
 
 ! Allocate memory
-      allocate(tempvec(gdof,nstate,nstate))
-      allocate(qcoo(ndoftsh))
-      allocate(qcoo1(maxdim))
-      allocate(xgp(maxdim))
-      allocate(pesdia(maxsta,maxsta))
-      allocate(rotmatz(maxsta,maxsta))
-      allocate(point(maxdim))
-      allocate(derdia(maxsta,maxsta,maxdim))
-      allocate(derad(maxsta,maxsta,maxdim))
+         allocate(tempvec(gdof,nddstate,nddstate))
+         allocate(qcoo(ndoftsh))
+         allocate(qcoo1(maxdim))
+         allocate(xgp(maxdim))
+         allocate(rotmatz(nddstate,nddstate))
+         allocate(rotmat(nddstate,nddstate))
+         allocate(crotmat(nddstate,nddstate))
+         allocate(point(maxdim))
+         allocate(derdia(nddstate,nddstate,maxdim))
+         allocate(derad(nddstate,nddstate,maxdim))
 
-      initialized = .true.
+         allocate(pesdia(nddstate,nddstate))
+         allocate(cpesdia(nddstate,nddstate))
+         allocate(pesad(nddstate))
+         allocate(cpesad(nddstate))
+         allocate(pesspdi(nddstate,nddstate))
+         allocate(cpesspdi(nddstate,nddstate))
+
+         initialized = .true.
       endif ! Initialization done
 
       gra = 0.0_dop
@@ -273,7 +326,7 @@ contains
 ! reform xyz -> qcoo (Quantics dynamical coordinates)
       if (ltshtrans) then
          call subvxxdo1(xyz,tshxcoo0,ndoftsh)
-         call mvxxdd1(tshtransb,xyz,qcoo,maxdim,ndoftsh,gdof)
+         call mvxxdd1(tshtransb,xyz,qcoo,maxdim,ndoftsh,gdof) 
       else
          f=0
          do n=1,natmtsh
@@ -283,7 +336,6 @@ contains
             enddo
          enddo
       endif
-
 
 ! need to add frozen coordinates to qcoo 
 ! (it assumes coordinates are the centre of a GWP)
@@ -299,6 +351,7 @@ contains
          if (basis(f) .eq. 19) qcoo1(f) = rpbaspar(1,f)
       enddo
 
+
 ! Initialise local DBs. Need to be in Cartesians.
       if (ldd .and. ldbsmall) then
          if (lddtrans) then
@@ -310,32 +363,83 @@ contains
          num_gp = 1
          call dddb_gp(dbnrec,xgp,num_gp)
       endif
-
+     
 ! Perform calculation of QC.
       time=0.0d0
-      if (ldd) call getddpes(time,qcoo,1,1)   
-
-    !  if (dddiab .eq. 0) then
-! Extract energies, gradients, nacts from adiabatic data
-    !     call extradgra(cstate,en,gra,nadvec, &
-    !          dbener(1:nddstate,1:nddstate,1), &
-    !          dbgrad(1:ndofddpes,1:nddstate,1:nddstate,1), &
-    !          dbdercp(1:ndofddpes,1:dercpdim,1))
-    !  else
+      if (ldd) call getddpes(time,qcoo,1,1)  
 ! PES matrix in adiabatic (en) and diabatic (pesdia) representations
 ! rotmatz is the ADT matrix (as a complex)
-         call calcdiab(hops,en,pesdia,rotmatz,point,qcoo1,1)
+      if (lsocbas) then
+         modus=0
+      else
+         modus=1
+      endif
+      nham=1
+      call calcvreps(hops,pesad,cpesad,pesspdi,cpesspdi,&
+           pesdia,cpesdia,rotmat,crotmat,point,qcoo1,nham,&
+           izflag,modus)
+      
+      if (lsocbas.or.socbas) then
+         do s=1,nddstate
+            en(s) = pesad(s)
+         enddo
+      else
+         do s=1,nddstate
+            en(s) = pesspdi(s,s)
+         enddo
+      endif
 
 ! Matrix of gradients in adiabatic (derad) and diabatic (derdia).
-         call calcdiabder(hops,derad,derdia,rotmatz,qcoo1,1)
-
+      rotmatz = rotmat + (0,1.0_dop)*crotmat
+      call calcdiabder(hops,derad,derdia,rotmatz,qcoo1,1)
+!     adt = rotmatz
+      
 ! Convert forces to Cartesian and extract forces / nact
-         call extrgra(cstate,en,gra,nadvec,derad)
-   !   endif
-
+      call extrgra(cstate,en,gra,nadvec,derad)
+! extract SOC from diabatic energy matrix
+      if (.not. lsocbas) then
+         if (nsmult .gt. 1) call extrsoc(pesspdi,sovec,spinvec)
+         
+      else if (.not. socbas) then
+         if (size(spinvec,1).gt.0) call extrsoc(pesspdi,sovec,spinvec)
+         
+      endif
+      
       close(ilog)
 
       end subroutine shzagreb_run
+
+!#######################################################################
+
+      subroutine extrsoc(pesspdi,sovec, spinvec)
+      implicit none
+
+      integer(long)              :: s,s1,f,f1,n,m
+      real(dop), dimension(:,:), intent(out) :: sovec
+      real(dop), dimension(:,:), intent(in)  :: pesspdi      
+      integer, dimension(:), intent(in) :: spinvec
+      
+      if(size(spinvec,1).gt.0)then
+      ! Keep only values between different multiplicities
+         do s=1,size(spinvec,1)
+            do s1=1,size(spinvec,1)
+               if (spinvec(s) .ne. spinvec(s1)) then
+                  sovec(s1,s) = pesspdi(s1,s)
+               endif
+            enddo
+         enddo
+      elseif(allocated(imultmap))then !Ask Graham, cause nddstate is the number of multiplicity blocks, no the multiplicity of all states
+      ! Keep only values between different multiplicities
+         do s=1,nddstate
+            do s1=1,nddstate
+               if (imultmap(s) .ne. imultmap(s1)) then
+                  sovec(s1,s) = pesspdi(s1,s)
+               endif
+            enddo
+         enddo
+      endif
+      
+      end subroutine extrsoc
 
 
 !#######################################################################
@@ -348,10 +452,10 @@ contains
       integer(long)              :: s,s1,f,f1,n,m
       real(dop), dimension(ndoftsh,nddstate,nddstate), intent(out) :: nadvec
       real(dop), dimension(ndof)                                   :: qnadvec
-      real(dop), dimension(ndoftsh),intent(out)              :: gra
-      real(dop), dimension(ndof)                             :: qgra
-      real(dop), dimension(maxsta,maxsta,maxdim), intent(in) :: derad
-      real(dop), dimension(maxsta), intent(in)               :: en
+      real(dop), dimension(ndoftsh),intent(out)                    :: gra
+      real(dop), dimension(ndof)                                   :: qgra
+      real(dop), dimension(nddstate,nddstate,maxdim), intent(in)   :: derad
+      real(dop), dimension(nddstate), intent(in)                   :: en
       real(dop) :: ediff
 
 
@@ -380,6 +484,8 @@ contains
       m = 1  ! only 1 mode in TSH
       do s=1,nddstate
          do s1=s+1,nddstate
+            if (imultmap(s) .ne. imultmap(s1)) cycle  ! ignore different spins
+
             do n=1,nspfdof(m)
                f=spfdof(n,m)
                qnadvec(n) = derad(s1,s,f)
@@ -409,100 +515,6 @@ contains
       enddo
   
       end subroutine extrgra
-
-!#######################################################################
-
-      subroutine extradgra(sta,en,gra,nadvec,av,deriv1,dercp)
-
-      implicit none
-
-      integer(long), intent(in)  :: sta
-      integer(long)              :: s,s1,f,f1,sdx
-      real(dop), dimension(ndoftsh,nddstate,nddstate), intent(out) :: nadvec
-      real(dop), dimension(ndof)                                   :: qnadvec
-      real(dop), dimension(ndoftsh),intent(out)              :: gra
-      real(dop), dimension(ndofddpes)                        :: tmpgra
-      real(dop), dimension(ndofdd)                           :: qgra
-      real(dop), dimension(maxsta), intent(out)              :: en
-      real(dop), dimension(nddstate,nddstate), intent(in)       :: av
-      real(dop), dimension(ndofddpes,nddstate,nddstate), intent(in)  :: deriv1
-      real(dop), dimension(ndofddpes,dercpdim), intent(in)           :: dercp
-      real(dop) :: ediff
-
-      gra = 0.0
-      nadvec = 0.0
-
-      do s=1,nddstate
-         en(s) = av(s,s)
-      enddo
-
-! extract gradient for present state and transform to Cartesian
-! removing frozen coordinates
-      f1 = 0
-      do f=1,ndofddpes
-         f1 = f1+1
-         tmpgra(f1) = deriv1(f,sta,sta)
-      enddo
-
-! first transform from Cartesians (DB coordinates) to DD coordinates
-      if (lddtrans) then
-         call ddf2q(tmpgra,qgra)
-      else
-         qgra(1:ndofdd) = tmpgra(1:ndofdd)
-      endif
-    
-! transform from DD coordinates to TSH coordinates
-      if (ltshtrans) then
-         call mvtxdd1(tshtransb,qgra,gra,maxdim,nspfdof(1),ndoftsh)
-      else
-         do f=1,ndoftsh
-            gra(f)=qgra(f)
-         enddo
-      endif
-
-! extract nacts and transform to Cartesian
-! set  for frozen coordinates to 0
-      nadvec = 0.0_dop
-      do s=1,nddstate-1
-         do s1=s+1,nddstate
-            sdx = (s1-1)*(s1-2)/2+s
-
-            f1 = 0
-            do f=1,ndofddpes
-               f1 = f1+1
-               tmpgra(f1) = dercp(f,sdx)
-            enddo
-
-            if (lddtrans) then
-               call ddf2q(tmpgra,qnadvec)
-            else
-               qnadvec(1:ndofdd) = tmpgra(ndofdd)
-            endif
-
-            if (ltshtrans) then
-               call mvtxdd1(tshtransb,qnadvec,nadvec(1,s1,s),maxdim,&
-                    nspfdof(1),ndoftsh)
-            else
-               do f=1,ndoftsh
-                  nadvec(f,s1,s)=qnadvec(f)
-               enddo
-            endif
-
-            ediff = en(s) - en(s1)
-            if (abs(ediff) .lt. 1.0d-6) then
-               if (ediff .lt. 0.0) then
-                  ediff=-1.0d-6
-               else
-                  ediff=1.0d-6
-               endif
-            endif
-            nadvec(:,s1,s) = nadvec(:,s1,s) / ediff
-
-            nadvec(:,s,s1) = -nadvec(:,s1,s)
-         enddo
-      enddo
-  
-      end subroutine extradgra
 
 end module shzagreb_inter
 

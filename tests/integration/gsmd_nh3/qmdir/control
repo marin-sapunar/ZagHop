@@ -1,0 +1,75 @@
+$title
+$operating system unix
+$symmetry c1
+$coord    file=coord
+$user-defined bonds    file=coord
+$atoms
+n  1                                                                           \
+   basis =n def2-SVP
+h  2-4                                                                         \
+   basis =h def2-SVP
+$basis    file=basis
+$rundimensions
+   dim(fock,dens)=495
+   natoms=4
+   nshell=15
+   nbf(CAO)=30
+   nbf(AO)=29
+   dim(trafo[SAO<-->AO/CAO])=32
+   rhfshells=1
+$scfmo   file=mos
+$closed shells
+ a       1-5                                    ( 2 )
+$scfiterlimit       30
+$thize     0.10000000E-04
+$thime        5
+$scfdump
+$scfintunit
+ unit=30       size=0        file=twoint
+$scfdiis
+$maxcor      500
+$scforbitalshift  automatic=.1
+$drvopt
+   cartesian  on
+   basis      off
+   global     off
+   hessian    on
+   dipole     on
+   nuclear polarizability
+$interconversion  off
+   qconv=1.d-7
+   maxiter=25
+$optimize
+   internal   off
+   cartesian  on
+   global     off
+   basis      off   logarithm
+$coordinateupdate
+   dqmax=0.3
+   interpolate  on
+   statistics    5
+$forceupdate
+   ahlrichs numgeo=0  mingeo=3 maxgeo=4 modus=<g|dq> dynamic fail=0.3
+   threig=0.005  reseig=0.005  thrbig=3.0  scale=1.00  damping=0.0
+$forceinit on
+   diag=default
+$energy    file=energy
+$grad    file=gradient
+$forceapprox    file=forceapprox
+$lock off
+$dft
+   functional pbe0
+   gridsize   m3
+$scfconv   6
+$scfdamp   start=0.700  step=0.050  min=0.050
+$last step     dscf
+$last SCF energy change = -.16546628E-06
+$charge from dscf
+          0.000 (not to be modified here)
+$dipole from dscf
+  x    -0.00010387826638    y     0.00000000000117    z    -0.70483649151737    a.u.
+   | dipole | =    1.7915292236  debye
+$optinfo       file=optinfo
+$hessapprox   file=hessapprox
+$orbital_max_rnorm 0.59265524686712E-04
+$end

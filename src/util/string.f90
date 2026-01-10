@@ -14,7 +14,8 @@ module string_mod
     public :: string_parse
     public :: toupper
     public :: tolower
-    public :: read_index_list
+    public :: read_index_list    
+    public :: read_index_list_unsort
     public :: char_is_num
     public :: rmwhite
     public :: compact
@@ -56,7 +57,7 @@ contains
         tempstr = input_string
         call compact(tempstr)
         pquotes = .true.
-        IF (present(protect_quotes)) pquotes = protect_quotes
+        if (present(protect_quotes)) pquotes = protect_quotes
         narg = 0
       
         ! First determine number of arguments.
@@ -87,6 +88,88 @@ contains
     !! single integers or ranges separated by a hyphen.
     !----------------------------------------------------------------------------------------------
     subroutine read_index_list(str, indexlist)
+        use sort_mod, only : sort
+        character(len=*), intent(in) :: str !< Input string.
+        integer, allocatable, intent(out) :: indexlist(:) !< Final integer list.
+       
+        character(len=:), allocatable :: tempstr
+        logical :: range_0, range_1
+        integer :: i, j, i0, last
+        integer :: ntot
+        integer :: int1, int0
+        integer, allocatable :: templist(:)
+        integer, parameter :: chunk = 2000
+       
+        ntot = 0
+        tempstr = str
+        call compact(tempstr)
+        allocate(templist(chunk))
+
+        if (len(tempstr) == 1) then
+            allocate(indexlist(1))
+            read(tempstr, *) indexlist(1)
+            return
+        end if
+       
+        i0 = 1
+        range_0 = .false.
+        range_1 = .false.
+        do i = 2, len(tempstr)
+            select case(tempstr(i:i))
+            case('-')
+                last = 1
+                range_0 = .true.
+            case(',')
+                last = 2
+            case(' ')
+                if (last /= 4) cycle
+            case default
+                last = 4
+                if (i /= len(tempstr)) cycle
+            end select
+            if (i /= len(tempstr)) then ! Reached a delimiter.
+                read(tempstr(i0:i-1), *) int1
+            else ! Reached end of string.
+                read(tempstr(i0:i), *) int1
+            end if
+            i0 = i + 1
+            if (range_0) then
+                int0 = int1
+                range_0 = .false.
+                range_1 = .true.
+            else if (range_1) then
+                range_1 = .false.
+                do j = int0, int1
+                    ntot = ntot + 1
+                    if (ntot > size(templist)) then
+                        indexlist = templist
+                        deallocate(templist)
+                        allocate(templist(ntot + chunk))
+                        templist(1:ntot-1) = indexlist
+                    end if
+                    templist(ntot) = j
+                end do
+            else
+                ntot = ntot + 1
+                templist(ntot) = int1
+            end if
+        end do
+       
+        indexlist = templist(1:ntot)
+        call sort(indexlist)
+ 
+    end subroutine read_index_list
+ 
+     !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: read_index_list
+    !
+    ! DESCRIPTION:
+    !> @brief Read a list of positive integers from a string.
+    !> @details 
+    !! The integers can be given as a comma/whitespace separated list. Members of the list can be 
+    !! single integers or ranges separated by a hyphen.
+    !----------------------------------------------------------------------------------------------
+    subroutine read_index_list_unsort(str, indexlist)
         use sort_mod, only : sort
         character(len=*), intent(in) :: str !< Input string.
         integer, allocatable, intent(out) :: indexlist(:) !< Final integer list.
@@ -149,10 +232,10 @@ contains
        
         if (allocated(indexlist)) deallocate(indexlist)
         allocate(indexlist(ntot))
-        call sort(templist(1:ntot))
+!        call sort(templist(1:ntot))
         indexlist = templist(1:ntot)
  
-    end subroutine read_index_list
+    end subroutine read_index_list_unsort
  
  
     !----------------------------------------------------------------------------------------------
