@@ -1,6 +1,7 @@
 import numpy as np
-from scipy.special import factorial
+from scipy.special import factorial,binom
 import os
+#import cartesian_spherical_transformations
 def index_to_m(index,l):
     """
     Converts array index to angular momentum projection. Currently uses turbomole
@@ -14,7 +15,27 @@ def index_to_m(index,l):
         return m
     else:
         return [1,-1,0][index]
-
+def powers_to_array(power_string):
+    # molden ordering of powers (separated by ', ') converted to numpy array. TEMPORARY SOLUTION???
+    arr = power_string.split(", ")
+    power_array = []
+    for el in arr:
+        power_array.append(np.array(list(el),dtype = float))
+    return np.array(power_array)
+def molden_cartesian_GTO_order():
+    """
+    Element [l] of returned dictionary shows order of coefficients
+    for Cartesian GTOs for the total angular momentum l=l_x+l_y+l_z
+    """
+    # TEMPORARILY WITHOUT GENERATING FORMULA???
+    
+    GTO_power_dict = {}
+    GTO_power_dict[0] = powers_to_array("000")
+    GTO_power_dict[1] = powers_to_array("100, 010, 001")
+    GTO_power_dict[2] = powers_to_array("200, 020, 002, 110, 101, 011")
+    GTO_power_dict[3] = powers_to_array("300, 030, 003, 120, 210, 201, 102, 012, 021, 111")
+    GTO_power_dict[4] = powers_to_array("400, 040, 004, 310, 301, 130, 031, 103, 013, 220, 202, 022, 211, 121, 112")
+    return GTO_power_dict
 def create_wigner_D_matrix(l,alpha,beta,gamma):
     r"""
     Creates a Wigner D-matrix for rotating spherical harmonics, whose elements [m1,m2] are 
@@ -145,40 +166,46 @@ def calculate_euler_angles(coords_initial, coords_final):
         alpha = np.arctan2(rotation_matrix[1,0],rotation_matrix[0,0])
         gamma = 0
     return alpha,beta,gamma
-
 def real_to_complex_spherical_harmonics(coeffs):
-    
+
     l = (len(coeffs)-1)//2
     complex_coeffs = []
     if l==1:
         complex_coeffs.append(-1/np.sqrt(2)*(coeffs[0]+1j*coeffs[1]))
-        complex_coeffs.append(1/np.sqrt(2)*(coeffs[0]-1j*coeffs[1]))
+        complex_coeffs.append(-1/np.sqrt(2)*(coeffs[0]-1j*coeffs[1]))
         complex_coeffs.append(coeffs[2])
     elif l>1:
         complex_coeffs.append(coeffs[0])
-        for m_ind in range(1,2*l+1,2):
-            complex_coeffs.append(1/np.sqrt(2)*(coeffs[m_ind]-1j*coeffs[m_ind + 1]))
-            complex_coeffs.append(-1/np.sqrt(2)*(coeffs[m_ind]+1j*coeffs[m_ind + 1]))
+        complex_coeffs.append(-1/np.sqrt(2)*(coeffs[1]-1j*coeffs[2]))
+        complex_coeffs.append(1/np.sqrt(2)*(coeffs[1]+1j*coeffs[2]))
+
+        complex_coeffs.append(1/np.sqrt(2)*(coeffs[4]+1j*coeffs[3]))
+
+        complex_coeffs.append(1/np.sqrt(2)*(coeffs[4]-1j*coeffs[3]))
     else:
         return coeffs
     return np.array(complex_coeffs)
-
 def complex_to_real_spherical_harmonics(coeffs):
-    ##### FIXXXXXX GENERALIZE THIS IS JUST FOR d !!!
     real_coeffs = []
     l = (len(coeffs)-1)//2
     if l == 1:
         real_coeffs.append(-np.sqrt(2)*np.real(coeffs[0]))
-        real_coeffs.append(np.sqrt(2)*np.real(-1j*coeffs[0]))
+        real_coeffs.append(-np.sqrt(2)*np.real(-1j*coeffs[0]))
         real_coeffs.append(np.real(coeffs[2]))
     elif l>1:
         real_coeffs.append(np.real(coeffs[0]))
-        for m_ind in range(1,2*l+1,2):
-            real_coeffs.append(-np.sqrt(2)*np.real(coeffs[m_ind]))
-            real_coeffs.append(np.sqrt(2)*np.real(-1j*coeffs[m_ind]))
+        #print("HIHI",coeffs[0])
+
+        real_coeffs.append(-np.sqrt(2)*np.real(coeffs[1]))
+        real_coeffs.append(-np.sqrt(2)*np.real(1j*coeffs[1]))
+
+        real_coeffs.append(np.sqrt(2)*np.real(1j*coeffs[4]))
+        real_coeffs.append(np.sqrt(2)*np.real(coeffs[4]))
     else:
         return coeffs
     return np.array(real_coeffs)
+
+
 #read_basis(os.path.join("WATER_TESTS","original","basis"))
 def rotate_orbitals(
     initial_MO_coeffs,
@@ -218,21 +245,129 @@ def rotate_orbitals(
             #            )))
             #exit()
     return final_MO_coeffs        
-AO_basis = read_basis(os.path.join("WATER_TESTS","original","basis"))
-atom_list,coords_initial = read_coord(os.path.join("WATER_TESTS","original","coord"))
+def gaussian_to_spherical_coeff(
+l,m,l_x,l_y,l_z
+):
+    """
+    l = azimuthal_q_n
+    m = magnetic_q_n
+    l_x, l_y, l_z = Cartesian Gaussian
+    """
+    abs_m = abs(m)
+    j = (l_x + l_y - abs_m)/2
+    if j != int(j):
+        return 0
+    else:
+        j=int(j)
+    coeff_prefactor = np.sqrt(
+        factorial(2 * l_x) * factorial(2 * l_y) * factorial(2 * l_z) *
+         factorial(l-abs_m) /
+        (
+        factorial(2 * l) * factorial(l_x) * factorial(l_y) *
+        factorial(l_z) * factorial(l + abs_m) * factorial(l)
+        )
+    ) /(2**l)
+    # Factorial(l) is in denominator instead sqrt(l!) up and
+    # 1/l! outside the root - in case something needs to be fixed
+    sum_1 = 0
+    for i in range((l-abs_m)//2+1):
+        sum_1 += (binom(l,i) * binom(i,j) * (-1)**i *
+            factorial(2 * l - 2 * i) /
+            factorial(l - abs_m - 2 * i)
+        )
+    sum_2 = 0 
+    for k in range(j+1):
+        sum_2 += (binom(j,k) * binom(abs_m, l_x - 2*k) *
+        (-1 + 0J )**(np.sign(m)*(abs_m - l_x + 2*k)/2)
+        )
+    return coeff_prefactor * sum_1 * sum_2
+
+def cartesian_to_spherical_transformation_matrix(l):
+    molden_GTO_order_dict = molden_cartesian_GTO_order()
+    GTO_ordering = molden_GTO_order_dict[l]
+    transformation_matrix = np.zeros([2*l+1,(l+1)*(l+2)//2],dtype = complex)
+    #spherical_GTO_m_ordering = []
+    for m_index in range(2*l + 1):
+        for GTO_index in range((l+1)*(l+2)//2):
+            m = index_to_m(m_index,l)
+            l_x,l_y,l_z = GTO_ordering[GTO_index]
+            transformation_matrix[m_index,GTO_index] = (
+                gaussian_to_spherical_coeff(l,m,l_x,l_y,l_z)
+            )
+            
+    return transformation_matrix
+transformation_matrix = cartesian_to_spherical_transformation_matrix(2)
+print(transformation_matrix)
+
+#AO_basis = read_basis(os.path.join("WATER_TESTS","original","basis"))
+#atom_list,coords_initial = read_coord(os.path.join("WATER_TESTS","original","coord"))
+#initial_MO_coeffs = read_MOs(os.path.join("WATER_TESTS","original","mos"))
+
+# CHECKING PHASE
+"""
+AO_basis = read_basis(os.path.join("WATER_TESTS","rotated","basis"))
+atom_list,coords_initial = read_coord(os.path.join("WATER_TESTS","rotated","coord"))
+initial_MO_coeffs = read_MOs(os.path.join("WATER_TESTS","rotated","mos"))
 atoms,coords_rotated = read_coord(os.path.join("WATER_TESTS","3rd_rotated","coord"))
-initial_MO_coeffs = read_MOs(os.path.join("WATER_TESTS","original","mos"))
+ROTATED_MO_coeffs = read_MOs(os.path.join("WATER_TESTS","3rd_rotated","mos"))
+"""
+"""
+AO_basis = read_basis(os.path.join("WATER_TESTS","3rd_rotated","basis"))
+atom_list,coords_initial = read_coord(os.path.join("WATER_TESTS","3rd_rotated","coord"))
+initial_MO_coeffs = read_MOs(os.path.join("WATER_TESTS","3rd_rotated","mos"))
+atoms,coords_rotated = read_coord(os.path.join("WATER_TESTS","2nd_rotated","coord"))
+ROTATED_MO_coeffs = read_MOs(os.path.join("WATER_TESTS","2nd_rotated","mos"))
+"""
+AO_basis = read_basis(os.path.join("WATER_TESTS","3rd_rotated","basis"))
+atom_list,coords_initial = read_coord(os.path.join("WATER_TESTS","3rd_rotated","coord"))
+initial_MO_coeffs = read_MOs(os.path.join("WATER_TESTS","3rd_rotated","mos"))
+atoms,coords_rotated = read_coord(os.path.join("WATER_TESTS","ANOTHER_ACTUAL_ROTATION","coord"))
+ROTATED_MO_coeffs = read_MOs(os.path.join("WATER_TESTS","ANOTHER_ACTUAL_ROTATION","mos"))
 azimuthal_quantum_number_list = get_azimuthal_q_num_list(AO_basis, atom_list)
-print(rotate_orbitals(
+COEFFS_SPHE_HARM = rotate_orbitals(
     initial_MO_coeffs,
     coords_initial,
     coords_rotated,
     azimuthal_quantum_number_list
-)[:,0])
-print("41")
-print(rotate_orbitals(
-    initial_MO_coeffs,
-    coords_initial,
-    coords_rotated,
-    azimuthal_quantum_number_list
-)[:,-1])
+)[:,0]
+#print("41")
+#print(rotate_orbitals(
+#    initial_MO_coeffs,
+#    coords_initial,
+#    coords_rotated,
+#    azimuthal_quantum_number_list
+#)[:,-1])
+# 13 0.35208720192995E-03
+d_ORBS_GAUSSIAN_STRING  = np.array("""
+    14 0.36466688672864E-04
+    15 -.14648409405826E-04
+    16 -.21818279267038E-04
+    17 -.68963261488800E-05
+    18 -.29307987727516E-04
+    19 -.25761806553887E-04
+    20 -.11154121028243E-03
+    21 0.48087658203949E-04
+    22 0.63453552078483E-04
+    23 0.17017962033446E-04
+    24 0.88519404928930E-04
+    25 0.68705698372418E-04
+    """.split(),dtype = float).reshape(-1,2)
+d_ORBS_GAUSSIAN_COEFFS = d_ORBS_GAUSSIAN_STRING[:,1]
+d_ORBS_1_GAUSS = d_ORBS_GAUSSIAN_COEFFS[0:6]
+d_ORBS_2_GAUSS = d_ORBS_GAUSSIAN_COEFFS[6:]
+#print(d_ORBS_2_GAUSS)
+print("OG",COEFFS_SPHE_HARM[13:18])
+print("OG",ROTATED_MO_coeffs[:,0][13:18])
+#print("ROTATED",ROTATED_MO_coeffs[:,0])
+#d_ORBS_SPHE_HARM_1 = COEFFS_SPHE_HARM[13:18]
+d_ORBS_SPHE_HARM_1 = COEFFS_SPHE_HARM[13:18]
+#print(d_ORBS_1_GAUSS)
+#print("OG",d_ORBS_SPHE_HARM_1)
+#print(transformation_matrix)
+d_ORBS_SPHE_HARM_1 = ROTATED_MO_coeffs[:,0][13:18]
+print("TRANSFORMATION",transformation_matrix.T[4])
+print("HERE",np.matmul(transformation_matrix.T,real_to_complex_spherical_harmonics(d_ORBS_SPHE_HARM_1))/np.sqrt(3))
+VORW_TRANS = np.matmul(transformation_matrix.T,real_to_complex_spherical_harmonics(d_ORBS_SPHE_HARM_1))/np.sqrt(3)
+rev_tranf = np.linalg.pinv(transformation_matrix.T)
+print(complex_to_real_spherical_harmonics(np.matmul(rev_tranf,d_ORBS_1_GAUSS))*np.sqrt(3))#/np.sqrt(2*2-1))
+print(complex_to_real_spherical_harmonics(np.matmul(rev_tranf,VORW_TRANS))*np.sqrt(3))#/np.sqrt(2*2-1))
