@@ -15,6 +15,16 @@ def index_to_m(index,l):
         return m
     else:
         return [1,-1,0][index]
+
+def m_to_index(m,l):
+    index = 0
+    if l!=1:
+        abs_m = abs(m)
+        index = abs_m*2 + (-1)*((abs_m%2==1)*(m>0)+(m<0)*(abs_m%2==0))
+        return index
+    else:
+        return [1,2,0][m+1]
+
 def powers_to_array(power_string):
     # molden ordering of powers (separated by ', ') converted to numpy array. TEMPORARY SOLUTION???
     arr = power_string.split(", ")
@@ -166,85 +176,47 @@ def calculate_euler_angles(coords_initial, coords_final):
         alpha = np.arctan2(rotation_matrix[1,0],rotation_matrix[0,0])
         gamma = 0
     return alpha,beta,gamma
-def real_to_complex_spherical_harmonics(coeffs):
+def create_real_to_complex_sh_matrices(l_max):
+    transform_dict = {}
+    # s orbitals
+    transform_dict[0] =  [1]
+    # p orbitals and onwards
+    for l in range(1,l_max+1):
+        l_matrix = np.zeros((2*l+1,2*l+1),dtype = complex)
+        l_matrix[m_to_index(0,l),m_to_index(0,l)] = 1
+        for m in range(1,l+1):
+            plus_m_ind = m_to_index(abs(m),l)
+            minus_m_ind = m_to_index(-abs(m),l)
+            #m_ind = m_to_index(m,l)
+            l_matrix[plus_m_ind,plus_m_ind] = (-1)**m/np.sqrt(2)
+            l_matrix[plus_m_ind,minus_m_ind] = -(-1)**m/np.sqrt(2)*1j
+            l_matrix[minus_m_ind,plus_m_ind] = 1/np.sqrt(2)
+            l_matrix[minus_m_ind,minus_m_ind] = 1/np.sqrt(2)*1j
+        transform_dict[l] = l_matrix
+    return transform_dict
 
-    l = (len(coeffs)-1)//2
-    complex_coeffs = []
-    if l==1:
-        complex_coeffs.append(-1/np.sqrt(2)*(coeffs[0]+1j*coeffs[1]))
-        complex_coeffs.append(-1/np.sqrt(2)*(coeffs[0]-1j*coeffs[1]))
-        complex_coeffs.append(coeffs[2])
-    elif l>1:
-        complex_coeffs.append(coeffs[0])
-        complex_coeffs.append(-1/np.sqrt(2)*(coeffs[1]-1j*coeffs[2]))
-        complex_coeffs.append(1/np.sqrt(2)*(coeffs[1]+1j*coeffs[2]))
-
-        complex_coeffs.append(1/np.sqrt(2)*(coeffs[4]+1j*coeffs[3]))
-
-        complex_coeffs.append(1/np.sqrt(2)*(coeffs[4]-1j*coeffs[3]))
-    else:
-        return coeffs
-    return np.array(complex_coeffs)
-def complex_to_real_spherical_harmonics(coeffs):
-    real_coeffs = []
-    l = (len(coeffs)-1)//2
-    if l == 1:
-        real_coeffs.append(-np.sqrt(2)*np.real(coeffs[0]))
-        real_coeffs.append(-np.sqrt(2)*np.real(-1j*coeffs[0]))
-        real_coeffs.append(np.real(coeffs[2]))
-    elif l>1:
-        real_coeffs.append(np.real(coeffs[0]))
-        #print("HIHI",coeffs[0])
-
-        real_coeffs.append(-np.sqrt(2)*np.real(coeffs[1]))
-        real_coeffs.append(-np.sqrt(2)*np.real(1j*coeffs[1]))
-
-        real_coeffs.append(np.sqrt(2)*np.real(1j*coeffs[4]))
-        real_coeffs.append(np.sqrt(2)*np.real(coeffs[4]))
-    else:
-        return coeffs
-    return np.array(real_coeffs)
+def create_complex_to_real_sh_matrices(l_max):
+    transform_dict = {}
+    # s orbitals
+    transform_dict[0] =  [1]
+    # p orbitals and onwards
+    for l in range(1,l_max+1):
+        l_matrix = np.zeros((2*l+1,2*l+1),dtype = complex)
+        l_matrix[m_to_index(0,l),m_to_index(0,l)] = 1
+        for m in range(1,l+1):
+            plus_m_ind = m_to_index(abs(m),l)
+            minus_m_ind = m_to_index(-abs(m),l)
+            #m_ind = m_to_index(m,l)
+            l_matrix[plus_m_ind,plus_m_ind] = (-1)**m/np.sqrt(2)
+            l_matrix[plus_m_ind,minus_m_ind] = 1/np.sqrt(2)
+            l_matrix[minus_m_ind,plus_m_ind] = (-1)**m/np.sqrt(2)*1j
+            l_matrix[minus_m_ind,minus_m_ind] = -1/np.sqrt(2)*1j
+        transform_dict[l] = l_matrix
+    return transform_dict
+    
 
 
 #read_basis(os.path.join("WATER_TESTS","original","basis"))
-def rotate_orbitals(
-    initial_MO_coeffs,
-    coords_initial,
-    coords_final,
-    azimuthal_quantum_number_list
-):
-    l_max = max(azimuthal_quantum_number_list)
-    alpha,beta,gamma = calculate_euler_angles(coords_initial, coords_final)
-    wigner_D_matrix_dict = {}
-    for l in range(0,l_max + 1):
-        wigner_D_matrix_dict[l] = create_wigner_D_matrix(l,alpha,beta,gamma)
-    MO_array_index = 0
-    final_MO_coeffs = np.zeros_like(initial_MO_coeffs)
-    for l in azimuthal_quantum_number_list:
-        if l == 0:
-            final_MO_coeffs[MO_array_index] = initial_MO_coeffs[MO_array_index]
-            MO_array_index += 1
-        else:
-            coeff_block = real_to_complex_spherical_harmonics(
-                initial_MO_coeffs[MO_array_index:MO_array_index + 2 * l + 1,:]
-            )
-            final_MO_coeffs[MO_array_index:MO_array_index + 2 * l + 1,:] = (
-                complex_to_real_spherical_harmonics(
-                    np.matmul(
-                        wigner_D_matrix_dict[l],
-                        coeff_block
-                        )
-                )
-            )
-            MO_array_index += 2 * l + 1
-            #print("INITIAL", initial_MO_coeffs[MO_array_index:MO_array_index + 2 * l + 1,:])
-            #print("COEFF_BLOCK",coeff_block)
-            #print(complex_to_real_spherical_harmonics(np.matmul(
-            #            wigner_D_matrix_dict[l],
-            #            coeff_block
-            #            )))
-            #exit()
-    return final_MO_coeffs        
 def gaussian_to_spherical_coeff(
 l,m,l_x,l_y,l_z
 ):
@@ -284,28 +256,99 @@ l,m,l_x,l_y,l_z
         )
     return coeff_prefactor * sum_1 * sum_2
 
-def cartesian_to_spherical_transformation_matrix(l):
+def create_sphe_to_cart_matrix(l):
     molden_GTO_order_dict = molden_cartesian_GTO_order()
     GTO_ordering = molden_GTO_order_dict[l]
-    transformation_matrix = np.zeros([2*l+1,(l+1)*(l+2)//2],dtype = complex)
+    transformation_matrix = np.zeros([(l+1)*(l+2)//2,2*l+1],dtype = complex)
     #spherical_GTO_m_ordering = []
     for m_index in range(2*l + 1):
         for GTO_index in range((l+1)*(l+2)//2):
             m = index_to_m(m_index,l)
             l_x,l_y,l_z = GTO_ordering[GTO_index]
-            transformation_matrix[m_index,GTO_index] = (
+            transformation_matrix[GTO_index,m_index] = (
                 gaussian_to_spherical_coeff(l,m,l_x,l_y,l_z)
             )
-            
     return transformation_matrix
-# TESTING PART
+
+def create_sphe_to_cart_dict(real_to_complex_dict):
+    l_max = max(real_to_complex_dict.keys())
+    transform_dict = {}
+    for l in range(l_max + 1):
+        transform_dict[l] = np.matmul(create_sphe_to_cart_matrix(l),real_to_complex_dict[l])
+    return transform_dict
+def rotate_orbitals(
+    initial_MO_coeffs,
+    coords_initial,
+    coords_final,
+    azimuthal_quantum_number_list
+):
+    l_max = max(azimuthal_quantum_number_list)
+    alpha,beta,gamma = calculate_euler_angles(coords_initial, coords_final)
+    wigner_D_matrix_dict = {}
+    # LATER -> r_to_c and reverse dicts as inputs so they arent recreated during iterations
+    r_to_c_dict = create_real_to_complex_sh_matrices(l_max)
+    c_to_r_dict = create_complex_to_real_sh_matrices(l_max)
+    for l in range(0,l_max + 1):
+        wigner_D_matrix_dict[l] = np.matmul(c_to_r_dict[l],
+            np.matmul(
+                create_wigner_D_matrix(l,alpha,beta,gamma),
+                r_to_c_dict[l]
+            )
+        )
+    MO_array_index = 0
+    final_MO_coeffs = np.zeros_like(initial_MO_coeffs)
+    for l in azimuthal_quantum_number_list:
+        n_sphe = 2 * l + 1
+        if l == 0:
+            final_MO_coeffs[MO_array_index] = initial_MO_coeffs[MO_array_index]
+            MO_array_index += n_sphe
+        else:
+            coeff_block = initial_MO_coeffs[MO_array_index:MO_array_index + n_sphe,:]
+            final_MO_coeffs[MO_array_index:MO_array_index + n_sphe,:] = (
+                    np.matmul(
+                        wigner_D_matrix_dict[l],
+                        coeff_block
+                        )
+                )
+            MO_array_index += n_sphe
+    return final_MO_coeffs        
+
+def spherical_to_cartesain(
+    MO_coeffs,
+    azimuthal_quantum_number_list
+):
+    l_max = max(azimuthal_quantum_number_list)
+    # LATER -> r_to_c and reverse dicts as inputs so they arent recreated during iterations
+    r_to_c_dict = create_real_to_complex_sh_matrices(l_max)
+    c_to_r_dict = create_complex_to_real_sh_matrices(l_max)
+    sphe_to_cart_transform_dict = create_sphe_to_cart_dict(r_to_c_dict)
+    n_rows = 0
+    for l in azimuthal_quantum_number_list:
+        n_rows += (l+1)*(l+2)//2
+    cartesian_coeffs = np.zeros((n_rows,len(MO_coeffs)))
+    MO_array_index_sphe = 0
+    MO_array_index_cart = 0
+    for l in azimuthal_quantum_number_list:
+        n_cart = (l+1)*(l+2)//2
+        n_sphe = 2 * l + 1
+        coeff_block = MO_coeffs[MO_array_index_sphe:MO_array_index_sphe + n_sphe,:]
+        if l>1:
+            coeff_block/=np.sqrt(2*l-1)
+            cartesian_coeffs[MO_array_index_cart:MO_array_index_cart + n_cart,:]=(
+                np.matmul(sphe_to_cart_transform_dict[l],coeff_block)
+            )
+        else: 
+            cartesian_coeffs[MO_array_index_cart:MO_array_index_cart + n_cart,:]=coeff_block
+        MO_array_index_cart += n_cart
+        MO_array_index_sphe += n_sphe
+    return cartesian_coeffs
 
 #transformation_matrix = cartesian_to_spherical_transformation_matrix(2)
 #print(transformation_matrix)
 #
-##AO_basis = read_basis(os.path.join("WATER_TESTS","original","basis"))
-##atom_list,coords_initial = read_coord(os.path.join("WATER_TESTS","original","coord"))
-##initial_MO_coeffs = read_MOs(os.path.join("WATER_TESTS","original","mos"))
+#AO_basis = read_basis(os.path.join("WATER_TESTS","original","basis"))
+#atom_list,coords_initial = read_coord(os.path.join("WATER_TESTS","original","coord"))
+#initial_MO_coeffs = read_MOs(os.path.join("WATER_TESTS","original","mos"))
 #
 ## CHECKING PHASE
 #"""
@@ -322,18 +365,29 @@ def cartesian_to_spherical_transformation_matrix(l):
 #atoms,coords_rotated = read_coord(os.path.join("WATER_TESTS","2nd_rotated","coord"))
 #ROTATED_MO_coeffs = read_MOs(os.path.join("WATER_TESTS","2nd_rotated","mos"))
 #"""
-#AO_basis = read_basis(os.path.join("WATER_TESTS","3rd_rotated","basis"))
-#atom_list,coords_initial = read_coord(os.path.join("WATER_TESTS","3rd_rotated","coord"))
-#initial_MO_coeffs = read_MOs(os.path.join("WATER_TESTS","3rd_rotated","mos"))
-#atoms,coords_rotated = read_coord(os.path.join("WATER_TESTS","ANOTHER_ACTUAL_ROTATION","coord"))
-#ROTATED_MO_coeffs = read_MOs(os.path.join("WATER_TESTS","ANOTHER_ACTUAL_ROTATION","mos"))
+#print(create_real_to_complex_sh_matrices(1))
+#AO_basis = read_basis(os.path.join("WATER_TESTS","ANOTHER_ACTUAL_ROTATION","basis"))
+#atom_list,coords_initial = read_coord(os.path.join("WATER_TESTS","ANOTHER_ACTUAL_ROTATION","coord"))
+#initial_MO_coeffs = read_MOs(os.path.join("WATER_TESTS","ANOTHER_ACTUAL_ROTATION","mos"))
+#
+#atoms,coords_rotated = read_coord(os.path.join("WATER_TESTS","3rd_rotated","coord"))
+#ROTATED_MO_coeffs = read_MOs(os.path.join("WATER_TESTS","3rd_rotated","mos"))
 #azimuthal_quantum_number_list = get_azimuthal_q_num_list(AO_basis, atom_list)
 #COEFFS_SPHE_HARM = rotate_orbitals(
 #    initial_MO_coeffs,
 #    coords_initial,
 #    coords_rotated,
 #    azimuthal_quantum_number_list
-#)[:,0]
+#)
+#for i in range(len(COEFFS_SPHE_HARM)):
+#    print(min( np.max(np.abs(COEFFS_SPHE_HARM[:,i]-ROTATED_MO_coeffs[:,i])),np.max(np.abs(COEFFS_SPHE_HARM[:,i]+ROTATED_MO_coeffs[:,i]))))
+#i=0
+#MO_coeffs = COEFFS_SPHE_HARM
+#print("HERE",MO_coeffs[:,0])
+#print(spherical_to_cartesain(MO_coeffs,azimuthal_quantum_number_list)[:,0])
+#exit()
+#
+#
 ##print("41")
 ##print(rotate_orbitals(
 ##    initial_MO_coeffs,
@@ -370,8 +424,9 @@ def cartesian_to_spherical_transformation_matrix(l):
 ##print(transformation_matrix)
 #d_ORBS_SPHE_HARM_1 = ROTATED_MO_coeffs[:,0][13:18]
 ##print("TRANSFORMATION",transformation_matrix.T[4])
+#
 #print("HERE",np.matmul(transformation_matrix.T,real_to_complex_spherical_harmonics(d_ORBS_SPHE_HARM_1))/np.sqrt(3))
-#VORW_TRANS = np.matmul(transformation_matrix.T,real_to_complex_spherical_harmonics(d_ORBS_SPHE_HARM_1))/np.sqrt(3)
+#VORW_TRANS = np.matmul(transformation_matrix,real_to_complex_spherical_harmonics(d_ORBS_SPHE_HARM_1))/np.sqrt(3)
 #rev_tranf = np.linalg.pinv(transformation_matrix.T)
 ##print(complex_to_real_spherical_harmonics(np.matmul(rev_tranf,d_ORBS_1_GAUSS))*np.sqrt(3))#/np.sqrt(2*2-1))
 ##print(complex_to_real_spherical_harmonics(np.matmul(rev_tranf,VORW_TRANS))*np.sqrt(3))#/np.sqrt(2*2-1))
