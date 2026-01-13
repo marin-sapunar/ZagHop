@@ -284,12 +284,12 @@ def rotate_orbitals(
 ):
     l_max = max(azimuthal_quantum_number_list)
     alpha,beta,gamma = calculate_euler_angles(coords_initial, coords_final)
-    wigner_D_matrix_dict = {}
+    orbital_rotation_matrix_dict = {}
     # LATER -> r_to_c and reverse dicts as inputs so they arent recreated during iterations
     r_to_c_dict = create_real_to_complex_sh_matrices(l_max)
     c_to_r_dict = create_complex_to_real_sh_matrices(l_max)
     for l in range(0,l_max + 1):
-        wigner_D_matrix_dict[l] = np.matmul(c_to_r_dict[l],
+        orbital_rotation_matrix_dict[l] = np.matmul(c_to_r_dict[l],
             np.matmul(
                 create_wigner_D_matrix(l,alpha,beta,gamma),
                 r_to_c_dict[l]
@@ -306,7 +306,7 @@ def rotate_orbitals(
             coeff_block = initial_MO_coeffs[MO_array_index:MO_array_index + n_sphe,:]
             final_MO_coeffs[MO_array_index:MO_array_index + n_sphe,:] = (
                     np.matmul(
-                        wigner_D_matrix_dict[l],
+                        orbital_rotation_matrix_dict[l],
                         coeff_block
                         )
                 )
