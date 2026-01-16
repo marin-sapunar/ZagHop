@@ -186,23 +186,20 @@ contains
             !> @todo This is a workaround which avoids changing quantics_inter.f90 for now,
             ! but the interface should be modified so temporary arrays are not required.
             if (ctrl%tdc_type == "nadvec" .or. ctrl%vrescale == 3) then
-                allocate(wrk_nadv(t%natom * t%ndim, t%wf%n_state, t%wf%n_state))
+                allocate(wrk_nadv(t%natom * t%ndim, t%wf%n_state, t%wf%n_state), source=0.0_dp)
             end if
             if (ctrl%adt) then
-                allocate(wrk_adt(t%wf%n_state, t%wf%n_state))
+                allocate(wrk_adt(t%wf%n_state, t%wf%n_state), source=0.0_dp)
             end if
             if (.not. allocated(t%wf%qm_state(t%wf%active_state)%gradient)) then
-                allocate(t%wf%qm_state(t%wf%active_state)%gradient(t%ndim, t%qnatom))
+                allocate(t%wf%qm_state(t%wf%active_state)%gradient(t%ndim, t%qnatom), source=0.0_dp)
             end if
             if (ctrl%soc) then
-                allocate(wrk_soc(t%wf%n_state, t%wf%n_state))
+                allocate(wrk_soc(t%wf%n_state, t%wf%n_state), source=0.0_dp)
             end if
             spinv = t%wf%qm_state(:)%multiplicity
             call shzagreb_run(t%step, t%geom, t%wf%active_state, t%wf%en, t%wf%qm_state(t%wf%active_state)%gradient, wrk_nadv, &
             &                 wrk_soc, spinv, ctrl%socbas, wrk_adt)
-            write(stderr, *) "QM calculation completed.", t%wf%active_state
-            write(stderr, *) "QM energies:", (t%wf%en(i), i = 1, t%wf%n_state)
-            write(stderr, *) "Active state gradient:", t%wf%qm_state(t%wf%active_state)%gradient
             do i = 1, t%wf%n_state
                 do j = 1, t%wf%n_state
                     if (t%wf%need_nadv(i, j)) then

@@ -72,7 +72,7 @@ contains
         complex(dp), allocatable :: soc_t1(:, :) !< Spin-orbit coupling matrix at t1.
         complex(dp), allocatable :: soc_t2(:, :) !< Spin-orbit coupling matrix at t2.
         complex(dp), allocatable :: soc_t(:, :) !< Spin-orbit coupling matrix at current time.
-        integer, parameter :: im_i = cmplx(0.0_dp, 1.0_dp, kind=dp)
+        complex, parameter :: im_i = cmplx(0.0_dp, 1.0_dp, kind=dp)
 
         odens = size(wf_t2%coeff)
         allocate(odecmat(odens, odens))
