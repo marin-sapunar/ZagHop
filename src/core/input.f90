@@ -18,6 +18,7 @@ module input_mod
     use string_mod
     use file_mod, only : reader
     use constants
+    use model_vc_mod
 
     implicit none
 
@@ -102,6 +103,7 @@ contains
         ! Method options.
         ctrl%qlib = 0
         ctrl%noise = 0.0_dp
+        ctrl%vc_template = 'LVC.template'
         ! Set start step at 0
         tr1%step = 0
         tr1%time = 0.0_dp
@@ -583,6 +585,10 @@ contains
                 case('model')
                     ctrl%qlib = 2
                     call qmodel%init(readf%args(3:))
+                case('vibronic_coupling')
+                    ctrl%qlib = 3
+                    if (readf%narg > 2) ctrl%vc_template = readf%args(3)%s
+                    call vibronic_coupling%init(ctrl%vc_template)
                 case default
                     write(stderr, *) 'Error in Input module, read_method subroutine.'
                     write(stderr, *) '  Unrecognized qlib keyword: ', readf%args(2)%s

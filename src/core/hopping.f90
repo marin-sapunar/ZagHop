@@ -71,6 +71,8 @@ contains
         if (tr2%wf%active_state /= tr1%wf%active_state) then
             ctrl%hop = .true.
             !> @todo Move this to a more appropriate place.
+            tr1%wf%need_gradient(tr2%wf%active_state) = .false.
+            tr1%wf%need_gradient(tr1%wf%active_state) = .true.
             ! If vrescale=3 (rescale along nonadiabatic coupling vector), ensure that the
             ! nonadiabatic coupling vector between the previous and current state is allocated
             if (ctrl%vrescale == 3) then
@@ -108,7 +110,7 @@ contains
         integer, intent(in) :: opt_fh !< Behaviour at frustrated hop.
         integer, intent(in) :: amask(:) !< Atoms considered when rescaling.
         integer, intent(in) :: pst !< Previous state.
-        type(mqc_wave_function), intent(in) :: wf !< Wave function at previous step.
+        type(mqc_wave_function), intent(inout) :: wf !< Wave function at previous step.
         real(dp), intent(in) :: mass(:) !< Masses.
         real(dp), intent(inout) :: velo(:, :) !< Velocities.
         integer :: cst !< Current state.
@@ -163,8 +165,11 @@ contains
                 write(stdout, '(7x,a,e16.8)') 'Available energy:', mvel_dir**2 / 2
             end if
 
-            cgrd = pgrd
-            cst = pst
+            !> @todo Move this to a more appropriate place.
+            wf%need_gradient(cst) = .false.
+            wf%need_gradient(pst) = .true.
+            wf%active_state = pst
+
             select case(opt_fh)
             case(1) ! Just return to previous state.
                 continue

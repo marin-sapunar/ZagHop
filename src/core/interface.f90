@@ -32,6 +32,7 @@ contains
         use matrix_mod, only : unit_mat
         use model_mod, only : qmodel
         use json_module, only : json_core, json_file, json_value
+        use model_vc_mod, only : vibronic_coupling
         type(system_type), intent(inout) :: t
         logical, intent(in) :: hop
         integer :: cunit, i, j
@@ -242,6 +243,24 @@ contains
             end do
             if (ctrl%adt) then
                 t%wf%overlap(2)%c = wrk_adt
+            end if
+        case(3)
+            call vibronic_coupling%eval(t%geom(1, :), t%wf%en)
+            do i = 1, t%wf%n_state
+                if (t%wf%need_gradient(i)) then
+                    t%wf%qm_state(i)%gradient(1, :) = vibronic_coupling%adiab_grad(:, i, i)
+                end if
+                do j = 1, t%wf%n_state
+                    if (t%wf%need_nadv(i, j)) then
+                        t%wf%qm_state(i)%nadv(j)%c = vibronic_coupling%adiab_grad(:, i, j)
+                    end if
+                    ! if (t%wf%need_soc(i, j)) then
+                    !     t%wf%qm_state(i)%soc(j) = vibronic_coupling%soc(i, j)
+                    ! end if
+                end do
+            end do
+            if (ctrl%adt) then
+                t%wf%overlap(2)%c = vibronic_coupling%eigvec
             end if
         case default
             call errstop("run_qm", "Unrecognized QM interface.", 1)

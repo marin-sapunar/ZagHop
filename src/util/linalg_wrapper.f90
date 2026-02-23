@@ -9,7 +9,6 @@ module linalg_wrapper_mod
     integer, parameter :: blas_int = int32
 #endif
 
-    public :: blas_int
     public :: dot
     public :: gemv
     public :: gemm

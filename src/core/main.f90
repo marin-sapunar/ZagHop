@@ -36,6 +36,7 @@ program zaghop
     type(timer) :: stepclock
     real(dp), allocatable :: hop_grad(:, :)
     real(dp) :: tinydp = 1.0e-8_dp
+    integer :: i
 
     ! Allocate main trajectory data array.
     call allocate_trajectory_data()
@@ -137,11 +138,13 @@ program zaghop
                 write(stdout, '(5x,a,i0)') 'Current state: ', tr1%wf%active_state
                 write(stdout, '(5x,a)') 'Running QM gradient calculation for new state.'
             end if
-            allocate(hop_grad, source=tr1%grad)
             call run_qm(tr1, .true.)
             call sh_rescalevelo(ctrl%vrescale, ctrl%fhop, tr1%qind, tr2%wf%active_state, tr1%wf, &
             &                   tr1%mass, tr1%velo)
-            deallocate(hop_grad)
+            !> @todo Move this to a more appropriate place.
+            do i = 1, tr1%qnatom
+                tr1%grad(:, tr1%qind(i)) = tr1%wf%qm_state(tr1%wf%active_state)%gradient(:, i)
+            end do
         end if
 
         ! Stop the program after max_time was reached. Add tinydp to time for precision.

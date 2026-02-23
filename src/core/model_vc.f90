@@ -1,0 +1,313 @@
+!--------------------------------------------------------------------------------------------------
+! MODULE: model_vc_mod
+!> @author Marin Sapunar, Ruđer Bošković Institute
+!> @date January, 2026
+!
+! DESCRIPTION: 
+!> @brief Simple vibronic coupling interface.
+!--------------------------------------------------------------------------------------------------
+module model_vc_mod
+    use global_defs
+    use string_mod
+    use file_mod, only : reader
+    implicit none
+
+    private
+    public :: vc_model
+    public :: vibronic_coupling
+
+    type vc_model
+        character(len=:), allocatable :: template_file
+        character(len=:), allocatable :: v0_file
+        integer :: nstate(3) = [0, 0, 0]
+        integer :: nmode = 0
+        integer :: tot_ns = 0
+        real(dp), allocatable :: freq(:)
+        real(dp), allocatable :: zero_order(:, :)
+        real(dp), allocatable :: linear(:, :, :)
+        real(dp), allocatable :: quadratic(:, :, :, :)
+        real(dp), allocatable :: soc(:, :)
+        real(dp), allocatable :: dm(:, :, :)
+        real(dp), allocatable :: diab_h(:, :)
+        real(dp), allocatable :: eigvec(:, :)
+        real(dp), allocatable :: diab_grad(:, :, :)
+        real(dp), allocatable :: adiab_grad(:, :, :)
+    contains
+        procedure :: init => vc_init
+        procedure :: read_v0
+        procedure :: eval => evaluate_vc
+    end type vc_model
+
+    type(vc_model) :: vibronic_coupling
+
+contains
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: vc_init
+    !
+    ! DESCRIPTION:
+    !> @brief Initialize LVC model from template file.
+    !> @details
+    !----------------------------------------------------------------------------------------------
+    subroutine vc_init(self, template_file)
+        class(vc_model) :: self
+        character(len=*), intent(in) :: template_file
+        type(reader) :: readf
+        integer :: n_val, i, j
+        integer :: mult, ist1, ist2, imode1, imode2
+        integer :: i0(3) = [0, 0, 0]
+        real(dp) :: val
+        real(dp), allocatable :: wrk(:, :)
+        character(len=3) :: sec
+        character(len=1) :: part
+
+        self%template_file = template_file
+
+        call readf%open(self%template_file, abort_on_eof=.false.)
+
+        call readf%next()
+        call readf%parseline(' ')
+        self%v0_file = readf%args(1)%s
+        call self%read_v0(self%v0_file)
+
+        call readf%next()
+        call readf%parseline(' ')
+        if (readf%narg /= 3) then
+            write(stderr, *) 'Error in model_vc_mod, vc_init subroutine.'
+            write(stderr, *) '  Expected 3 arguments on second line of template file:'
+            write(stderr, *) '    n_singlets n_doublets n_triplets'
+            stop
+        end if
+        read(readf%args(1)%s, *) self%nstate(1)
+        read(readf%args(2)%s, *) self%nstate(2)
+        read(readf%args(3)%s, *) self%nstate(3)
+
+        self%tot_ns = sum(self%nstate * [1, 2, 3])
+        i0(1) = 0
+        i0(2) = self%nstate(1)
+        i0(3) = i0(2) + 2*self%nstate(2)
+
+        allocate(wrk(self%tot_ns, self%tot_ns))
+        allocate(self%zero_order(self%tot_ns, self%tot_ns), source=0.0_dp)
+        allocate(self%linear(self%nmode, self%tot_ns, self%tot_ns), source=0.0_dp)
+        allocate(self%soc(self%tot_ns, self%tot_ns), source=0.0_dp)
+        allocate(self%dm(3, self%tot_ns, self%tot_ns), source=0.0_dp)
+        allocate(self%quadratic(self%nmode, self%nmode, self%tot_ns, self%tot_ns), source=0.0_dp)
+        do i = 1, self%nmode
+            do j = 1, self%tot_ns
+                self%quadratic(i, i, j, j) = 0.5_dp * self%freq(i)
+            end do
+        end do
+
+        do
+            call readf%next()
+            if (is_iostat_end(readf%iostat)) exit
+            call readf%parseline(' ')
+            select case(readf%args(1)%s)
+            case('epsilon')
+                call readf%next()
+                call readf%parseline(' ')
+                read(readf%args(1)%s, *) n_val
+                do i = 1, n_val
+                    call readf%next()
+                    call readf%parseline(' ')
+                    read(readf%args(1)%s, *) mult
+                    read(readf%args(2)%s, *) ist1
+                    read(readf%args(3)%s, *) val
+                    ist1 = i0(mult) + mult * (ist1 - 1)
+                    do j = 1, mult
+                        self%zero_order(ist1 + j, ist1 + j) = val
+                    end do
+                end do
+            case('kappa')
+                call readf%next()
+                call readf%parseline(' ')
+                read(readf%args(1)%s, *) n_val
+                do i = 1, n_val
+                    call readf%next()
+                    call readf%parseline(' ')
+                    read(readf%args(1)%s, *) mult
+                    read(readf%args(2)%s, *) ist1
+                    read(readf%args(3)%s, *) imode1
+                    !imode = imode - 6
+                    read(readf%args(4)%s, *) val
+                    ist1 = i0(mult) + mult * (ist1 - 1)
+                    do j = 1, mult
+                        self%linear(imode1, ist1 + j, ist1 + j) = val
+                    end do
+                end do
+            case('lambda')
+                call readf%next()
+                call readf%parseline(' ')
+                read(readf%args(1)%s, *) n_val
+                do i = 1, n_val
+                    call readf%next()
+                    call readf%parseline(' ')
+                    read(readf%args(1)%s, *) mult
+                    read(readf%args(2)%s, *) ist1
+                    read(readf%args(3)%s, *) ist2
+                    read(readf%args(4)%s, *) imode1
+                    read(readf%args(5)%s, *) val
+                    ist1 = i0(mult) + mult * (ist1 - 1)
+                    ist2 = i0(mult) + mult * (ist2 - 1)
+                    do j = 1, mult
+                        self%linear(imode1, ist1 + j, ist2 + j) = val
+                        self%linear(imode1, ist2 + j, ist1 + j) = val
+                    end do
+                end do
+            case('gamma')
+                call readf%next()
+                call readf%parseline(' ')
+                read(readf%args(1)%s, *) n_val
+                do i = 1, n_val
+                    call readf%next()
+                    call readf%parseline(' ')
+                    read(readf%args(1)%s, *) mult
+                    read(readf%args(2)%s, *) ist1
+                    read(readf%args(3)%s, *) imode1
+                    read(readf%args(4)%s, *) imode2
+                    read(readf%args(5)%s, *) val
+                    ist1 = i0(mult) + mult * (ist1 - 1)
+                    do j = 1, mult
+                        self%quadratic(imode1, imode2, ist1+j, ist1+j) = &
+                        &    self%quadratic(imode1, imode2, ist1+j, ist1+j) + val * 0.5_dp
+                    end do
+                end do
+            case('SOC', 'DMX', 'DMY', 'DMZ')
+                sec = readf%args(1)%s
+                part = readf%args(2)%s
+                if (part /= 'R') then
+                    write(stderr, *) 'Error in model_vc_mod, vc_init subroutine.'
+                    write(stderr, *) '  Only real SOC/DM matrices are supported.'
+                    !> @todo Implement imaginary parts of SOC/DM matrices.
+                    stop
+                end if
+                do i = 1, self%tot_ns
+                    call readf%next()
+                    read(readf%line, *) wrk(i, :)
+                end do
+                select case(sec)
+                case('SOC')
+                    self%soc = wrk
+                case('DMX')
+                    self%dm(1, :, :) = wrk
+                case('DMY')
+                    self%dm(2, :, :) = wrk
+                case('DMZ')
+                    self%dm(3, :, :) = wrk
+                end select
+            case default
+                write(stderr, *) 'Error in model_vc_mod, vc_init subroutine.'
+                write(stderr, *) '  Unrecognized keyword in template file: ', readf%args(1)%s
+                stop
+            end select            
+        end do
+        call readf%close()
+    end subroutine vc_init
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: read_v0
+    ! DESCRIPTION:
+    !> @brief Read V0 file.
+    !----------------------------------------------------------------------------------------------
+    subroutine read_v0(self, v0_file)
+        class(vc_model) :: self
+        character(len=*), intent(in) :: v0_file
+        type(reader) :: readf
+
+        call readf%open(v0_file, abort_on_eof=.false.)
+
+        do
+            call readf%next()
+            if (is_iostat_end(readf%iostat)) exit
+            call readf%parseline(' ')
+            select case(readf%args(1)%s)
+            case('Frequencies')
+                call readf%next()
+                call readf%parseline(' ')
+                self%nmode = readf%narg
+                allocate(self%freq(self%nmode))
+                read(readf%line, *) self%freq
+            end select
+        end do
+        call readf%close()
+    end subroutine read_v0
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: evaluate_vc
+    ! DESCRIPTION:
+    !> @brief Evaluate vibronic coupling Hamiltonian at given nuclear geometry.
+    !----------------------------------------------------------------------------------------------
+    subroutine evaluate_vc(self, q, adiab_e)
+        use linalg_wrapper_mod, only : syev
+        class(vc_model) :: self
+        real(dp), intent(in) :: q(:)
+        real(dp), allocatable, intent(out) :: adiab_e(:)
+        integer :: i, j, imode, jmode
+        real(dp), allocatable :: wrk(:, :)
+        real(dp) :: edif
+        real(dp), parameter :: tiny_hf = 1.0e-8_dp
+
+        if (.not. allocated(adiab_e)) then
+            allocate(adiab_e(self%tot_ns))
+        end if
+        if (.not. allocated(self%adiab_grad)) then
+            allocate(self%adiab_grad(self%nmode, self%tot_ns, self%tot_ns))
+        end if
+
+        wrk = self%zero_order
+        wrk = wrk + self%soc
+
+        do imode = 1, self%nmode
+            do i = 1, self%tot_ns
+                do j = 1, self%tot_ns
+                    wrk(i, j) = wrk(i, j) + self%linear(imode, i, j) * q(imode)
+                end do
+            end do
+            do jmode = 1, self%nmode
+                do i = 1, self%tot_ns
+                    do j = 1, self%tot_ns
+                        wrk(i, j) = wrk(i, j) + self%quadratic(imode, jmode, i, j) * q(imode) * q(jmode)
+                    end do
+                end do
+            end do
+        end do
+
+        self%diab_h = wrk
+        call syev(wrk, adiab_e, jobz='V', uplo='U')
+        self%eigvec = wrk
+
+        self%diab_grad = self%linear
+        do imode = 1, self%nmode
+            do i = 1, self%tot_ns
+                do j = 1, self%tot_ns
+                    do jmode = 1, self%nmode
+                        self%diab_grad(imode, i, j) = self%diab_grad(imode, i, j) + &
+                            2.0_dp * self%quadratic(imode, jmode, i, j) * q(jmode)
+                    end do
+                end do
+            end do
+        end do
+        do imode = 1, self%nmode
+            self%adiab_grad(imode, :, :) = matmul(matmul(transpose(self%eigvec), &
+            &                                     self%diab_grad(imode, :, :)), self%eigvec)
+            do i = 1, self%tot_ns
+                do j = 1, self%tot_ns
+                    if (i==j) cycle
+                    edif = adiab_e(j) - adiab_e(i)
+                    if (abs(edif) < tiny_hf) then
+                        if (stdp1) then
+                            write(stderr, *) 'Warning in model_vc_mod, evaluate_vc subroutine.'
+                            write(stderr, *) '  Near-degeneracy between states ', i, ' and ', j, '.'
+                            write(stderr, *) '  Setting denominator to ', tiny_hf, ' Hartree.'
+                        end if
+                        edif = sign(tiny_hf, edif)
+                    end if
+                    self%adiab_grad(imode, i, j) = self%adiab_grad(imode, i, j) / edif
+                end do
+            end do
+        end do
+    end subroutine evaluate_vc
+
+end module model_vc_mod
