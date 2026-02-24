@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 ''' Program tests. '''
 import os
+import re
 import shutil
 import subprocess
 import time
@@ -11,26 +12,15 @@ import numpy as np
 class ZagHopTest(unittest.TestCase):
     """ Trajectory tests."""
 
-    # def test_ldsh_tullyI(self):
-    #     """ Tully model I test case for LD-FSSH."""
-    #     self.run_traj()
-    #     self.compare_energy()
-
-    # def test_lzsh_tullyI(self):
-    #     """ Tully model I test case for LZSH."""
-    #     self.run_traj()
-    #     self.compare_energy()
-
-    # def test_fssh_tullyI(self):
-    #     """ Tully model I test case for A-FSSH."""
-    #     self.run_traj()
-    #     self.compare_energy()
     @classmethod
     def setUpClass(cls):
-        cls.logdir = None
-        cls.idir = None
-        cls.common = None
-        raise NotImplementedError("setUpClass method must be implemented in subclass.")
+        name = re.sub(r'Test$', '', cls.__name__)
+        name = re.sub(r'(?<!^)(?=[A-Z])', '_', name).lower()
+        cls.logdir = f"test_{name}"
+        cls.cwd = os.getcwd()
+        cls.idir = os.path.join(cls.cwd, name)
+        cls.common = os.path.join(cls.idir, "common")
+        os.makedirs(cls.logdir, exist_ok=True)
 
     def setUp(self):
         """ Set up directory for running a specific test.

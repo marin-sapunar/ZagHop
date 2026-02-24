@@ -196,7 +196,7 @@ project(ZagHop LANGUAGES Fortran)
       set(_test_name "${CMAKE_MATCH_1}")
       add_test(NAME "ZagHopTest:VC::${_test_name}"
         COMMAND ${Python_EXECUTABLE} -m unittest -v
-                "test_vc_pyrazine.PyrazineTest.${_test_name}"
+                "test_vc_pyrazine.VcPyrazineTest.${_test_name}"
         WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
       set_tests_properties("ZagHopTest:VC::${_test_name}" PROPERTIES
         ENVIRONMENT_MODIFICATION PATH=path_list_append:${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
