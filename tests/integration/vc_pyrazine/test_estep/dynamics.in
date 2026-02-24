@@ -1,0 +1,21 @@
+$system
+ ndim = 1
+ nstate =    4
+ istate =    4
+$surfhop                                                                        
+ fssh  adiabatic
+ nadvec  linear
+ velocity nadvec
+ tdse_steps 10
+$dynamics
+ tstep = 1.25
+ max_time =   100.0000
+ max_toten_d = 0.05
+ max_toten_d_step = 0.01
+$output
+ buinterval = 2000
+ noprint  2,4,5,7,8,10,11
+$method
+ qlib vibronic_coupling
+ seed 2
+$end

@@ -176,18 +176,32 @@ project(ZagHop LANGUAGES Fortran)
       COMMAND ${CMAKE_COMMAND} -E copy_directory
               ${CMAKE_SOURCE_DIR}/tests/integration ${CMAKE_BINARY_DIR}/tests)
 
-    file(STRINGS "${CMAKE_SOURCE_DIR}/tests/integration/test_zaghop.py"
-         _zaghop_test_lines REGEX "^    def (test_[A-Za-z0-9_]+)")
-    foreach(_line ${_zaghop_test_lines})
+    file(STRINGS "${CMAKE_SOURCE_DIR}/tests/integration/test_tully.py"
+         _tully_test_lines REGEX "^    def (test_[A-Za-z0-9_]+)")
+    foreach(_line ${_tully_test_lines})
       string(REGEX MATCH "def (test_[A-Za-z0-9_]+)" _ "${_line}")
       set(_test_name "${CMAKE_MATCH_1}")
-      add_test(NAME "ZagHopTest::${_test_name}"
+      add_test(NAME "ZagHopTest:Tully::${_test_name}"
         COMMAND ${Python_EXECUTABLE} -m unittest -v
-                "test_zaghop.ZagHopTest.${_test_name}"
+                "test_tully.TullyTest.${_test_name}"
         WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
-      set_tests_properties("ZagHopTest::${_test_name}" PROPERTIES
+      set_tests_properties("ZagHopTest:Tully::${_test_name}" PROPERTIES
+        ENVIRONMENT_MODIFICATION PATH=path_list_append:${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
+    endforeach()
+
+    file(STRINGS "${CMAKE_SOURCE_DIR}/tests/integration/test_vc_pyrazine.py"
+         _vc_pyrazine_test_lines REGEX "^    def (test_[A-Za-z0-9_]+)")
+    foreach(_line ${_vc_pyrazine_test_lines})
+      string(REGEX MATCH "def (test_[A-Za-z0-9_]+)" _ "${_line}")
+      set(_test_name "${CMAKE_MATCH_1}")
+      add_test(NAME "ZagHopTest:VC::${_test_name}"
+        COMMAND ${Python_EXECUTABLE} -m unittest -v
+                "test_vc_pyrazine.PyrazineTest.${_test_name}"
+        WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+      set_tests_properties("ZagHopTest:VC::${_test_name}" PROPERTIES
         ENVIRONMENT_MODIFICATION PATH=path_list_append:${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
     endforeach()
   else()
      message(STATUS "Python not found.")
   endif()
+
