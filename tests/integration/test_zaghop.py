@@ -27,6 +27,11 @@ class ZagHopTest(unittest.TestCase):
         self.run_traj()
         self.compare_energy()
 
+    def test_fssh_vc_pyrazine(self):
+        """ Pyrazine model test case for A-FSSH."""
+        self.run_traj()
+        self.compare_energy()
+
 #   def test_gsmd_nh3(self):
 #       """ Ammonia test case for ground state MD with thermostat.
 
@@ -40,23 +45,25 @@ class ZagHopTest(unittest.TestCase):
     def setUpClass(cls):
         """ Make test logs directory.
 
-        If a directory from a previous test run exists, rename that directory
-        based on the time it was modified and create a new one."""
+        Creates the shared log directory if it does not exist. If it already
+        exists it is reused, so that tests running in quick succession (each
+        in their own process) do not conflict with each other."""
         cls.logdir = "zaghop_test"
         cls.idir = os.getcwd()
-        try:
-            os.mkdir(cls.logdir)
-        except FileExistsError:
-            old_log_time = time.gmtime(os.path.getmtime(cls.logdir))
-            old_log_time = time.strftime("%y.%m.%d.%H.%M.%S", old_log_time)
-            os.rename(cls.logdir, cls.logdir + "_" + old_log_time)
-            os.mkdir(cls.logdir)
+        os.makedirs(cls.logdir, exist_ok=True)
 
     def setUp(self):
-        """ Set up directory for running a specific test."""
+        """ Set up directory for running a specific test.
+
+        If the test's own subdirectory already exists from a previous run,
+        rename it based on its modification time before creating a fresh one."""
         self.name = self.id().split(".")[-1][5:]
         self.rundir = self.logdir + "/" + self.name
         self.inpdir = self.idir + "/" + self.name
+        if os.path.isdir(self.rundir):
+            old_time = time.gmtime(os.path.getmtime(self.rundir))
+            old_time = time.strftime("%y.%m.%d.%H.%M.%S", old_time)
+            os.rename(self.rundir, self.rundir + "_" + old_time)
         shutil.copytree(self.inpdir, self.rundir)
         if not os.path.isdir(self.inpdir + "/Reference"):
             raise FileNotFoundError("Reference directory not found.")

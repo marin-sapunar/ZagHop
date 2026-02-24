@@ -18,6 +18,15 @@
         }
       },
       {
+        "name": "coverage",
+        "displayName": "Config Coverage",
+        "inherits": "debug",
+        "cacheVariables": {
+          "CMAKE_BUILD_TYPE": "Debug",
+          "COVERAGE": "ON"
+        }
+      },
+      {
         "name": "release",
         "displayName": "Config Release",
         "description": "Sets release build type",
@@ -37,6 +46,12 @@
       "name": "debug",
       "displayName": "Build Debug",
       "inherits": "build-base"
+    },
+    {
+      "name": "coverage",
+      "displayName": "Build Coverage",
+      "inherits": "build-base",
+      "configurePreset": "coverage"
     },
     {
       "name": "release",

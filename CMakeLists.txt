@@ -11,6 +11,7 @@ project(ZagHop LANGUAGES Fortran)
   option(STATIC "Create a static executable." OFF)
   option(QUANTICS "Compile with Quantics interface." OFF)
   option(BLAS_64 "Use 64bit integer interface for BLAS/LAPACK" OFF)
+  option(COVERAGE "Enable code coverage." OFF)
 
   set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
   set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
@@ -150,6 +151,15 @@ project(ZagHop LANGUAGES Fortran)
 ################################################################################
 # Tests.                                                                   #
   enable_testing()
+  include(CTest)
+
+  if(COVERAGE)
+    if(CMAKE_Fortran_COMPILER_ID STREQUAL "GNU")
+      set(COVERAGE_FLAGS "--coverage -fprofile-arcs -ftest-coverage")
+      target_compile_options(zaghop PRIVATE --coverage -fprofile-arcs -ftest-coverage)
+      target_link_options(zaghop PRIVATE --coverage)
+    endif()
+  endif()
 
   add_executable(util_test tests/unit/util_test.f90)
   target_link_libraries(util_test zagutil ${LINALG_LIBS})
@@ -166,12 +176,18 @@ project(ZagHop LANGUAGES Fortran)
       COMMAND ${CMAKE_COMMAND} -E copy_directory
               ${CMAKE_SOURCE_DIR}/tests/integration ${CMAKE_BINARY_DIR}/tests)
 
-    add_test(NAME python-zaghop-tests
-      COMMAND ${Python_EXECUTABLE} -m unittest -v test_zaghop
-      WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
-
-    set_tests_properties(python-zaghop-tests PROPERTIES ENVIRONMENT_MODIFICATION
-      PATH=path_list_append:${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
+    file(STRINGS "${CMAKE_SOURCE_DIR}/tests/integration/test_zaghop.py"
+         _zaghop_test_lines REGEX "^    def (test_[A-Za-z0-9_]+)")
+    foreach(_line ${_zaghop_test_lines})
+      string(REGEX MATCH "def (test_[A-Za-z0-9_]+)" _ "${_line}")
+      set(_test_name "${CMAKE_MATCH_1}")
+      add_test(NAME "ZagHopTest::${_test_name}"
+        COMMAND ${Python_EXECUTABLE} -m unittest -v
+                "test_zaghop.ZagHopTest.${_test_name}"
+        WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+      set_tests_properties("ZagHopTest::${_test_name}" PROPERTIES
+        ENVIRONMENT_MODIFICATION PATH=path_list_append:${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
+    endforeach()
   else()
      message(STATUS "Python not found.")
   endif()
