@@ -303,6 +303,10 @@ contains
             open(newunit=punit(8), file=res_dir//'/adt', action='write', position='append')
         end if
 
+        if (popt(9)) then
+            open(newunit=punit(9), file=res_dir//'/prob', action='write', position='append')
+        end if
+
         if (popt(10)) then
             open(newunit=punit(10), file=res_dir//'/oscill.dat', action='write', position='append')
         end if
@@ -385,6 +389,10 @@ contains
     !            write(punit(8), 1006) t%adt(i, 1:t%max_nstate)
     !        end do
     !    end if
+
+        if (popt(9)) then
+            write(punit(9), 1006) t%wf%prob
+        end if
 
     !    if (popt(10)) then
     !        write(punit(10), 1006) t%qo

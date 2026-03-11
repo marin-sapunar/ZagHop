@@ -57,6 +57,11 @@ class ZagHopTest(unittest.TestCase):
         ref = np.loadtxt(self.rundir + "/Reference/energy.dat", comments="#")
         self.assertTrue(np.allclose(new, ref), "Difference in energy.dat file.")
 
+    def stdout_contains(self, string):
+        """ Assert that a string appears in the nad.stdout file. """
+        with open(os.path.join(self.rundir, "nad.stdout")) as f:
+            self.assertIn(string, f.read(), f"String not found in nad.stdout: {string!r}")
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

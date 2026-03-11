@@ -25,7 +25,8 @@ module state_mod
         integer :: group_state = 0 !< Index of this state within its group.
         integer :: i_state = 0 !< Index of this state in the overall state list.
         integer :: n_state = 0 !< Total number of states in the system.
-        integer :: multiplicity = 1
+        integer :: spin2 = 0 !< 2x Spin angular momentum quantum number.
+        integer :: ms2 = 0 !< 2x Spin projection quantum number.
         logical :: need_gradient = .false.
         real(dp), allocatable :: gradient(:, :) !< Gradient of the state.
         type(rvec), allocatable :: nadv(:) !< Non-adiabatic vectors involving this state.
@@ -44,19 +45,22 @@ contains
     ! DESCRIPTION:
     !> @brief Allocates arrays in the state variable and initializes some variables.
     !----------------------------------------------------------------------------------------------
-    subroutine initialize(self, group, group_state, i_state, n_state, multiplicity)
+    subroutine initialize(self, group, group_state, i_state, n_state, spin2, ms2)
         class(state), intent(inout) :: self
         integer, intent(in) :: group
         integer, intent(in) :: group_state
         integer, intent(in) :: i_state
         integer, intent(in) :: n_state
-        integer, intent(in) :: multiplicity
+        integer, intent(in) :: spin2
+        integer, intent(in) :: ms2
 
         self%group = group
         self%group_state = group_state
         self%i_state = i_state
         self%n_state = n_state
-        self%multiplicity = multiplicity
+        self%spin2 = spin2
+        self%ms2 = ms2
+        if (allocated(self%gradient)) deallocate(self%gradient)
         allocate(self%nadv(n_state))
     end subroutine initialize
 

@@ -292,7 +292,8 @@ contains
                     do i = 1, tr1%wf%n_state
                         do j = 1, tr1%wf%n_state
                             if (i == j) cycle
-                            if (tr1%wf%qm_state(i)%multiplicity /= tr1%wf%qm_state(j)%multiplicity) cycle
+                            if (tr1%wf%qm_state(i)%spin2 /= tr1%wf%qm_state(j)%spin2) cycle
+                            if (tr1%wf%qm_state(i)%ms2 /= tr1%wf%qm_state(j)%ms2) cycle
                             tr1%wf%need_nadv(i, j) = .true.
                         end do
                     end do
@@ -300,6 +301,12 @@ contains
                 if (ctrl%soc) then
                     do i = 1, tr1%wf%n_state
                         allocate(tr1%wf%qm_state(i)%soc(tr1%wf%n_state), source=0.0_dp)
+                        do j = 1, tr1%wf%n_state
+                            if (i == j) cycle
+                            if ((tr1%wf%qm_state(i)%spin2 == tr1%wf%qm_state(j)%spin2) .and. &
+                               (tr1%wf%qm_state(i)%ms2 == tr1%wf%qm_state(j)%ms2)) cycle
+                            tr1%wf%need_soc(i, j) = .true.
+                        end do
                     end do
                 end if
                 ! if (ctrl%print(8) .and. (.not. allocated(tr1%adt))) then
@@ -622,23 +629,32 @@ contains
     subroutine read_system(readf)
         type(reader), intent(inout) :: readf
         integer :: i
-        integer, parameter :: max_state_groups = 10
-        integer :: n_state_group = 1
-        integer :: max_nstate = 0
-        integer :: min_nstate = 0
-        integer :: nstate(max_state_groups) = 0
-        integer :: multiplicity(max_state_groups) = 1
+        integer :: n_state_group
+        integer :: max_nstate
+        integer :: min_nstate
+        integer, allocatable :: nstate(:)
+        integer, allocatable :: multiplicity(:)
 
+        n_state_group = 0
+        max_nstate = 0
+        min_nstate = 0
         call readf%rewind()
         call readf%go_to_keyword('$system')
         do
             call readf%next()
             if (index(readf%line, '$') == 1) exit
             call readf%parseline(' =')
-            select case(readf%args(1)%s)
-            case('n_state_group')
-                read(readf%args(2)%s, *) n_state_group     
+            select case(readf%args(1)%s)  
             case('nstate')
+                if (n_state_group == 0) then
+                    n_state_group = readf%narg - 1
+                    allocate(nstate(n_state_group))
+                    allocate(multiplicity(n_state_group), source=1)
+                else if (n_state_group /= readf%narg - 1) then
+                    write(stderr, *) 'Error in Input module, read_system subroutine.'
+                    write(stderr, *) '  Inconsistent number of state groups in nstate keyword.'
+                    stop
+                end if
                 do i = 1, readf%narg - 1
                     read(readf%args(i+1)%s, *) nstate(i)
                 end do
@@ -649,6 +665,15 @@ contains
             case('min_nstate')
                 read(readf%args(2)%s, *) min_nstate
             case('multiplicity')
+                if (n_state_group == 0) then
+                    n_state_group = readf%narg - 1
+                    allocate(nstate(n_state_group), source=0)
+                    allocate(multiplicity(n_state_group))
+                else if (n_state_group /= readf%narg - 1) then
+                    write(stderr, *) 'Error in Input module, read_system subroutine.'
+                    write(stderr, *) '  Inconsistent number of state groups in nstate keyword.'
+                    stop
+                end if
                 do i = 1, readf%narg - 1
                     read(readf%args(i+1)%s, *) multiplicity(i)
                 end do
@@ -674,7 +699,7 @@ contains
             end select
         end do
 
-        call tr1%wf%initialize(n_state_group, nstate, multiplicity, tr1%wf%active_state)
+        call tr1%wf%initialize(nstate, multiplicity, tr1%wf%active_state)
 
     end subroutine read_system
 

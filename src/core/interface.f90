@@ -107,7 +107,7 @@ contains
                 call json%add(p_top, p_array_i)
                 call json%add(p_array_i, "system", 1)
                 call json%add(p_array_i, "nstate", t%wf%n_state_per_group(i))
-                call json%add(p_array_i, "multiplicity", t%wf%qm_state(t%wf%index(i, 1))%multiplicity)
+                call json%add(p_array_i, "multiplicity", t%wf%qm_state(t%wf%index(i, 1))%spin2 + 1)
                 call json%add(p_array_i, "energy", .true.)
                 call json%add(p_array_i, "oscillator_strength", ctrl%oscill)
                 call json%create_array(p_array_j, "gradient")
@@ -198,7 +198,7 @@ contains
             if (ctrl%soc) then
                 allocate(wrk_soc(t%wf%n_state, t%wf%n_state), source=0.0_dp)
             end if
-            spinv = t%wf%qm_state(:)%multiplicity
+            spinv = t%wf%qm_state(:)%spin2 + 1
             call shzagreb_run(t%step, t%geom, t%wf%active_state, t%wf%en, t%wf%qm_state(t%wf%active_state)%gradient, wrk_nadv, &
             &                 wrk_soc, spinv, ctrl%socbas, wrk_adt)
             do i = 1, t%wf%n_state
@@ -245,7 +245,7 @@ contains
                 t%wf%overlap(2)%c = wrk_adt
             end if
         case(3)
-            call vibronic_coupling%eval(t%geom(1, :), t%wf%en)
+            call vibronic_coupling%eval(t%geom(1, :), 'spin-diabatic', t%wf%en)
             do i = 1, t%wf%n_state
                 if (t%wf%need_gradient(i)) then
                     t%wf%qm_state(i)%gradient(1, :) = vibronic_coupling%adiab_grad(:, i, i)
@@ -254,9 +254,9 @@ contains
                     if (t%wf%need_nadv(i, j)) then
                         t%wf%qm_state(i)%nadv(j)%c = vibronic_coupling%adiab_grad(:, i, j)
                     end if
-                    ! if (t%wf%need_soc(i, j)) then
-                    !     t%wf%qm_state(i)%soc(j) = vibronic_coupling%soc(i, j)
-                    ! end if
+                    if (t%wf%need_soc(i, j)) then
+                        t%wf%qm_state(i)%soc(j) = vibronic_coupling%diab_h(i, j)
+                     end if
                 end do
             end do
             if (ctrl%adt) then

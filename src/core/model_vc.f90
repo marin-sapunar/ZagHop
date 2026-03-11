@@ -22,6 +22,8 @@ module model_vc_mod
         integer :: nstate(3) = [0, 0, 0]
         integer :: nmode = 0
         integer :: tot_ns = 0
+        integer, allocatable :: s2(:) !< 2x spin angular momentum quantuum numbers for each state.
+        integer, allocatable :: ms2(:) !< 2x spin projection quantum numbers for each state.
         real(dp), allocatable :: freq(:)
         real(dp), allocatable :: zero_order(:, :)
         real(dp), allocatable :: linear(:, :, :)
@@ -53,8 +55,8 @@ contains
         class(vc_model) :: self
         character(len=*), intent(in) :: template_file
         type(reader) :: readf
-        integer :: n_val, i, j
-        integer :: mult, ist1, ist2, imode1, imode2
+        integer :: n_val, i, j, k, cindex, mult
+        integer ::  ist1, ist2, imode1, imode2
         integer :: i0(3) = [0, 0, 0]
         real(dp) :: val
         real(dp), allocatable :: wrk(:, :)
@@ -83,9 +85,20 @@ contains
         read(readf%args(3)%s, *) self%nstate(3)
 
         self%tot_ns = sum(self%nstate * [1, 2, 3])
-        i0(1) = 0
-        i0(2) = self%nstate(1)
-        i0(3) = i0(2) + 2*self%nstate(2)
+
+        allocate(self%s2(self%tot_ns))
+        allocate(self%ms2(self%tot_ns))
+        cindex = 0
+        do i = 1, 3
+            i0(i) = cindex
+            do j = 1, self%nstate(i)
+                do k = -(i-1), (i-1), 2
+                    cindex = cindex + 1
+                    self%s2(cindex) = i - 1
+                    self%ms2(cindex) = k
+                end do
+            end do
+        end do
 
         allocate(wrk(self%tot_ns, self%tot_ns))
         allocate(self%zero_order(self%tot_ns, self%tot_ns), source=0.0_dp)
@@ -239,21 +252,26 @@ contains
     ! DESCRIPTION:
     !> @brief Evaluate vibronic coupling Hamiltonian at given nuclear geometry.
     !----------------------------------------------------------------------------------------------
-    subroutine evaluate_vc(self, q, adiab_e)
+    subroutine evaluate_vc(self, q, basis, adiab_e)
         use linalg_wrapper_mod, only : syev
         class(vc_model) :: self
         real(dp), intent(in) :: q(:)
+        character(len=*), intent(in) :: basis
         real(dp), allocatable, intent(out) :: adiab_e(:)
-        integer :: i, j, imode, jmode
-        real(dp), allocatable :: wrk(:, :)
+        integer :: i, j, imode, jmode, m
+        integer :: i0, i_end
+        real(dp), allocatable :: wrk(:, :), wrk_e(:)
         real(dp) :: edif
         real(dp), parameter :: tiny_hf = 1.0e-8_dp
 
         if (.not. allocated(adiab_e)) then
-            allocate(adiab_e(self%tot_ns))
+            allocate(adiab_e(self%tot_ns), source=0.0_dp)
         end if
         if (.not. allocated(self%adiab_grad)) then
-            allocate(self%adiab_grad(self%nmode, self%tot_ns, self%tot_ns))
+            allocate(self%adiab_grad(self%nmode, self%tot_ns, self%tot_ns), source=0.0_dp)
+        end if
+        if (.not. allocated(self%eigvec)) then
+            allocate(self%eigvec(self%tot_ns, self%tot_ns), source=0.0_dp)
         end if
 
         wrk = self%zero_order
@@ -274,9 +292,30 @@ contains
             end do
         end do
 
+
         self%diab_h = wrk
-        call syev(wrk, adiab_e, jobz='V', uplo='U')
-        self%eigvec = wrk
+        select case(basis)
+        case('adiabatic')
+            call syev(wrk, adiab_e, jobz='V', uplo='U')
+            self%eigvec = wrk
+        case('spin-diabatic')
+            i0 = 0
+            do i = 1, 3
+                if (self%nstate(i) == 0) cycle
+                if (allocated(wrk)) deallocate(wrk)
+                allocate(wrk(self%nstate(i), self%nstate(i)))
+                if (allocated(wrk_e)) deallocate(wrk_e)
+                allocate(wrk_e(self%nstate(i)))
+                wrk = self%diab_h(i0+1:i0+i*self%nstate(i):i, i0+1:i0+i*self%nstate(i):i)
+                call syev(wrk, wrk_e, jobz='V', uplo='U')
+                do j = 1, i
+                    adiab_e(i0+j:i0+i*self%nstate(i):i) = wrk_e
+                    self%eigvec(i0+j:i0+i*self%nstate(i):i, i0+j:i0+i*self%nstate(i):i) = wrk
+                end do
+                i0 = i0 + i * self%nstate(i)
+            end do
+        end select
+
 
         self%diab_grad = self%linear
         do imode = 1, self%nmode
@@ -289,12 +328,14 @@ contains
                 end do
             end do
         end do
+
         do imode = 1, self%nmode
             self%adiab_grad(imode, :, :) = matmul(matmul(transpose(self%eigvec), &
             &                                     self%diab_grad(imode, :, :)), self%eigvec)
             do i = 1, self%tot_ns
                 do j = 1, self%tot_ns
                     if (i==j) cycle
+                    if ((self%s2(i) /= self%s2(j)) .or. (self%ms2(i) /= self%ms2(j))) cycle
                     edif = adiab_e(j) - adiab_e(i)
                     if (abs(edif) < tiny_hf) then
                         if (stdp1) then

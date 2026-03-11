@@ -14,6 +14,7 @@ class VcPyrazineTest(ZagHopTest):
         drift exceeds the threshold."""
         self.run_traj()
         self.compare_energy()
+        self.stdout_contains("Drift in total energy too large.")
 
     def test_estep(self):
         """ Test max_toten_d_step option.
@@ -22,6 +23,7 @@ class VcPyrazineTest(ZagHopTest):
         change in a single step exceeds the threshold."""
         self.run_traj()
         self.compare_energy()
+        self.stdout_contains("Change in total energy too large.")
 
     def test_fssh(self):
         """ Test adiabatic basis FSSH on pyrazine model."""

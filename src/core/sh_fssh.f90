@@ -130,7 +130,7 @@ contains
             cprob = 0.0_dp
             hop: do st = 1, odens
                 if (st == cstate) cycle
-                prob = - 2 * edt * odecmat(st, cstate) * real(conjg(wf_t2%coeff(st)) * wf_t2%coeff(cstate)) / &
+                prob = - 2 * edt * real(conjg(wf_t2%coeff(st)) * wf_t2%coeff(cstate) * odecmat(st, cstate)) / &
                      & (abs(wf_t2%coeff(cstate))**2)
                 if (prob > 0.0_dp) then ! Not actual probability, can be negative.
                     cprob = cprob + prob
