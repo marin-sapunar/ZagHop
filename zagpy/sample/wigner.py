@@ -23,7 +23,7 @@ def add_subparser(subparsers):
         type=str,
         metavar="file_format",
         default="molden",
-        help="Format of the file. Supported formats: gaussian, molden, turbomole, orca.")
+        help="Format of the file. Supported formats: gaussian, molden, turbomole, orca, sharc_lvc.")
     parser.add_argument(
         "-n",
         "--npoint",
@@ -70,6 +70,14 @@ def add_subparser(subparsers):
         default=None,
         help="""Indices of normal modes to be ignored. Example: -ign '1 3'
                 will ignore first and third normal mode.""")
+    parser.add_argument(
+        "--coord",
+        choices=["cartesian", "normal_mode"],
+        type=str,
+        default="cartesian",
+        help="""Coordinate system for output. 'cartesian' writes Cartesian
+                coordinates (default). 'normal_mode' writes dimensionless
+                (mass and frequency scaled) normal mode coordinates.""")
     parser.set_defaults(func=run)
 
 
@@ -81,6 +89,8 @@ def run(args):
         nm = NormalModes.from_turbomole(args.file_name, args.coord_file)
     elif args.in_format == "orca":
         nm = NormalModes.from_orca(args.file_name)
+    elif args.in_format == "sharc_lvc":
+        nm = NormalModes.from_sharc_lvc(args.file_name)
     elif args.in_format == "gaussian":
         if args.log_file is not None:
             nm = NormalModes.from_gaussian(args.file_name, args.log_file)
@@ -92,13 +102,19 @@ def run(args):
     for i in range(args.npoint):
         os.mkdir("point" + str(i + 1).zfill(len(str(args.npoint))))
         os.chdir(os.path.join(cwd, "point" + str(i + 1).zfill(len(str(args.npoint)))))
-        write_veloc("veloc", nm.to_xyz(refined_modes(sample[1][i], args.ignore_modes),
-                    reshape=True, displacement=True))
-        write_geom("geom", nm.to_xyz(refined_modes(sample[0][i],
-            args.ignore_modes)), nm.atoms, nm.at_mass)
-        os.mkdir("qmdir")
-        os.chdir("qmdir")
-        write_coord("coord", nm.to_xyz(refined_modes(sample[0][i], args.ignore_modes)), nm.atoms)
+        if args.coord == "normal_mode":
+            q = refined_modes(sample[0][i].copy(), args.ignore_modes)
+            v = refined_modes(sample[1][i].copy(), args.ignore_modes)
+            write_geom_nm("geom", q, nm.freq)
+            write_veloc("veloc", v)
+        else:
+            write_veloc("veloc", nm.to_xyz(refined_modes(sample[1][i], args.ignore_modes),
+                        reshape=True, displacement=True))
+            write_geom("geom", nm.to_xyz(refined_modes(sample[0][i],
+                args.ignore_modes)), nm.atoms, nm.at_mass)
+            os.mkdir("qmdir")
+            os.chdir("qmdir")
+            write_coord("coord", nm.to_xyz(refined_modes(sample[0][i], args.ignore_modes)), nm.atoms)
         os.chdir(cwd)
 
 
@@ -142,10 +158,22 @@ def write_coord(fname, geom, atoms):
             ofile.write(gformat.format(*xyz, at.lower()))
         ofile.write('$end\n')
 
+
+def write_geom_nm(fname, displacements, frequencies):
+    """ Write geometry in dimensionless normal mode coordinates. """
+    nmode = len(displacements)
+    gformat = '{} {} {:.13f} q\n'
+    with open(fname, 'w') as ofile:
+        for i in range(nmode):
+            m_eff = 1 / frequencies[i] / 1822.88849 # @todo units module
+            ofile.write(gformat.format('v' + str(i + 1), m_eff, displacements[i]))
+
+
 def write_veloc(fname, veloc):
     """ Takes output file name and a numpy array containing
         normal mode velocities and saves them in a file. """
     np.savetxt(fname, veloc)
+
 
 def write_geom(fname, geom, atoms, at_mass):
     """ Takes as input fname (output file name), geom (a numpy array
@@ -158,6 +186,7 @@ def write_geom(fname, geom, atoms, at_mass):
     with open(fname, 'w') as ofile:
         for at, m_at, xyz in zip(atoms, at_mass, geom.reshape([natom, 3])):
             ofile.write(gformat.format(at.lower(), m_at, *xyz))
+
 
 def read_coord(fname, natom):
     """ fname is the name of the file to be read, and natom is the number of
@@ -175,6 +204,7 @@ def read_coord(fname, natom):
                     xyz = [np.float(q) for q in xyz]
                     rgeom[3*i:3*i+3] = xyz
     return atoms, rgeom
+
 
 def refined_modes(omega, ignore_list):
     """ Takes a numpy array of normal mode frequencies and list of mode numbers

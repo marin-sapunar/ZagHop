@@ -355,6 +355,52 @@ class NormalModes():
         nmode = cls(geometry, mode_vectors.T, freq, atoms, mass_weighted=False)
         return nmode
 
+    @classmethod
+    def from_sharc_lvc(cls, lvc_file_name):
+        """ Create instance of NormalMode class from a SHARC LVC file.
+
+        Arguments:
+            lvc_file_name: File containing geometry, frequencies and
+                           mass-weighted normal modes (e.g. V0.txt).
+        Returns:
+            nmode : New instance of NormalMode class.
+        """
+        
+        with open(lvc_file_name, 'r') as infile:
+            lines = infile.readlines()
+
+        geom = []
+        for i, line in enumerate(lines):
+            if line.strip() == 'Geometry':
+                for geom_line in lines[i + 1:]:
+                    if len(geom_line.split()) != 6:
+                        break
+                    geom.append(geom_line)
+        atoms = []
+        coord = []
+        for line in geom:
+            parts = line.split()
+            atoms.append(parts[0].title())
+            coord.extend(parts[2:5])
+        coord = np.array(coord, dtype=float)
+
+        for i, line in enumerate(lines):
+            if line.strip() == 'Frequencies':
+                freq = np.array(lines[i + 1].split(), dtype=float)
+                break
+        
+        vecs = []
+        for i, line in enumerate(lines):
+            if line.strip() == 'Mass-weighted normal modes':
+                for vec_line in lines[i + 1:]:
+                    if not vec_line.strip():
+                        break
+                    vecs.append(vec_line.split())
+        vecs = np.array(vecs, dtype=float)
+                
+        nmode = cls(coord, vecs, freq, atoms, mass_weighted=True)
+        return nmode
+
 
     def to_xyz(self, q_vec, reshape=False, displacement=False):
         """ Convert NM displacement vector to Cartesian coordinates.
