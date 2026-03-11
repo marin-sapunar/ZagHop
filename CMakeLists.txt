@@ -172,6 +172,11 @@ project(ZagHop LANGUAGES Fortran)
   find_package(Python)
   if(Python_FOUND)
     message(STATUS "Python executable: ${Python_EXECUTABLE}")
+    add_custom_target(zagpy ALL
+      COMMAND ${Python_EXECUTABLE} -m pip install -e ${CMAKE_SOURCE_DIR}
+              --quiet --no-build-isolation
+      COMMENT "Installing zagpy Python package (editable)"
+    )
     add_custom_command(TARGET zaghop POST_BUILD
       COMMAND ${CMAKE_COMMAND} -E copy_directory
               ${CMAKE_SOURCE_DIR}/tests/integration ${CMAKE_BINARY_DIR}/tests)

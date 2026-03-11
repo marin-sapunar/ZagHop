@@ -4,7 +4,7 @@ import re
 import os
 import sys
 import numpy as np
-from states import ElStates
+from zagpy.states import ElStates
 import file_utils
 from interface import QMInterface
 

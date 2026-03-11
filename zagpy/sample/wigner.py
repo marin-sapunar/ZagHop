@@ -1,71 +1,64 @@
-#!/usr/bin/env python3
-""" Script for sampling an ensemble of phase space points
-    from a Harmonic Wigner distribution.
-
-    Usage: call wigner.py --help for details. """
-import argparse
+""" Sample phase space points from a Harmonic Wigner distribution. """
 import os
 import sys
 import numpy as np
-from normalmode import NormalModes
+from zagpy.normalmode import NormalModes
 
-def main():
-    """ Adds various options for input format and sampling parameters and then calls
-    various functions defined below to create initial conditions from Harmonic
-    Wigner distribution. """
-    parser = argparse.ArgumentParser(
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+
+def add_subparser(subparsers):
+    """ Register the 'wigner' subcommand under the 'sample' subparser. """
+    parser = subparsers.add_parser(
+        "wigner",
+        formatter_class=__import__('argparse').ArgumentDefaultsHelpFormatter,
         description=
         """Read geometries and Hessians from Orca, Molden, Turbomole or Gaussian and
         generate initial geometries and velocities from Wigner distribution. For Molden
         and Orca, only the file containing Hessian/normal modes needs to be provided.
         For Turbomole, a 'coord' file containing ground state geometry is needed. For
-        Gaussian, one needs to specify .log file's name using -l option.""",
-        epilog=
-        "")
+        Gaussian, one needs to specify .log file's name using -l option.""")
     parser.add_argument(
         "-f",
         "--in_format",
-        choices=["molden", "orca", "gaussian", "turbomole"],
+        choices=["molden", "orca", "gaussian", "turbomole", "sharc_lvc"],
         type=str,
-        metavar=("file_format"),
+        metavar="file_format",
         default="molden",
         help="Format of the file. Supported formats: gaussian, molden, turbomole, orca.")
     parser.add_argument(
         "-n",
         "--npoint",
         type=int,
-        metavar=("N"),
+        metavar="N",
         default=1000,
         help="Number of points to be generated from Wigner distribution.")
     parser.add_argument(
         "-T",
         "--temperature",
         type=int,
-        metavar=("Temperature"),
+        metavar="Temperature",
         default=0,
         help="Temperature in Kelvin.")
     parser.add_argument(
         "-fn",
         "--file_name",
         type=str,
-        metavar=("file_name"),
+        metavar="file_name",
         default="vib.molden",
         help="""Name of the file containing frequencies/Hessians. .hess file for Orca,
-                .fch/.fchk for Gaussian, .molden for molden and aoforce output containing $hessian 
+                .fch/.fchk for Gaussian, .molden for molden and aoforce output containing $hessian
                 or $hessian (projected)""")
     parser.add_argument(
         "-l",
         "--log_file",
         type=str,
-        metavar=("file.log"),
+        metavar="file.log",
         default=None,
         help="Name of the .log file. Only needed for Gaussian, along with .fchk file.")
     parser.add_argument(
         "-c",
         "--coord_file",
         type=str,
-        metavar=("coord"),
+        metavar="coord",
         default=None,
         help="""Location of the coord file containing optimized ground
                 state geometry. Only needed for Turbomole.""")
@@ -73,12 +66,15 @@ def main():
         "-ign",
         "--ignore_modes",
         type=str,
-        metavar=("mode_list"),
+        metavar="mode_list",
         default=None,
         help="""Indices of normal modes to be ignored. Example: -ign '1 3'
                 will ignore first and third normal mode.""")
+    parser.set_defaults(func=run)
 
-    args = parser.parse_args()
+
+def run(args):
+    """ Execute Wigner sampling with the given parsed arguments. """
     if args.in_format == "molden":
         nm = NormalModes.from_molden(args.file_name)
     elif args.in_format == "turbomole":
@@ -92,7 +88,7 @@ def main():
             print("ERROR: .log file not provided!")
             sys.exit(1)
     sample = sample_wigner(nm.freq, args.temperature, args.npoint)
-    cwd = os.getcwd() # Current directory, from where the program was called
+    cwd = os.getcwd()
     for i in range(args.npoint):
         os.mkdir("point" + str(i + 1).zfill(len(str(args.npoint))))
         os.chdir(os.path.join(cwd, "point" + str(i + 1).zfill(len(str(args.npoint)))))
@@ -132,7 +128,6 @@ def thermal_wigner_v(omega, T):
     if T > 0:
         return np.sqrt(omega / (2 * np.tanh(omega / (2 * T))))
     return np.sqrt(omega / 2)
-
 
 
 def write_coord(fname, geom, atoms):
@@ -189,5 +184,3 @@ def refined_modes(omega, ignore_list):
         for i in ignore_list.split():
             omega[int(i)-1] = 0
     return omega
-if __name__ == "__main__":
-    main()

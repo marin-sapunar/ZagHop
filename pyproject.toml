@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "zagpy"
+version = "0.1.0"
+description = "ZagHop utilities for sampling and electronic structure interfaces."
+requires-python = ">=3.8"
+dependencies = [
+    "numpy",
+    "scipy",
+]
+
+[project.scripts]
+zagpy = "zagpy.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["zagpy*"]
