@@ -27,6 +27,12 @@ class NormalModes():
             mass_weighted : If normal modes passed in nmode are already
                             weighted skip the mass weighting step.
         """
+        if len(rgeom) == 0 or len(nmode) == 0:
+            print("Warning: Reference geometry or normal modes are empty.")
+            print("         Saving only frequencies.")
+            self.freq = freq.copy()
+            return
+            
         if rgeom.ndim > 2:
             raise ValueError('Wrong number of dimensions for rgeom.')
         self.rgeom = rgeom.flatten()
@@ -80,10 +86,16 @@ class NormalModes():
         lines = _get_section('fr-norm-coord', infile, quiet=True)
         if lines:
             vib = _parse_fr_norm_coord(lines, natom)
-            lines = _get_section('freq', infile)
+            
+        lines = _get_section('freq', infile)
+        if lines:
             freq = _parse_freq(lines)
-            nmode = cls(coord, vib, freq, atoms, mass_weighted=False)
+        else:
+            raise ValueError('Frequencies not found in molden file.')
+        nmode = cls(coord, vib, freq, atoms, mass_weighted=False)
         return nmode
+    
+
     @classmethod
     def from_turbomole(cls, hess_file_name, coord_file = "coord"):
         """ Create instance of NormalMode class from turbomole files.
@@ -241,6 +253,7 @@ class NormalModes():
         freq=np.emath.sqrt(force_constants).real
         nmode = cls(geometry, mode_vectors.T, freq, atoms, mass_weighted=False)
         return nmode
+    
     @classmethod
     def from_gaussian(cls, gauss_file_name, log_file_name):
         """ Create instance of NormalMode class from turbomole files.
@@ -355,6 +368,7 @@ class NormalModes():
         nmode = cls(geometry, mode_vectors.T, freq, atoms, mass_weighted=False)
         return nmode
 
+
     @classmethod
     def from_sharc_lvc(cls, lvc_file_name):
         """ Create instance of NormalMode class from a SHARC LVC file.
@@ -376,6 +390,7 @@ class NormalModes():
                     if len(geom_line.split()) != 6:
                         break
                     geom.append(geom_line)
+
         atoms = []
         coord = []
         for line in geom:
@@ -384,10 +399,13 @@ class NormalModes():
             coord.extend(parts[2:5])
         coord = np.array(coord, dtype=float)
 
+        freq = None
         for i, line in enumerate(lines):
             if line.strip() == 'Frequencies':
                 freq = np.array(lines[i + 1].split(), dtype=float)
                 break
+        if freq is None:
+            raise ValueError('Frequencies not found in LVC file.')
         
         vecs = []
         for i, line in enumerate(lines):
@@ -397,7 +415,7 @@ class NormalModes():
                         break
                     vecs.append(vec_line.split())
         vecs = np.array(vecs, dtype=float)
-                
+        
         nmode = cls(coord, vecs, freq, atoms, mass_weighted=True)
         return nmode
 

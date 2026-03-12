@@ -1,6 +1,5 @@
 """ Sample phase space points from a Harmonic Wigner distribution. """
 import os
-import sys
 import numpy as np
 from zagpy.normalmode import NormalModes
 
@@ -95,8 +94,10 @@ def run(args):
         if args.log_file is not None:
             nm = NormalModes.from_gaussian(args.file_name, args.log_file)
         else:
-            print("ERROR: .log file not provided!")
-            sys.exit(1)
+            raise ValueError("Gaussian format requires a .log file. Please provide it using the -l option.")
+    else:
+        raise ValueError("Unsupported input format.")
+
     sample = sample_wigner(nm.freq, args.temperature, args.npoint)
     cwd = os.getcwd()
     for i in range(args.npoint):

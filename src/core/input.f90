@@ -18,7 +18,7 @@ module input_mod
     use string_mod
     use file_mod, only : reader
     use constants
-    use model_vc_mod
+    use vibronic_mod
 
     implicit none
 
@@ -553,7 +553,7 @@ contains
     !! In this section, programs to run the QM and MM calculations are selected.
     !----------------------------------------------------------------------------------------------
     subroutine read_method(readf)
-        use model_mod, only : qmodel
+        use tully_mod, only : qmodel
         type(reader), intent(inout) :: readf
 
         if (.not. allocated(ctrl%qprog)) ctrl%qprog = ''

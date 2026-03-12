@@ -36,13 +36,17 @@ project(ZagHop LANGUAGES Fortran)
 # Targets:                                                                     #
   file(GLOB CORE_SOURCE "src/core/*f90")
   file(GLOB UTIL_SOURCE "src/util/*f90")
+  file(GLOB POT_SOURCE "src/potential/*f90")
 
   add_library(zagutil STATIC ${UTIL_SOURCE})
+  add_library(zagpot STATIC ${POT_SOURCE})
+  target_link_libraries(zagpot PRIVATE zagutil)
   if(QUANTICS)
       set(CORE_SOURCE ${CORE_SOURCE} "interface/quantics_inter.f90")
   endif()
 
   add_executable(zaghop ${CORE_SOURCE})
+  target_link_libraries(zaghop PRIVATE zagpot)
   target_link_libraries(zaghop PRIVATE zagutil)
   target_link_libraries(zaghop PRIVATE jsonfortran)
   target_include_directories(zaghop PRIVATE
@@ -141,6 +145,7 @@ project(ZagHop LANGUAGES Fortran)
           )
   endif()
   target_link_libraries(zaghop PRIVATE ${LINALG_LIBS})
+  target_link_libraries(zagpot PRIVATE ${LINALG_LIBS})
   target_link_libraries(zagutil ${LINALG_LIBS})
 
   if(STATIC)

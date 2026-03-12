@@ -1,12 +1,12 @@
 !--------------------------------------------------------------------------------------------------
-! MODULE: model_vc_mod
+! MODULE: vibronic_mod
 !> @author Marin Sapunar, Ruđer Bošković Institute
 !> @date January, 2026
 !
 ! DESCRIPTION: 
 !> @brief Simple vibronic coupling interface.
 !--------------------------------------------------------------------------------------------------
-module model_vc_mod
+module vibronic_mod
     use global_defs
     use string_mod
     use file_mod, only : reader
@@ -75,7 +75,7 @@ contains
         call readf%next()
         call readf%parseline(' ')
         if (readf%narg /= 3) then
-            write(stderr, *) 'Error in model_vc_mod, vc_init subroutine.'
+            write(stderr, *) 'Error in vibronic_mod, vc_init subroutine.'
             write(stderr, *) '  Expected 3 arguments on second line of template file:'
             write(stderr, *) '    n_singlets n_doublets n_triplets'
             stop
@@ -190,7 +190,7 @@ contains
                 sec = readf%args(1)%s
                 part = readf%args(2)%s
                 if (part /= 'R') then
-                    write(stderr, *) 'Error in model_vc_mod, vc_init subroutine.'
+                    write(stderr, *) 'Error in vibronic_mod, vc_init subroutine.'
                     write(stderr, *) '  Only real SOC/DM matrices are supported.'
                     !> @todo Implement imaginary parts of SOC/DM matrices.
                     stop
@@ -210,7 +210,7 @@ contains
                     self%dm(3, :, :) = wrk
                 end select
             case default
-                write(stderr, *) 'Error in model_vc_mod, vc_init subroutine.'
+                write(stderr, *) 'Error in vibronic_mod, vc_init subroutine.'
                 write(stderr, *) '  Unrecognized keyword in template file: ', readf%args(1)%s
                 stop
             end select            
@@ -339,7 +339,7 @@ contains
                     edif = adiab_e(j) - adiab_e(i)
                     if (abs(edif) < tiny_hf) then
                         if (stdp1) then
-                            write(stderr, *) 'Warning in model_vc_mod, evaluate_vc subroutine.'
+                            write(stderr, *) 'Warning in vibronic_mod, evaluate_vc subroutine.'
                             write(stderr, *) '  Near-degeneracy between states ', i, ' and ', j, '.'
                             write(stderr, *) '  Setting denominator to ', tiny_hf, ' Hartree.'
                         end if
@@ -351,4 +351,4 @@ contains
         end do
     end subroutine evaluate_vc
 
-end module model_vc_mod
+end module vibronic_mod

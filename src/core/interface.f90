@@ -30,9 +30,9 @@ contains
 #endif
         use system_type_mod, only : system_type
         use matrix_mod, only : unit_mat
-        use model_mod, only : qmodel
+        use tully_mod, only : qmodel
         use json_module, only : json_core, json_file, json_value
-        use model_vc_mod, only : vibronic_coupling
+        use vibronic_mod, only : vibronic_coupling
         type(system_type), intent(inout) :: t
         logical, intent(in) :: hop
         integer :: cunit, i, j

@@ -1,12 +1,12 @@
 !--------------------------------------------------------------------------------------------------
-! MODULE: model_mod
+! MODULE: tully_mod
 !> @author Marin Sapunar, Ruđer Bošković Institute
 !> @date September, 2024
 !
 ! DESCRIPTION: 
 !> @brief Simple analytic models for testing the code.
 !--------------------------------------------------------------------------------------------------
-module model_mod
+module tully_mod
     use global_defs
     use string_mod
     implicit none
@@ -210,4 +210,4 @@ contains
     end subroutine tully_3
 
 
-end module model_mod
+end module tully_mod
