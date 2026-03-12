@@ -24,6 +24,7 @@ module vibronic_mod
         integer :: tot_ns = 0
         integer, allocatable :: s2(:) !< 2x spin angular momentum quantuum numbers for each state.
         integer, allocatable :: ms2(:) !< 2x spin projection quantum numbers for each state.
+        integer :: zero_mode = 0
         real(dp), allocatable :: freq(:)
         real(dp), allocatable :: zero_order(:, :)
         real(dp), allocatable :: linear(:, :, :)
@@ -58,6 +59,8 @@ contains
         integer :: n_val, i, j, k, cindex, mult
         integer ::  ist1, ist2, imode1, imode2
         integer :: i0(3) = [0, 0, 0]
+        integer :: slash_pos
+        character(len=:), allocatable :: template_dir
         real(dp) :: val
         real(dp), allocatable :: wrk(:, :)
         character(len=3) :: sec
@@ -65,11 +68,18 @@ contains
 
         self%template_file = template_file
 
+        slash_pos = index(template_file, '/', back=.true.)
+        if (slash_pos > 0) then
+            template_dir = template_file(1:slash_pos)
+        else
+            template_dir = ''
+        end if
+
         call readf%open(self%template_file, abort_on_eof=.false.)
 
         call readf%next()
         call readf%parseline(' ')
-        self%v0_file = readf%args(1)%s
+        self%v0_file = template_dir // readf%args(1)%s
         call self%read_v0(self%v0_file)
 
         call readf%next()
@@ -108,7 +118,7 @@ contains
         allocate(self%quadratic(self%nmode, self%nmode, self%tot_ns, self%tot_ns), source=0.0_dp)
         do i = 1, self%nmode
             do j = 1, self%tot_ns
-                self%quadratic(i, i, j, j) = 0.5_dp * self%freq(i)
+                self%quadratic(i, i, j, j) = 0.5_dp * self%freq(i + self%zero_mode)
             end do
         end do
 
@@ -141,8 +151,8 @@ contains
                     call readf%parseline(' ')
                     read(readf%args(1)%s, *) mult
                     read(readf%args(2)%s, *) ist1
-                    read(readf%args(3)%s, *) imode1
-                    !imode = imode - 6
+                    read(readf%args(3)%s, *) imode1 
+                    imode1 = imode1 - self%zero_mode
                     read(readf%args(4)%s, *) val
                     ist1 = i0(mult) + mult * (ist1 - 1)
                     do j = 1, mult
@@ -160,6 +170,7 @@ contains
                     read(readf%args(2)%s, *) ist1
                     read(readf%args(3)%s, *) ist2
                     read(readf%args(4)%s, *) imode1
+                    imode1 = imode1 - self%zero_mode
                     read(readf%args(5)%s, *) val
                     ist1 = i0(mult) + mult * (ist1 - 1)
                     ist2 = i0(mult) + mult * (ist2 - 1)
@@ -178,7 +189,9 @@ contains
                     read(readf%args(1)%s, *) mult
                     read(readf%args(2)%s, *) ist1
                     read(readf%args(3)%s, *) imode1
+                    imode1 = imode1 - self%zero_mode
                     read(readf%args(4)%s, *) imode2
+                    imode2 = imode2 - self%zero_mode
                     read(readf%args(5)%s, *) val
                     ist1 = i0(mult) + mult * (ist1 - 1)
                     do j = 1, mult
@@ -244,6 +257,15 @@ contains
             end select
         end do
         call readf%close()
+
+        self%zero_mode = count(abs(self%freq) < 1.0e-12_dp)
+        self%nmode = self%nmode - self%zero_mode
+        if (self%zero_mode == 0) return
+        if (self%zero_mode /= 6) then
+            write(stderr, *) 'Warning in vibronic_mod, read_v0 subroutine.'
+            write(stderr, *) '  Found ', self%zero_mode, ' zero frequencies. Expected none or 6.'
+        end if
+        
     end subroutine read_v0
 
 
@@ -258,7 +280,7 @@ contains
         real(dp), intent(in) :: q(:)
         character(len=*), intent(in) :: basis
         real(dp), allocatable, intent(out) :: adiab_e(:)
-        integer :: i, j, imode, jmode, m
+        integer :: i, j, imode, jmode
         integer :: i0, i_end
         real(dp), allocatable :: wrk(:, :), wrk_e(:)
         real(dp) :: edif

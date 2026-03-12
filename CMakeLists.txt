@@ -37,6 +37,7 @@ project(ZagHop LANGUAGES Fortran)
   file(GLOB CORE_SOURCE "src/core/*f90")
   file(GLOB UTIL_SOURCE "src/util/*f90")
   file(GLOB POT_SOURCE "src/potential/*f90")
+  list(FILTER POT_SOURCE EXCLUDE REGEX "run_vc\\.f90$")
 
   add_library(zagutil STATIC ${UTIL_SOURCE})
   add_library(zagpot STATIC ${POT_SOURCE})
@@ -51,6 +52,11 @@ project(ZagHop LANGUAGES Fortran)
   target_link_libraries(zaghop PRIVATE jsonfortran)
   target_include_directories(zaghop PRIVATE
                              $<TARGET_PROPERTY:jsonfortran,BINARY_DIR>)
+
+  add_executable(run_vc "src/potential/run_vc.f90")
+  target_link_libraries(run_vc PRIVATE zagpot)
+  target_link_libraries(run_vc PRIVATE zagutil)
+  target_link_libraries(run_vc PRIVATE ${LINALG_LIBS})
 
 ################################################################################
 # Compiler specific options:                                                   #
