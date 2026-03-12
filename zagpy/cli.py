@@ -1,6 +1,7 @@
 """ Command-line interface for zagpy. """
 import argparse
 from zagpy.sample import wigner
+from zagpy.plot import trajectory
 
 
 def main():
@@ -15,10 +16,18 @@ def main():
     sample_sub = sample_parser.add_subparsers(dest="method")
     wigner.add_subparser(sample_sub)
 
+    # plot subcommand with its own subparsers
+    plot_parser = subparsers.add_parser(
+        "plot", help="Plot trajectory data.")
+    plot_sub = plot_parser.add_subparsers(dest="plot_type")
+    trajectory.add_subparser(plot_sub)
+
     args = parser.parse_args()
     if hasattr(args, "func"):
         args.func(args)
     elif args.command == "sample" and args.method is None:
         sample_parser.print_help()
+    elif args.command == "plot" and args.plot_type is None:
+        plot_parser.print_help()
     else:
         parser.print_help()
