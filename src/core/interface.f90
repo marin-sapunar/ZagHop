@@ -260,7 +260,7 @@ contains
                 end do
             end do
             if (ctrl%adt) then
-                t%wf%overlap(2)%c = vibronic_coupling%eigvec
+                t%wf%overlap(2)%c = transpose(vibronic_coupling%eigvec)
             end if
         case default
             call errstop("run_qm", "Unrecognized QM interface.", 1)

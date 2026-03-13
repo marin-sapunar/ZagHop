@@ -678,7 +678,17 @@ contains
                     read(readf%args(i+1)%s, *) multiplicity(i)
                 end do
             case('istate')
-                read(readf%args(2)%s, *) tr1%wf%active_state
+                if (readf%args(2)%s == 'file') then
+                    if (readf%narg < 3) then
+                        call errstop('read_system', &
+                        &          'istate file keyword requires a file name.')
+                    end if
+                    open(newunit=i, file=readf%args(3)%s, status='old', action='read')
+                    read(i, *) tr1%wf%active_state
+                    close(i)
+                else
+                    read(readf%args(2)%s, *) tr1%wf%active_state
+                end if
             case('geometry')
                 geominp = readf%args(2)%s
             case('velocity')

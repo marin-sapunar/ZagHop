@@ -1,6 +1,6 @@
 """ Command-line interface for zagpy. """
 import argparse
-from zagpy.sample import wigner
+from zagpy.sample import state, wigner
 from zagpy.plot import trajectory
 
 
@@ -14,6 +14,7 @@ def main():
     sample_parser = subparsers.add_parser(
         "sample", help="Sample initial conditions.")
     sample_sub = sample_parser.add_subparsers(dest="method")
+    state.add_subparser(sample_sub)
     wigner.add_subparser(sample_sub)
 
     # plot subcommand with its own subparsers

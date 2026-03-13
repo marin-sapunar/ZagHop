@@ -47,7 +47,7 @@ program run_vc
 
     open(newunit=iunit, file='vc_adt.dat', status='replace', action='write', iostat=io)
     do i = 1, vc%tot_ns
-        write(iunit, '(*(e20.12))') vc%eigvec(i, :)
+        write(iunit, '(*(e20.12))') vc%eigvec(:, i)
     end do
     close(iunit)
 
