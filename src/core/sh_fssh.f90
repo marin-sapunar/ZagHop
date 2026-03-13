@@ -84,15 +84,15 @@ contains
 
         select case(opt_clvl)
         case("hst")
-            call hst_tdc(t1-t0, wf_t1%overlap(1)%c, wrk_1)
-            call hst_tdc(t2-t1, wf_t2%overlap(1)%c, wrk_2)
+            call hst_tdc(t1-t0, wf_t1%overlap, wrk_1)
+            call hst_tdc(t2-t1, wf_t2%overlap, wrk_2)
             call sh_interpolate_tdc(interpolation_tdc, 0.5_dp*(t0 + t1), 0.5_dp*(t1 + t2), &
             &                       t1, wrk_1, wrk_2, tdc_t1)
             call sh_interpolate_tdc(interpolation_tdc, 0.5_dp*(t0 + t1), 0.5_dp*(t1 + t2), &
             &                       t2, wrk_1, wrk_2, tdc_t2)
         case("npi")
-            call npi_tdc_integrated(t1-t0, wf_t1%overlap(1)%c, wrk_1)
-            call npi_tdc_integrated(t2-t1, wf_t2%overlap(1)%c, wrk_2)
+            call npi_tdc_integrated(t1-t0, wf_t1%overlap, wrk_1)
+            call npi_tdc_integrated(t2-t1, wf_t2%overlap, wrk_2)
             call sh_interpolate_tdc(interpolation_tdc, 0.5_dp*(t0 + t1), 0.5_dp*(t1 + t2), &
             &                       t1, wrk_1, wrk_2, tdc_t1)
             call sh_interpolate_tdc(interpolation_tdc, 0.5_dp*(t0 + t1), 0.5_dp*(t1 + t2), &

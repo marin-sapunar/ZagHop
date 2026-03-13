@@ -249,6 +249,7 @@ contains
             ctrl%print(10) = .false.
         end if
         if (ctrl%print(10)) ctrl%oscill = .true.
+        if (ctrl%print(8)) ctrl%adt = .true.
         select case(ctrl%sh)
         case(0)
             ctrl%print(6:9) = .false.
@@ -276,18 +277,7 @@ contains
                 tr1%wf%coeff(tr1%wf%active_state) = cmplx((1.0_dp, 0.0_dp), kind = dp)
                 select case (ctrl%tdc_type)
                 case('hst', 'npi')
-                    if (ctrl%adt) then
-                        allocate(tr1%wf%overlap(2*tr1%wf%n_state_group))
-                        do i = 1, tr1%wf%n_state_group
-                            allocate(tr1%wf%overlap(2*i-1)%c(tr1%wf%n_state_per_group(i), tr1%wf%n_state_per_group(i)))
-                            allocate(tr1%wf%overlap(2*i)%c(tr1%wf%n_state_per_group(i), tr1%wf%n_state_per_group(i)))
-                        end do
-                    else
-                        allocate(tr1%wf%overlap(tr1%wf%n_state_group))
-                        do i = 1, tr1%wf%n_state_group
-                            allocate(tr1%wf%overlap(i)%c(tr1%wf%n_state_per_group(i), tr1%wf%n_state_per_group(i)))
-                        end do
-                    end if
+                    allocate(tr1%wf%overlap(tr1%wf%n_state, tr1%wf%n_state))
                 case('nadvec')
                     do i = 1, tr1%wf%n_state
                         do j = 1, tr1%wf%n_state
@@ -309,9 +299,9 @@ contains
                         end do
                     end do
                 end if
-                ! if (ctrl%print(8) .and. (.not. allocated(tr1%adt))) then
-                !     allocate(tr1%adt(tr1%max_nstate(), tr1%max_nstate()))
-                ! end if
+                if (ctrl%print(8) .and. (.not. allocated(tr1%wf%adt))) then
+                    allocate(tr1%wf%adt(tr1%wf%n_state, tr1%wf%n_state), source=0.0_dp)
+                end if
             end select
         end if
 

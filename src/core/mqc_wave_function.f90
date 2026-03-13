@@ -19,7 +19,10 @@ module mqc_wave_function_mod
                                          !! Dimension: n_state
         real(dp), allocatable :: prob(:) !< Probability of hop to each state.
                                          !! Dimension: n_state
-        type(rmat), allocatable :: overlap(:) !< Storage for overlap matrices between states.
+        real(dp), allocatable :: overlap(:, :) !< Overlap matrix between states.
+                                               !! Dimension: (n_state, n_state)
+        real(dp), allocatable :: adt(:, :) !< Adiabatic-to-diabatic transformation matrix.
+                                           !! Dimension: (n_state, n_state)
         logical, allocatable :: need_gradient(:) !< Whether gradients are needed for each state.
                                         !! Dimension: n_state
         logical, allocatable :: need_nadv(:, :) !< Whether non-adiabatic vectors are needed.

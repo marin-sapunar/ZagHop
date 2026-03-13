@@ -40,9 +40,7 @@ contains
         real(dp) :: t0
 
         if ((ctrl%adt) .and. (tr1%step /= 0)) then
-            do i = 1, tr1%wf%n_state_group
-                call adt2overlap(tr2%wf%overlap(2*i)%c, tr1%wf%overlap(2*i)%c, tr1%wf%overlap(2*i-1)%c)
-            end do
+            call adt2overlap(tr2%wf%adt, tr1%wf%adt, tr1%wf%overlap)
         end if
         !> @todo Move this to more appropriate place.
         if ((ctrl%tdc_type /= 'nadvec') .and. (ctrl%vrescale == 3)) then

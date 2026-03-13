@@ -379,16 +379,16 @@ contains
         if (popt(7)) then
             write(punit(7), *) 't= ', time_fs, 'fs, state=', t%wf%active_state
             do i = 1, t%wf%n_state
-                write(punit(7), 1006) t%wf%overlap(1)%c(i, :)
+                write(punit(7), 1006) t%wf%overlap(i, :)
             end do
         end if
 
-    !    if (popt(8)) then
-    !        write(punit(8), *) 't= ', time_fs, 'fs, state=', t%cstate
-    !        do i = 1, t%nstate
-    !            write(punit(8), 1006) t%adt(i, 1:t%max_nstate)
-    !        end do
-    !    end if
+        if (popt(8)) then
+           write(punit(8), *) 't= ', time_fs, 'fs, state=', t%wf%active_state
+           do i = 1, t%wf%n_state
+               write(punit(8), 1006) t%wf%adt(i, :)
+           end do
+       end if
 
         if (popt(9)) then
             write(punit(9), 1006) t%wf%prob

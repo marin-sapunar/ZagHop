@@ -39,16 +39,16 @@ contains
 
             ! Swap sign of rows corresponding to states whose sign was changed in the previous step.
             do st = 1, tr1%wf%n_state
-                tr1%wf%overlap(1)%c(st, :) = tr1%wf%overlap(1)%c(st, :) * tr2%wf%phase(st)
+                tr1%wf%overlap(st, :) = tr1%wf%overlap(st, :) * tr2%wf%phase(st)
             end do
 
             select case(ctrl%phaselvl)
             case(0)
                 ! Do not change overlap matrix.
             case(1)
-                call phasematch_diagonal(tr1%wf%overlap(1)%c, tr1%wf%phase)
+                call phasematch_diagonal(tr1%wf%overlap, tr1%wf%phase)
             case(2)
-                call phasematch_assigned_rotation(tr1%wf%overlap(1)%c, tr1%wf%phase)
+                call phasematch_assigned_rotation(tr1%wf%overlap, tr1%wf%phase)
             case default
                 write(stderr, *) 'Error in phase_mod, phasematch subroutine.'
                 write(stderr, *) ' Unrecognized method.'

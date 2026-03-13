@@ -52,7 +52,7 @@ contains
         real(dp) :: cprob !< Cumulative probability of hopping into any state.
         integer :: k, l
 
-        t = wf_t2%overlap(1)%c
+        t = wf_t2%overlap
         pwf = wf_t1%coeff
 
         ! Orthogonalize overlap matrix.

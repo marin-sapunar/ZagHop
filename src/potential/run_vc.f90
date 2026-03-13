@@ -39,13 +39,13 @@ program run_vc
 
     call vc%eval(q, 'spin-diabatic', energies)
 
-    open(newunit=iunit, file='vc_energies.dat', status='replace', action='write', iostat=io)
+    open(newunit=iunit, file='qm_en.dat', status='replace', action='write', iostat=io)
     do i = 1, vc%tot_ns
         write(iunit, '(i4, f20.12)') i, energies(i)
     end do
     close(iunit)
 
-    open(newunit=iunit, file='vc_adt.dat', status='replace', action='write', iostat=io)
+    open(newunit=iunit, file='qm_adt.dat', status='replace', action='write', iostat=io)
     do i = 1, vc%tot_ns
         write(iunit, '(*(e20.12))') vc%eigvec(:, i)
     end do

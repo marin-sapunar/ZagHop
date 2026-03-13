@@ -212,7 +212,7 @@ contains
                 end do
             end do
             if (ctrl%adt) then
-                t%wf%overlap(2)%c = wrk_adt
+                t%wf%adt = wrk_adt
             end if
 #else
             call errstop("run_qm", "Code not compiled with quantics interface.", 1)
@@ -242,7 +242,7 @@ contains
                 end do
             end do
             if (ctrl%adt) then
-                t%wf%overlap(2)%c = wrk_adt
+                t%wf%adt = wrk_adt
             end if
         case(3)
             call vibronic_coupling%eval(t%geom(1, :), 'spin-diabatic', t%wf%en)
@@ -260,7 +260,7 @@ contains
                 end do
             end do
             if (ctrl%adt) then
-                t%wf%overlap(2)%c = transpose(vibronic_coupling%eigvec)
+                t%wf%adt = transpose(vibronic_coupling%eigvec)
             end if
         case default
             call errstop("run_qm", "Unrecognized QM interface.", 1)
