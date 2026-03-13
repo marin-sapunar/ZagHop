@@ -1,7 +1,7 @@
 """ Command-line interface for zagpy. """
 import argparse
 from zagpy.sample import state, wigner
-from zagpy.plot import trajectory
+from zagpy.plot import trajectory, population
 
 
 def main():
@@ -22,6 +22,7 @@ def main():
         "plot", help="Plot trajectory data.")
     plot_sub = plot_parser.add_subparsers(dest="plot_type")
     trajectory.add_subparser(plot_sub)
+    population.add_subparser(plot_sub)
 
     args = parser.parse_args()
     if hasattr(args, "func"):

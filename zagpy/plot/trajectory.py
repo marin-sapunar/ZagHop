@@ -49,9 +49,7 @@ def run(args):
     energy_file = os.path.join(args.directory, "Results", "energy.dat")
     traj = np.loadtxt(energy_file, comments="#").T
     jumps = np.where(traj[1, 1:] != traj[1, :-1])
-
-    factor = ENERGY[args.energy_unit]
-    traj[2:] = (traj[2:] - args.energy_zero) * factor
+    traj[2:] = (traj[2:] - args.energy_zero) * ENERGY[args.energy_unit]
 
     plt.plot(traj[0], traj[2], 'k')
     plt.scatter(traj[0, jumps], traj[2, jumps])
