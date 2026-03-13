@@ -2,11 +2,11 @@
 import os
 import shutil
 import numpy as np
+from zagpy.units import eV
 
 
 EN_FILE = 'qm_en.dat'
 ADT_FILE = 'qm_adt.dat'
-HA_EV = 27.21138
 
 
 def add_subparser(subparsers):
@@ -35,7 +35,7 @@ def run(args):
             return
         dir_en = np.loadtxt(os.path.join(cdir, EN_FILE), usecols=1)
         ex_en.append(dir_en - dir_en[0])
-    ex_en = np.array(ex_en) * HA_EV
+    ex_en = np.array(ex_en) * eV
 
     cmask = np.ones_like(ex_en, dtype=bool)
     if args.energy_range is not None:

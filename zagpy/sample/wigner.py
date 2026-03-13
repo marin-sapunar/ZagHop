@@ -2,6 +2,7 @@
 import os
 import numpy as np
 from zagpy.normalmode import NormalModes
+from zagpy.units import boltzmann_au, dalton
 
 
 def add_subparser(subparsers):
@@ -125,7 +126,7 @@ def sample_wigner(omega, T, npoint):
         sampled from Harmonic Wigner distribution """
     sample_q = np.zeros((len(omega), npoint))
     sample_v = np.zeros((len(omega), npoint))
-    T_au = T * 3.1668116847144e-6 # @todo units module
+    T_au = T * boltzmann_au
     for i, o in enumerate(omega):
         sigma_q = thermal_wigner_q(o, T_au)
         sigma_v = thermal_wigner_v(o, T_au)
@@ -166,7 +167,7 @@ def write_geom_nm(fname, displacements, frequencies):
     gformat = '{} {} {:.13f} q\n'
     with open(fname, 'w') as ofile:
         for i in range(nmode):
-            m_eff = 1 / frequencies[i] / 1822.88849 # @todo units module
+            m_eff = 1 / frequencies[i] / dalton
             ofile.write(gformat.format('v' + str(i + 1), m_eff, displacements[i]))
 
 

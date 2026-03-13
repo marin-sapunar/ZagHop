@@ -5,6 +5,7 @@ import os
 import numpy as np
 import file_utils
 import interface
+from zagpy.units import angstrom
 
 
 class Orca(interface.QMInterface):
@@ -110,7 +111,7 @@ class Orca(interface.QMInterface):
         self.system["natom"] = len(self.system["geom"])
         file_utils.replace_cols_inplace(
             self.options["xyz_file"],
-            self.system["geom"] * 0.52917721067,  #@todo units
+            self.system["geom"] * angstrom,  # Bohr -> Angstrom
             r".",  # Match first line
             skip=1,  # Skip comment line
             cols=[1, 2, 3])

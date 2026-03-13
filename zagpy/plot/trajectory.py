@@ -3,12 +3,14 @@
 import os
 import numpy as np
 import matplotlib.pyplot as plt
+from zagpy.units import ENERGY
 
 
 def add_subparser(subparsers):
     """ Register the 'trajectory' subcommand under the 'plot' subparser. """
     parser = subparsers.add_parser(
         "trajectory",
+        formatter_class=__import__('argparse').ArgumentDefaultsHelpFormatter,
         description="Plot trajectory energy data from a ZagHop simulation.")
     parser.add_argument(
         "directory",
@@ -16,11 +18,24 @@ def add_subparser(subparsers):
         metavar="DIR",
         help="Path to the directory containing Results/energy.dat.")
     parser.add_argument(
+        "--energy-unit",
+        type=str,
+        default="eV",
+        choices=ENERGY.keys(),
+        #metavar="UNIT",
+        help="Energy unit for the plot.")
+    parser.add_argument(
+        "--energy-zero",
+        type=float,
+        default=0.0,
+        metavar="E0",
+        help="Energy value (in Hartree) subtracted before unit conversion.")
+    parser.add_argument(
         "--stride",
         type=int,
-        default=20,
+        default=10,
         metavar="N",
-        help="Plot every N-th point for the kinetic/potential energy scatter. (default: 20)")
+        help="Plot every N-th point for the kinetic/potential energy scatter.")
     parser.add_argument(
         "--save",
         type=str,
@@ -35,12 +50,18 @@ def run(args):
     traj = np.loadtxt(energy_file, comments="#").T
     jumps = np.where(traj[1, 1:] != traj[1, :-1])
 
+    factor = ENERGY[args.energy_unit]
+    traj[2:] = (traj[2:] - args.energy_zero) * factor
+
     plt.plot(traj[0], traj[2], 'k')
     plt.scatter(traj[0, jumps], traj[2, jumps])
 
     for state in traj[4:]:
         plt.plot(traj[0], state)
     plt.scatter(traj[0][::args.stride], traj[3][::args.stride])
+
+    plt.xlabel("Time (fs)")
+    plt.ylabel(f"Energy ({args.energy_unit})")
 
     if args.save:
         plt.savefig(args.save)

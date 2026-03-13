@@ -1,6 +1,7 @@
 import sys
 import numpy as np
 import scipy.linalg
+from zagpy import units
 
 
 class NormalModes():
@@ -48,7 +49,7 @@ class NormalModes():
             raise ValueError('Dimension mismatch between freq and nmode.')
         at_mass = [MASS[atom.title()] for atom in atoms]
         self.at_mass = at_mass# average atomic mass of elements
-        self.mass = np.repeat(at_mass, 3) * MASS_UNIT
+        self.mass = np.repeat(at_mass, 3) * units.dalton
         self.atoms = atoms
         if mass_weighted:
             self.nmode = nmode.copy()
@@ -160,7 +161,7 @@ class NormalModes():
         weight_matrix=[]# Used for creating mass weighted Hessian
         for i in atom_list:
             for j in atom_list:
-                weight_matrix.append(1/np.sqrt(MASS[i]*MASS[j]*MASS_UNIT**2))
+                weight_matrix.append(1/np.sqrt(MASS[i]*MASS[j]*units.dalton**2))
         weight_matrix = np.array(weight_matrix).reshape(3*n_atom,3*n_atom)
         mass_weighted_hessian = np.multiply(weight_matrix, hessian_matrix)
         force_constants, mode_vectors = scipy.linalg.eigh(mass_weighted_hessian)
@@ -246,7 +247,7 @@ class NormalModes():
         weight_matrix=[]# Used for creating mass weighted Hessian
         for i in atom_list:
             for j in atom_list:
-                weight_matrix.append(1/np.sqrt(MASS[i]*MASS[j]*MASS_UNIT**2))
+                weight_matrix.append(1/np.sqrt(MASS[i]*MASS[j]*units.dalton**2))
         weight_matrix = np.array(weight_matrix).reshape(3*n_atom,3*n_atom)
         mass_weighted_hessian = np.multiply(weight_matrix, hessian_matrix)
         force_constants, mode_vectors = scipy.linalg.eigh(mass_weighted_hessian)
@@ -346,7 +347,7 @@ class NormalModes():
         weight_matrix=[]
         for i in atom_list:
             for j in atom_list:
-                weight_matrix.append(1/np.sqrt(MASS[i]*MASS[j]*MASS_UNIT**2))
+                weight_matrix.append(1/np.sqrt(MASS[i]*MASS[j]*units.dalton**2))
         weight_matrix = np.array(weight_matrix).reshape(3*n_atom,3*n_atom)
         mass_weighted_hessian = np.multiply(weight_matrix, hessian_matrix)
         force_constants, mode_vectors = scipy.linalg.eigh(mass_weighted_hessian)
@@ -475,8 +476,6 @@ class NormalModes():
         pot_en = q_vec**2 * self.freq * 0.5
         return pot_en
 
-
-MASS_UNIT = 1822.885
 MASS = {'H' : 1.008,
         'He': 4.002,
         'Li': 6.941,
@@ -599,8 +598,7 @@ MASS = {'H' : 1.008,
 
 def _parse_freq(lines):
     """ Parse [FREQ] section. Just converts to float. """
-    unit = 4.556335e-6 # @todo Units module
-    freq = np.array(lines, dtype=np.float64) * unit
+    freq = np.array(lines, dtype=np.float64) / units.cm1
     return freq
 
 
@@ -609,10 +607,9 @@ def _parse_atoms(lines):
 
     Keyword line needs to be included in the lines argument to determine units.
     """
-    UNITS = {"ANGS" : 1.88972612456,
+    len_unit = {"ANGS" : units.angstrom_inv,
              "AU" : 1.0}
-    unit_str = lines[0].split()[1].upper()
-    unit = UNITS[unit_str]
+    unit = len_unit[lines[0].split()[1].upper()]
     natom = len(lines) - 1
     coord = np.zeros((natom, 3))
     atoms = []
