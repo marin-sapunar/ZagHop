@@ -19,6 +19,8 @@ def add_subparser(subparsers):
                         help="Energy window (in eV) for sampling.")
     parser.add_argument("--diabatic-state", type=int, default=None,
                         help="Diabatic state to select.")
+    parser.add_argument("--adiabatic-state", type=int, default=None,
+                        help="Adiabatic state to select.")
     parser.add_argument("--target-dir", type=str, default='start_trajs',
                         help="Directory to save selected points/states.")
     parser.add_argument("dirs", nargs="+", type=str,
@@ -38,6 +40,7 @@ def run(args):
     ex_en = np.array(ex_en) * eV
 
     cmask = np.ones_like(ex_en, dtype=bool)
+
     if args.energy_range is not None:
         cmask = np.logical_and(cmask, ex_en >= args.energy_range[0])
         cmask = np.logical_and(cmask, ex_en <= args.energy_range[1])
@@ -49,6 +52,11 @@ def run(args):
             adt.append(np.loadtxt(os.path.join(cdir, ADT_FILE)))
         adt = np.array(adt)
         weights = weights * adt[:, args.diabatic_state - 1, :]**2
+
+    if args.adiabatic_state is not None:
+        amask = np.zeros_like(ex_en, dtype=bool)
+        amask[:, args.adiabatic_state - 1] = True
+        cmask = np.logical_and(cmask, amask)
 
     rng = np.random.default_rng()
     cmask = np.logical_and(cmask, rng.random(ex_en.shape) < weights)

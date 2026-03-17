@@ -86,21 +86,24 @@ def get_dpop(cstate, adt, bootstrap=True):
     return dpop, conf
 
 
-def plot_population(time, pop, ax=None, conf_interval=None, label=None, colors=None, ls='-', threshold=0.03, **kwargs):
+def plot_population(time, pop, ax=None, conf_interval=None, label=None, colors=None, threshold=0.03, **kwargs):
     if ax is None:
         ax = plt.subplots()[1]
     if label is None:
-        label = ["S$_{}$".format(i) for i in range(pop.shape[1])]
+        label = [r"S$_{{{}}}$".format(i) for i in range(pop.shape[1])]
     if colors is None:
         colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+    line_styles = ['-', '--', '-.', ':']
     for i, state_pop in enumerate(pop.T):
         if all(state_pop < threshold):
             continue
-        ax.plot(time, state_pop, ls=ls, c=colors[i], label=label[i], **kwargs)
+        color = colors[i % len(colors)]
+        ls = line_styles[(i // len(colors)) % len(line_styles)]
+        ax.plot(time, state_pop, ls=ls, c=color, label=label[i], **kwargs)
         if conf_interval is not None:
             low = conf_interval.confidence_interval.low.T[i]
             high = conf_interval.confidence_interval.high.T[i]
-            ax.fill_between(time, low, high, color=colors[i], alpha=0.2)
+            ax.fill_between(time, low, high, color=color, alpha=0.2)
     ax.legend(frameon=False)
     ax.set_xlabel("Time / fs")
     ax.set_ylabel("Population")
@@ -127,8 +130,7 @@ def run(args):
             data = np.loadtxt(adt_file, comments="t")
             nstate = data.shape[1]
             all_adt.append(data.reshape(ntime, nstate, nstate))
-        all_adt = np.array(all_adt)       # (ntraj, ntime, nstate, nstate)
-        print(all_adt.shape)
+        all_adt = np.array(all_adt)  # (ntraj, ntime, nstate, nstate)
         population, conf = get_dpop(cstate, all_adt, bootstrap=args.bootstrap)
 
     _, ax = plt.subplots()

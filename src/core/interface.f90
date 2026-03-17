@@ -248,14 +248,14 @@ contains
             call vibronic_coupling%eval(t%geom(1, :), 'spin-diabatic', t%wf%en)
             do i = 1, t%wf%n_state
                 if (t%wf%need_gradient(i)) then
-                    t%wf%qm_state(i)%gradient(1, :) = vibronic_coupling%adiab_grad(:, i, i)
+                    t%wf%qm_state(i)%gradient(1, :) = vibronic_coupling%get_grad(i)
                 end if
                 do j = 1, t%wf%n_state
                     if (t%wf%need_nadv(i, j)) then
-                        t%wf%qm_state(i)%nadv(j)%c = vibronic_coupling%adiab_grad(:, i, j)
+                        t%wf%qm_state(i)%nadv(j)%c = vibronic_coupling%get_nadv(i, j)
                     end if
                     if (t%wf%need_soc(i, j)) then
-                        t%wf%qm_state(i)%soc(j) = vibronic_coupling%diab_h(i, j)
+                        t%wf%qm_state(i)%soc(j) = vibronic_coupling%soc%trans_prop(i, j)
                      end if
                 end do
             end do

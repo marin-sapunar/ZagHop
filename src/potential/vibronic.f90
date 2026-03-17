@@ -16,6 +16,21 @@ module vibronic_mod
     public :: vc_model
     public :: vibronic_coupling
 
+    
+    type vc_property
+        logical :: evaluated = .false.
+        integer :: max_order = -1
+        real(dp), allocatable :: zero(:, :)
+        real(dp), allocatable :: linear(:, :, :)
+        real(dp), allocatable :: quad(:, :, :, :)
+        real(dp), allocatable :: prop(:, :)
+        real(dp), allocatable :: trans_prop(:, :)
+    contains
+        procedure :: eval => vc_prop_eval
+        procedure :: transform => vc_prop_transform
+    end type vc_property
+
+
     type vc_model
         character(len=:), allocatable :: template_file
         character(len=:), allocatable :: v0_file
@@ -26,22 +41,22 @@ module vibronic_mod
         integer, allocatable :: ms2(:) !< 2x spin projection quantum numbers for each state.
         integer :: zero_mode = 0
         real(dp), allocatable :: freq(:)
-        real(dp), allocatable :: zero_order(:, :)
-        real(dp), allocatable :: linear(:, :, :)
-        real(dp), allocatable :: quadratic(:, :, :, :)
-        real(dp), allocatable :: soc(:, :)
-        real(dp), allocatable :: dm(:, :, :)
-        real(dp), allocatable :: diab_h(:, :)
+        type(vc_property) :: h
+        type(vc_property) :: soc
+        type(vc_property) :: dm(3)
+        type(vc_property), allocatable :: grad(:)
         real(dp), allocatable :: eigvec(:, :)
-        real(dp), allocatable :: diab_grad(:, :, :)
-        real(dp), allocatable :: adiab_grad(:, :, :)
     contains
         procedure :: init => vc_init
         procedure :: read_v0
         procedure :: eval => evaluate_vc
+        procedure :: get_grad => vc_get_grad
+        procedure :: get_nadv => vc_get_nadv
     end type vc_model
 
+
     type(vc_model) :: vibronic_coupling
+
 
 contains
 
@@ -110,15 +125,15 @@ contains
             end do
         end do
 
+        self%h%max_order = 2
+        allocate(self%h%zero(self%tot_ns, self%tot_ns), source=0.0_dp)
+        allocate(self%h%linear(self%nmode, self%tot_ns, self%tot_ns), source=0.0_dp)
+        allocate(self%h%quad(self%nmode, self%nmode, self%tot_ns, self%tot_ns), source=0.0_dp)
+
         allocate(wrk(self%tot_ns, self%tot_ns))
-        allocate(self%zero_order(self%tot_ns, self%tot_ns), source=0.0_dp)
-        allocate(self%linear(self%nmode, self%tot_ns, self%tot_ns), source=0.0_dp)
-        allocate(self%soc(self%tot_ns, self%tot_ns), source=0.0_dp)
-        allocate(self%dm(3, self%tot_ns, self%tot_ns), source=0.0_dp)
-        allocate(self%quadratic(self%nmode, self%nmode, self%tot_ns, self%tot_ns), source=0.0_dp)
         do i = 1, self%nmode
             do j = 1, self%tot_ns
-                self%quadratic(i, i, j, j) = 0.5_dp * self%freq(i + self%zero_mode)
+                self%h%quad(i, i, j, j) = 0.5_dp * self%freq(i + self%zero_mode)
             end do
         end do
 
@@ -139,7 +154,7 @@ contains
                     read(readf%args(3)%s, *) val
                     ist1 = i0(mult) + mult * (ist1 - 1)
                     do j = 1, mult
-                        self%zero_order(ist1 + j, ist1 + j) = val
+                        self%h%zero(ist1 + j, ist1 + j) = val
                     end do
                 end do
             case('kappa')
@@ -156,7 +171,7 @@ contains
                     read(readf%args(4)%s, *) val
                     ist1 = i0(mult) + mult * (ist1 - 1)
                     do j = 1, mult
-                        self%linear(imode1, ist1 + j, ist1 + j) = val
+                        self%h%linear(imode1, ist1 + j, ist1 + j) = val
                     end do
                 end do
             case('lambda')
@@ -175,8 +190,8 @@ contains
                     ist1 = i0(mult) + mult * (ist1 - 1)
                     ist2 = i0(mult) + mult * (ist2 - 1)
                     do j = 1, mult
-                        self%linear(imode1, ist1 + j, ist2 + j) = val
-                        self%linear(imode1, ist2 + j, ist1 + j) = val
+                        self%h%linear(imode1, ist1 + j, ist2 + j) = val
+                        self%h%linear(imode1, ist2 + j, ist1 + j) = val
                     end do
                 end do
             case('gamma')
@@ -195,8 +210,8 @@ contains
                     read(readf%args(5)%s, *) val
                     ist1 = i0(mult) + mult * (ist1 - 1)
                     do j = 1, mult
-                        self%quadratic(imode1, imode2, ist1+j, ist1+j) = &
-                        &    self%quadratic(imode1, imode2, ist1+j, ist1+j) + val * 0.5_dp
+                        self%h%quad(imode1, imode2, ist1+j, ist1+j) = &
+                        &    self%h%quad(imode1, imode2, ist1+j, ist1+j) + val * 0.5_dp
                     end do
                 end do
             case('SOC', 'DMX', 'DMY', 'DMZ')
@@ -214,13 +229,18 @@ contains
                 end do
                 select case(sec)
                 case('SOC')
-                    self%soc = wrk
+                    self%soc%max_order = 0
+                    self%soc%zero = wrk
+                    self%h%zero = self%h%zero + wrk
                 case('DMX')
-                    self%dm(1, :, :) = wrk
+                    self%dm(1)%max_order = 0
+                    self%dm(1)%zero = wrk
                 case('DMY')
-                    self%dm(2, :, :) = wrk
+                    self%dm(2)%max_order = 0
+                    self%dm(2)%zero = wrk
                 case('DMZ')
-                    self%dm(3, :, :) = wrk
+                    self%dm(3)%max_order = 0
+                    self%dm(3)%zero = wrk
                 end select
             case default
                 write(stderr, *) 'Error in vibronic_mod, vc_init subroutine.'
@@ -229,7 +249,15 @@ contains
             end select            
         end do
         call readf%close()
+
+        allocate(self%grad(self%nmode))
+        do imode1 = 1, self%nmode
+            self%grad(imode1)%max_order = self%h%max_order - 1
+            allocate(self%grad(imode1)%zero, source=self%h%linear(imode1, :, :))
+            allocate(self%grad(imode1)%linear, source=2.0_dp * self%h%quad(imode1, :, :, :))
+        end do
     end subroutine vc_init
+
 
     !----------------------------------------------------------------------------------------------
     ! SUBROUTINE: read_v0
@@ -269,6 +297,60 @@ contains
     end subroutine read_v0
 
 
+    subroutine vc_prop_eval(self, q)
+        class(vc_property) :: self
+        real(dp), intent(in) :: q(:)
+        integer :: i, j, imode, jmode
+
+        if (self%evaluated) return
+
+        if (.not. allocated(self%prop)) then
+            allocate(self%prop(size(self%zero, 1), size(self%zero, 2)), source=self%zero)
+        end if
+        if (self%max_order == -1) then
+            write(stderr, *) 'Error in vibronic_mod, vc_prop_eval subroutine.'
+            write(stderr, *) '  Property not initialized.'
+            stop
+        end if
+
+        self%prop = self%zero
+        if (self%max_order >= 1) then
+            do imode = 1, size(self%linear, 1)
+                do i = 1, size(self%linear, 2)
+                    do j = 1, size(self%linear, 3)
+                        self%prop(i, j) = self%prop(i, j) + self%linear(imode, i, j) * q(imode)
+                    end do
+                end do
+            end do
+        end if
+        if (self%max_order >= 2) then
+            do imode = 1, size(self%quad, 1)
+                do jmode = 1, size(self%quad, 2)
+                    do i = 1, size(self%quad, 3)
+                        do j = 1, size(self%quad, 4)
+                            self%prop(i, j) = self%prop(i, j) + self%quad(imode, jmode, i, j) * q(imode) * q(jmode)
+                        end do
+                    end do
+                end do
+            end do
+        end if
+        self%evaluated = .true.
+    end subroutine vc_prop_eval
+
+    subroutine vc_prop_transform(self, trans_mat)
+        class(vc_property) :: self
+        real(dp), intent(in) :: trans_mat(:, :)
+
+        if (.not. allocated(self%prop)) then
+            write(stderr, *) 'Error in vibronic_mod, vc_prop_transform subroutine.'
+            write(stderr, *) '  Property not evaluated yet.'
+            stop
+        end if
+
+        self%trans_prop = matmul(transpose(trans_mat), matmul(self%prop, trans_mat))
+    end subroutine vc_prop_transform
+
+
     !----------------------------------------------------------------------------------------------
     ! SUBROUTINE: evaluate_vc
     ! DESCRIPTION:
@@ -280,42 +362,43 @@ contains
         real(dp), intent(in) :: q(:)
         character(len=*), intent(in) :: basis
         real(dp), allocatable, intent(out) :: adiab_e(:)
-        integer :: i, j, imode, jmode
-        integer :: i0, i_end
+        integer :: i, j, i0, imode
         real(dp), allocatable :: wrk(:, :), wrk_e(:)
-        real(dp) :: edif
-        real(dp), parameter :: tiny_hf = 1.0e-8_dp
+
+        self%h%evaluated = .false.
+        do imode = 1, self%nmode
+            self%grad(imode)%evaluated = .false.
+        end do
+        if (self%soc%max_order >= 0) then
+            self%soc%evaluated = .false.
+        end if
+        do i = 1, 3
+            if (self%dm(i)%max_order >= 0) then
+                self%dm(i)%evaluated = .false.
+            end if
+        end do
 
         if (.not. allocated(adiab_e)) then
             allocate(adiab_e(self%tot_ns), source=0.0_dp)
-        end if
-        if (.not. allocated(self%adiab_grad)) then
-            allocate(self%adiab_grad(self%nmode, self%tot_ns, self%tot_ns), source=0.0_dp)
         end if
         if (.not. allocated(self%eigvec)) then
             allocate(self%eigvec(self%tot_ns, self%tot_ns), source=0.0_dp)
         end if
 
-        wrk = self%zero_order
-        wrk = wrk + self%soc
-
+        call self%h%eval(q)
         do imode = 1, self%nmode
-            do i = 1, self%tot_ns
-                do j = 1, self%tot_ns
-                    wrk(i, j) = wrk(i, j) + self%linear(imode, i, j) * q(imode)
-                end do
-            end do
-            do jmode = 1, self%nmode
-                do i = 1, self%tot_ns
-                    do j = 1, self%tot_ns
-                        wrk(i, j) = wrk(i, j) + self%quadratic(imode, jmode, i, j) * q(imode) * q(jmode)
-                    end do
-                end do
-            end do
+            call self%grad(imode)%eval(q)
+        end do
+        if (self%soc%max_order >= 0) then
+            call self%soc%eval(q)
+        end if
+        do i = 1, 3
+            if (self%dm(i)%max_order >= 0) then
+                call self%dm(i)%eval(q)
+            end if
         end do
 
-
-        self%diab_h = wrk
+        wrk = self%h%prop
         select case(basis)
         case('adiabatic')
             call syev(wrk, adiab_e, jobz='V', uplo='U')
@@ -328,7 +411,7 @@ contains
                 allocate(wrk(self%nstate(i), self%nstate(i)))
                 if (allocated(wrk_e)) deallocate(wrk_e)
                 allocate(wrk_e(self%nstate(i)))
-                wrk = self%diab_h(i0+1:i0+i*self%nstate(i):i, i0+1:i0+i*self%nstate(i):i)
+                wrk = self%h%prop(i0+1:i0+i*self%nstate(i):i, i0+1:i0+i*self%nstate(i):i)
                 call syev(wrk, wrk_e, jobz='V', uplo='U')
                 do j = 1, i
                     adiab_e(i0+j:i0+i*self%nstate(i):i) = wrk_e
@@ -338,39 +421,56 @@ contains
             end do
         end select
 
-
-        self%diab_grad = self%linear
+        call self%h%transform(self%eigvec)
         do imode = 1, self%nmode
-            do i = 1, self%tot_ns
-                do j = 1, self%tot_ns
-                    do jmode = 1, self%nmode
-                        self%diab_grad(imode, i, j) = self%diab_grad(imode, i, j) + &
-                            2.0_dp * self%quadratic(imode, jmode, i, j) * q(jmode)
-                    end do
-                end do
-            end do
+            call self%grad(imode)%transform(self%eigvec)
+        end do
+        if (self%soc%max_order >= 0) then
+            call self%soc%transform(self%eigvec)
+        end if
+        do i = 1, 3
+            if (self%dm(i)%max_order >= 0) then
+                call self%dm(i)%transform(self%eigvec)
+            end if
         end do
 
-        do imode = 1, self%nmode
-            self%adiab_grad(imode, :, :) = matmul(matmul(transpose(self%eigvec), &
-            &                                     self%diab_grad(imode, :, :)), self%eigvec)
-            do i = 1, self%tot_ns
-                do j = 1, self%tot_ns
-                    if (i==j) cycle
-                    if ((self%s2(i) /= self%s2(j)) .or. (self%ms2(i) /= self%ms2(j))) cycle
-                    edif = adiab_e(j) - adiab_e(i)
-                    if (abs(edif) < tiny_hf) then
-                        if (stdp1) then
-                            write(stderr, *) 'Warning in vibronic_mod, evaluate_vc subroutine.'
-                            write(stderr, *) '  Near-degeneracy between states ', i, ' and ', j, '.'
-                            write(stderr, *) '  Setting denominator to ', tiny_hf, ' Hartree.'
-                        end if
-                        edif = sign(tiny_hf, edif)
-                    end if
-                    self%adiab_grad(imode, i, j) = self%adiab_grad(imode, i, j) / edif
-                end do
-            end do
-        end do
     end subroutine evaluate_vc
+
+    function vc_get_grad(self, istate) result(grad)
+        class(vc_model) :: self
+        integer, intent(in) :: istate
+        real(dp), allocatable :: grad(:)
+        integer :: imode
+
+        allocate(grad(self%nmode), source=0.0_dp)
+        do imode = 1, self%nmode
+            grad(imode) = self%grad(imode)%trans_prop(istate, istate)
+        end do
+    end function vc_get_grad
+
+    function vc_get_nadv(self, istate1, istate2) result(nadv)
+        class(vc_model) :: self
+        integer, intent(in) :: istate1, istate2
+        real(dp), allocatable :: nadv(:)
+        integer :: imode
+        real(dp) :: edif
+        real(dp), parameter :: tiny_hf = 1.0e-8_dp
+
+        allocate(nadv(self%nmode), source=0.0_dp)
+        edif = self%h%trans_prop(istate2, istate2) - self%h%trans_prop(istate1, istate1)
+        if (abs(edif) < tiny_hf) then
+            if (stdp1) then
+                write(stderr, *) 'Warning in vibronic_mod, evaluate_vc subroutine.'
+                write(stderr, *) '  Near-degeneracy between states ', istate1, ' and ', istate2, '.'
+                write(stderr, *) '  Setting denominator to ', tiny_hf, ' Hartree.'
+            end if
+            edif = sign(tiny_hf, edif)
+        end if
+        do imode = 1, self%nmode
+            nadv(imode) = self%grad(imode)%trans_prop(istate1, istate2) / edif
+        end do
+
+    end function vc_get_nadv
+
 
 end module vibronic_mod
