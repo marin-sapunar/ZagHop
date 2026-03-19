@@ -9,6 +9,7 @@ program run_vc
     integer :: i, nmode, io, iunit
     character(len=32) :: label, tag
     real(dp) :: mass, qi
+    real(dp), allocatable :: oscill(:)
 
     if (command_argument_count() < 2) then
         write(stderr, '(a)') 'Usage: run_vc <template_file> <geom_file>'
@@ -39,9 +40,16 @@ program run_vc
 
     call vc%eval(q, 'spin-diabatic', energies)
 
+    if (vc%dm(1)%max_order >= 0) then
+        oscill = vc%get_oscill(1)
+    end if
     open(newunit=iunit, file='qm_en.dat', status='replace', action='write', iostat=io)
     do i = 1, vc%tot_ns
-        write(iunit, '(i4, f20.12)') i, energies(i)
+        if (vc%dm(1)%max_order >= 0) then
+            write(iunit, '(i4, f20.12, f20.12)') i, energies(i), oscill(i)
+        else
+            write(iunit, '(i4, f20.12)') i, energies(i)
+        end if
     end do
     close(iunit)
 

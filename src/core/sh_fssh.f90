@@ -118,7 +118,7 @@ contains
             odecmat = cmplx(0.0_dp, -diagonal_mat(en_t), kind=dp) - tdc_t
             if (any(wf_t2%need_soc)) then
                 call sh_interpolate_soc(interpolation_tdc, t1, t2, tt, soc_t1, soc_t2, soc_t)
-                odecmat = odecmat - im_i * soc_t
+                odecmat = odecmat + im_i * soc_t
             end if
             
             ! Propagate wf coefficients.

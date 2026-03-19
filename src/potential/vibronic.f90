@@ -52,6 +52,7 @@ module vibronic_mod
         procedure :: eval => evaluate_vc
         procedure :: get_grad => vc_get_grad
         procedure :: get_nadv => vc_get_nadv
+        procedure :: get_oscill => vc_get_oscill
     end type vc_model
 
 
@@ -302,11 +303,12 @@ contains
         real(dp), intent(in) :: q(:)
         integer :: i, j, imode, jmode
 
-        if (self%evaluated) return
-
         if (.not. allocated(self%prop)) then
             allocate(self%prop(size(self%zero, 1), size(self%zero, 2)), source=self%zero)
         end if
+
+        if (self%max_order == 0) return ! Value is constant so it doesn't need to be re-evaluated.
+        if (self%evaluated) return
         if (self%max_order == -1) then
             write(stderr, *) 'Error in vibronic_mod, vc_prop_eval subroutine.'
             write(stderr, *) '  Property not initialized.'
@@ -471,6 +473,27 @@ contains
         end do
 
     end function vc_get_nadv
+
+    function vc_get_oscill(self, istate) result(oscill)
+        class(vc_model) :: self
+        integer, intent(in) :: istate
+        real(dp), allocatable :: oscill(:)
+        integer :: i, jstate
+        real(dp) :: edif, mu2
+
+        allocate(oscill(self%tot_ns), source=0.0_dp)
+        do jstate = 1, self%tot_ns
+            if (jstate == istate) cycle
+            edif = self%h%trans_prop(jstate, jstate) - self%h%trans_prop(istate, istate)
+            mu2 = 0.0_dp
+            do i = 1, 3
+                if (self%dm(i)%max_order >= 0) then
+                    mu2 = mu2 + self%dm(i)%trans_prop(istate, jstate)**2
+                end if
+            end do
+            oscill(jstate) = 2.0_dp / 3.0_dp * edif * mu2
+        end do
+    end function vc_get_oscill
 
 
 end module vibronic_mod

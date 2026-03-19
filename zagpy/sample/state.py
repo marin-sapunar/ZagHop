@@ -21,6 +21,11 @@ def add_subparser(subparsers):
                         help="Diabatic state to select.")
     parser.add_argument("--adiabatic-state", type=int, default=None,
                         help="Adiabatic state to select.")
+    parser.add_argument("--weight-oscill", action="store_true", default=False,
+                        help="Weight selection by oscillator strength.")
+    parser.add_argument("--weight-norm", type=str, choices=["none", "max"],
+                        default="max",
+                        help="Normalization of weights: 'max' divides by the maximum weight.")
     parser.add_argument("--target-dir", type=str, default='start_trajs',
                         help="Directory to save selected points/states.")
     parser.add_argument("dirs", nargs="+", type=str,
@@ -31,12 +36,18 @@ def add_subparser(subparsers):
 def run(args):
     """ Execute state selection with the given parsed arguments. """
     ex_en = []
+    oscill = []
     for cdir in args.dirs:
         if not os.path.isdir(cdir):
             print(f"Error: {cdir} is not a valid directory.")
             return
-        dir_en = np.loadtxt(os.path.join(cdir, EN_FILE), usecols=1)
-        ex_en.append(dir_en - dir_en[0])
+        en_data = np.loadtxt(os.path.join(cdir, EN_FILE))
+        ex_en.append(en_data[:, 1] - en_data[0, 1])
+        if args.weight_oscill:
+            if en_data.shape[1] < 3:
+                print(f"Error: {cdir}/{EN_FILE} has no oscillator strength column.")
+                return
+            oscill.append(en_data[:, 2])
     ex_en = np.array(ex_en) * eV
 
     cmask = np.ones_like(ex_en, dtype=bool)
@@ -46,6 +57,9 @@ def run(args):
         cmask = np.logical_and(cmask, ex_en <= args.energy_range[1])
 
     weights = np.ones_like(ex_en)
+    if args.weight_oscill:
+        weights = weights * np.array(oscill)
+
     if args.diabatic_state is not None:
         adt = []
         for cdir in args.dirs:
@@ -57,6 +71,11 @@ def run(args):
         amask = np.zeros_like(ex_en, dtype=bool)
         amask[:, args.adiabatic_state - 1] = True
         cmask = np.logical_and(cmask, amask)
+
+    if args.weight_norm == "max":
+        wmax = weights[cmask].max() if np.any(cmask) else 1.0
+        if wmax > 0:
+            weights = weights / wmax
 
     rng = np.random.default_rng()
     cmask = np.logical_and(cmask, rng.random(ex_en.shape) < weights)
