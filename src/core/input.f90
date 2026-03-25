@@ -18,7 +18,6 @@ module input_mod
     use string_mod
     use file_mod, only : reader
     use constants
-    use vibronic_mod
 
     implicit none
 
@@ -585,7 +584,8 @@ contains
                 case('vibronic_coupling')
                     ctrl%qlib = 3
                     if (readf%narg > 2) ctrl%vc_template = readf%args(3)%s
-                    call vibronic_coupling%init(ctrl%vc_template)
+                    call vc_data%init(ctrl%vc_template)
+                    call vc_potential%initialize(vc_data)
                 case default
                     write(stderr, *) 'Error in Input module, read_method subroutine.'
                     write(stderr, *) '  Unrecognized qlib keyword: ', readf%args(2)%s

@@ -61,6 +61,7 @@ contains
         self%spin2 = spin2
         self%ms2 = ms2
         if (allocated(self%gradient)) deallocate(self%gradient)
+        if (allocated(self%nadv)) deallocate(self%nadv)
         allocate(self%nadv(n_state))
     end subroutine initialize
 

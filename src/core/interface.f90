@@ -28,11 +28,10 @@ contains
 #ifdef QUANTICS
         use shzagreb_inter, only : shzagreb_run
 #endif
-        use system_type_mod, only : system_type
+        use system_type_mod, only : system_type, vc_potential
         use matrix_mod, only : unit_mat
         use tully_mod, only : qmodel
         use json_module, only : json_core, json_file, json_value
-        use vibronic_mod, only : vibronic_coupling
         type(system_type), intent(inout) :: t
         logical, intent(in) :: hop
         integer :: cunit, i, j
@@ -245,22 +244,24 @@ contains
                 t%wf%adt = wrk_adt
             end if
         case(3)
-            call vibronic_coupling%eval(t%geom(1, :), 'spin-diabatic', t%wf%en)
+            call vc_potential%update_geometry(t%geom)
+            call vc_potential%eval()
             do i = 1, t%wf%n_state
+                t%wf%en(i) = vc_potential%w_full(i, i)
                 if (t%wf%need_gradient(i)) then
-                    t%wf%qm_state(i)%gradient(1, :) = vibronic_coupling%get_grad(i)
+                    t%wf%qm_state(i)%gradient(1, :) = vc_potential%w_grad(:, i, i)
                 end if
                 do j = 1, t%wf%n_state
                     if (t%wf%need_nadv(i, j)) then
-                        t%wf%qm_state(i)%nadv(j)%c = vibronic_coupling%get_nadv(i, j)
+                        t%wf%qm_state(i)%nadv(j)%c = vc_potential%get_nadv(i, j)
                     end if
                     if (t%wf%need_soc(i, j)) then
-                        t%wf%qm_state(i)%soc(j) = vibronic_coupling%soc%trans_prop(i, j)
-                     end if
+                        t%wf%qm_state(i)%soc(j) = vc_potential%w_full(i, j)
+                    end if
                 end do
             end do
             if (ctrl%adt) then
-                t%wf%adt = transpose(vibronic_coupling%eigvec)
+                t%wf%adt = transpose(vc_potential%w_eigvec)
             end if
         case default
             call errstop("run_qm", "Unrecognized QM interface.", 1)

@@ -11,10 +11,14 @@ module system_type_mod
     use global_defs
     use constants
     use mqc_wave_function_mod
+    use vc_evaluator_mod
+    use vc_model_mod
     implicit none
 
     private
     public :: system_type
+    public :: vc_potential !< TODO move to more appropriate place
+    public :: vc_data
     public :: trajectory_data, tr1, tr2
     public :: memory
     public :: data_index_1
@@ -82,6 +86,9 @@ module system_type_mod
     type(system_type), pointer :: tr2 !< Pointer to trajectory data for previous time step.
     integer :: data_index_1 !< Index of trajectory data for current time step.
     integer :: data_index_2 !< Index of trajectory data for previous time step.
+
+    type(vc_model), target :: vc_data !< LVC model for the system.
+    type(vc_evaluator) :: vc_potential !< LVC potential interface for the system.
 
 
 contains

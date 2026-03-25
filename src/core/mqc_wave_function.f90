@@ -41,14 +41,10 @@ contains
         integer, intent(in) :: n_state(:)
         integer, intent(in) :: multiplicity(:)
         integer, intent(in), optional :: active_state
-        integer :: i, j, k, n
+        integer :: i, ms, igroup, istate, j
+        integer :: cmult
 
-        self%n_state_group = size(n_state)
-        if (any(n_state(1:self%n_state_group) < 1)) then
-            call errstop("mqc_wave_function_mod", "Number of states in a group must be at least 1.", 1)
-        end if
-        self%n_state_per_group = n_state(1:self%n_state_group) * multiplicity(1:self%n_state_group)
-        self%n_state = sum(self%n_state_per_group)
+        self%n_state = sum(n_state * multiplicity)
         allocate(self%qm_state(self%n_state))
         allocate(self%en(self%n_state), source=0.0_dp)
         allocate(self%coeff(self%n_state), source=(0.0_dp, 0.0_dp))
@@ -57,12 +53,35 @@ contains
         allocate(self%need_gradient(self%n_state), source=.false.)
         allocate(self%need_nadv(self%n_state, self%n_state), source=.false.)
         allocate(self%need_soc(self%n_state, self%n_state), source=.false.)
-        n = 0
-        do i = 1, self%n_state_group
-            do j = 1, n_state(i)
-                do k = -multiplicity(i) + 1, multiplicity(i) - 1, 2
-                    n = n + 1
-                    call self%qm_state(n)%initialize(i, j, n, self%n_state, multiplicity(i)-1, k)
+        self%n_state_group = sum(multiplicity, mask=(n_state > 0))
+        allocate(self%n_state_per_group(self%n_state_group))
+        igroup = 0
+        istate = 0
+        do i = 1, size(n_state)
+            if (n_state(i) == 0) cycle
+            if (mod(multiplicity(i), 2) == 1) then
+                igroup = igroup + 1
+                self%n_state_per_group(igroup) = n_state(i)
+                do j = 1, n_state(i)
+                    istate = istate + 1
+                    call self%qm_state(istate)%initialize(igroup, j, istate, self%n_state, multiplicity(i)-1, 0)
+                end do
+                cmult = (multiplicity(i) - 1) / 2
+            else
+                cmult = multiplicity(i) / 2
+            end if
+            do ms = 1, cmult
+                igroup = igroup + 1
+                self%n_state_per_group(igroup) = n_state(i)
+                do j = 1, n_state(i)
+                    istate = istate + 1
+                    call self%qm_state(istate)%initialize(igroup, j, istate, self%n_state, multiplicity(i)-1, ms)
+                end do
+                igroup = igroup + 1
+                self%n_state_per_group(igroup) = n_state(i)
+                do j = 1, n_state(i)
+                    istate = istate + 1
+                    call self%qm_state(istate)%initialize(igroup, j, istate, self%n_state, multiplicity(i)-1, -ms)
                 end do
             end do
         end do
