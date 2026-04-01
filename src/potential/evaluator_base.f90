@@ -1,4 +1,4 @@
-module potential_evaluator_mod
+module evaluator_base_mod
     use global_defs
     implicit none
 
@@ -16,4 +16,4 @@ module potential_evaluator_mod
         end subroutine update_geometry
     end interface
 
-end module potential_evaluator_mod
+end module evaluator_base_mod

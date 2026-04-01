@@ -118,7 +118,7 @@ contains
             odecmat = cmplx(0.0_dp, -diagonal_mat(en_t), kind=dp) - tdc_t
             if (any(wf_t2%need_soc)) then
                 call sh_interpolate_soc(interpolation_tdc, t1, t2, tt, soc_t1, soc_t2, soc_t)
-                odecmat = odecmat + im_i * soc_t
+                odecmat = odecmat - im_i * soc_t
             end if
             
             ! Propagate wf coefficients.
@@ -130,8 +130,8 @@ contains
             cprob = 0.0_dp
             hop: do st = 1, odens
                 if (st == cstate) cycle
-                prob = - 2 * edt * real(conjg(wf_t2%coeff(st)) * wf_t2%coeff(cstate) * odecmat(st, cstate)) / &
-                     & (abs(wf_t2%coeff(cstate))**2)
+                prob = - real(conjg(wf_t2%coeff(st)) * wf_t2%coeff(cstate) * odecmat(st, cstate))
+                prob = prob * 2 * edt / abs(wf_t2%coeff(cstate))**2
                 if (prob > 0.0_dp) then ! Not actual probability, can be negative.
                     cprob = cprob + prob
                     wf_t2%prob(st) = wf_t2%prob(st) + prob
@@ -141,7 +141,6 @@ contains
                     end if
                 end if
             end do hop
-            
         end do
 
         wf_t2%active_state = cstate

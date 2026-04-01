@@ -24,7 +24,7 @@ contains
     !> @details
     !! @todo UPDATE DOCS
     !----------------------------------------------------------------------------------------------
-    subroutine run_qm(t, hop)
+    subroutine run_qm(t, hop, prev)
 #ifdef QUANTICS
         use shzagreb_inter, only : shzagreb_run
 #endif
@@ -34,6 +34,7 @@ contains
         use json_module, only : json_core, json_file, json_value
         type(system_type), intent(inout) :: t
         logical, intent(in) :: hop
+        type(system_type), optional, intent(in) :: prev
         integer :: cunit, i, j
         logical :: check(5)
         character(len=200) :: json_str
@@ -244,24 +245,30 @@ contains
                 t%wf%adt = wrk_adt
             end if
         case(3)
-            call vc_potential%update_geometry(t%geom)
-            call vc_potential%eval()
+            if (.not. hop) then
+                call vc_potential%update_geometry(t%geom)
+                if (present(prev)) then
+                    call vc_potential%eval(transpose(prev%wf%adt)) 
+                else
+                    call vc_potential%eval()
+                end if
+            end if            
             do i = 1, t%wf%n_state
-                t%wf%en(i) = vc_potential%w_full(i, i)
+                t%wf%en(i) = vc_potential%group_adiab_w(i, i)
                 if (t%wf%need_gradient(i)) then
-                    t%wf%qm_state(i)%gradient(1, :) = vc_potential%w_grad(:, i, i)
+                    t%wf%qm_state(i)%gradient(1, :) = vc_potential%group_adiab_dw(:, i, i)
                 end if
                 do j = 1, t%wf%n_state
                     if (t%wf%need_nadv(i, j)) then
-                        t%wf%qm_state(i)%nadv(j)%c = vc_potential%get_nadv(i, j)
+                        t%wf%qm_state(i)%nadv(j)%c = vc_potential%get_nadv('group_adiabatic', i, j)
                     end if
                     if (t%wf%need_soc(i, j)) then
-                        t%wf%qm_state(i)%soc(j) = vc_potential%w_full(i, j)
+                        t%wf%qm_state(i)%soc(j) = vc_potential%group_adiab_w(i, j)
                     end if
                 end do
             end do
             if (ctrl%adt) then
-                t%wf%adt = transpose(vc_potential%w_eigvec)
+                t%wf%adt = transpose(vc_potential%group_adiab_trans)
             end if
         case default
             call errstop("run_qm", "Unrecognized QM interface.", 1)

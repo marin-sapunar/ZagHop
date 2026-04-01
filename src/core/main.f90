@@ -123,7 +123,7 @@ program zaghop
         !     end do
         ! end if
         if (stdp2) write(stdout, *) '  Running QM calculation.'
-        call run_qm(tr1, .false.)
+        call run_qm(tr1, .false., tr2)
 
         ! Get new velocity.
         call dyn_updatevelo(ctrl%dt, tr1%mass, tr1%geom, tr2%grad, tr1%grad, tr2%velo,        &
@@ -138,7 +138,7 @@ program zaghop
                 write(stdout, '(5x,a,i0)') 'Current state: ', tr1%wf%active_state
                 write(stdout, '(5x,a)') 'Running QM gradient calculation for new state.'
             end if
-            call run_qm(tr1, .true.)
+            call run_qm(tr1, .true., tr2)
             call sh_rescalevelo(ctrl%vrescale, ctrl%fhop, tr1%qind, tr2%wf%active_state, tr1%wf, &
             &                   tr1%mass, tr1%velo)
             !> @todo Move this to a more appropriate place.

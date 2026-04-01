@@ -13,6 +13,7 @@ module matrix_mod
 
     private
     public :: diagonal_mat
+    public :: block_diagonal_mat
     public :: unit_mat
     public :: vec_outer
     public :: mat_norm
@@ -46,6 +47,50 @@ contains
             mat(i, i) = vec(i)
         end do
     end function diagonal_mat
+
+
+    !----------------------------------------------------------------------------------------------
+    ! FUNCTION: block_diagonal_mat
+    !> @brief Create a block diagonal matrix.
+    !> @details
+    !! The input is an array of rmat type, where each rmat contains a block of the output matrix.
+    !! The output matrix is constructed by placing the blocks on the diagonal. The optional 
+    !! argument block_repeat allows for repeating each block a specified number of times along
+    !! the diagonal.
+    !----------------------------------------------------------------------------------------------
+    function block_diagonal_mat(blocks, block_repeat) result(full_mat)
+        use rmat_mod, only : rmat
+        type(rmat), intent(in) :: blocks(:)
+        integer, intent(in), optional :: block_repeat(:)
+        real(dp), allocatable :: full_mat(:, :)
+        integer, allocatable :: reps(:)
+        integer :: i, j, i0, ns
+        integer :: nblocks
+
+        if (present(block_repeat)) then
+            reps = block_repeat
+        else
+            allocate(reps(size(blocks)), source=1)
+        end if
+
+        ! Determine size of output matrix.
+        ns = 0
+        do i = 1, size(blocks)
+            if (.not. allocated(blocks(i)%c)) cycle
+            ns = ns + size(blocks(i)%c, 1) * reps(i)
+        end do
+
+        i0 = 0
+        allocate(full_mat(ns, ns), source=0.0_dp)
+        do i = 1, size(blocks)
+            if (.not. allocated(blocks(i)%c)) cycle
+            ns = size(blocks(i)%c, 1)
+            do j = 1, reps(i)
+                full_mat(i0+1:i0+ns, i0+1:i0+ns) = blocks(i)%c
+                i0 = i0 + ns
+            end do
+        end do
+    end function block_diagonal_mat
 
 
     !----------------------------------------------------------------------------------------------

@@ -87,7 +87,7 @@ contains
         self%tot_ns = sum(self%nstate * [1, 2, 3])
 
         do i = 1, 3
-            call self%w(i)%allocate(2, self%nmode, self%nstate(i))
+            call self%w(i)%allocate(2, self%nmode, self%nstate(i), self%nstate(i))
             do j = 1, self%nstate(i)
                 do k = 1, self%nmode
                     self%w(i)%quad(k, k, j, j) = 0.5_dp * self%freq(k + self%zero_mode)

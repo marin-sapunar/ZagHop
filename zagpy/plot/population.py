@@ -129,9 +129,9 @@ def reindex_mult(state, nstate_mult):
     cs = state
     i0 = 1
     for mult, i in zip([1, 2, 3], nstate_mult):
-        if i > cs/mult:
-            return i0 + int(cs/mult) - 1
-        cs -= i*mult
+        if i * mult > cs:
+            return i0 + (cs % i) - 1
+        cs -= i * mult
         i0 += i
     raise ValueError("State index out of range for given nstate_mult.")
 

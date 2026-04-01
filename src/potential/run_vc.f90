@@ -46,11 +46,11 @@ program run_vc
 
     allocate(energies(vc%model%tot_ns))
     do i = 1, vc%model%tot_ns
-        energies(i) = vc%w_full(i, i)
+        energies(i) = vc%adiab_w(i, i)
     end do
 
     if (vc%model%dm(1)%max_order >= 0) then
-        oscill = vc%get_oscill(1)
+        oscill = vc%get_oscill('adiabatic', 1)
     end if
     open(newunit=iunit, file='qm_en.dat', status='replace', action='write', iostat=io)
     do i = 1, vc%model%tot_ns
@@ -64,7 +64,7 @@ program run_vc
 
     open(newunit=iunit, file='qm_adt.dat', status='replace', action='write', iostat=io)
     do i = 1, vc%model%tot_ns
-        write(iunit, '(*(e20.12))') vc%w_eigvec(:, i)
+        write(iunit, '(*(e20.12))') vc%adiab_trans(:, i)
     end do
     close(iunit)
 
