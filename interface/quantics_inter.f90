@@ -13,28 +13,30 @@ module shzagreb_inter
       use constants
       
       use dvrdatmod
-      use griddatmod
+      use grddatmod
       use operdef
-      use rddvrmod
+      use iodvrdef
+      use iogrddef
       use rdopermod
-      use iorst, only: rstinfo
+      use iorst, only: rdrstinfo
       use dirdyn, only: ndoftsh,dercpdim,ndofddpes,&
                   dbnrec,nactdim,natmtsh,ldbsave,&
                   lupdhes,lnactdb,lddrddb,ddtrajnum,num_gp
       use dirdyn, only: alloc_dirdyn,alloc_dddb,atnam,nsmult,imultmap
       use directdyn
       use potevalmod, only: calcdiab,calcdiabder,calcvreps
-      use psidef, only: qcentdim,gwpdim,zcent,vdimgp,dimgp,ndimgp,zgp,nsgp,totgp,&
+      use psidef, only: qcentdim,zcent,vdimgp,dimgp,ndimgp,zgp,nsgp,totgp,&
                         sbaspar,rsbaspar
       use openmpmod, only: lompqc
       use lalib, only: simtranbd
+      use datenmod, only: outdat,loadoutdat
+      use logdat, only: routine,message,errormsg
       
       use dd_db, only: dddb_gp,getdbnrec,preparedb
       use dbcootrans
       use channels
       use op2lib, only: subvxxdo1
       use xvlib, only: mvxxdd1, mvtxdd1
-
 
       implicit none
 
@@ -76,7 +78,8 @@ contains
 
       integer             :: ierr,izflag,nham,modus,s
       character(len=c5)   :: filename,string
-      logical(kind=4)     :: check,lerr
+      integer(long)       :: check
+      logical(kind=4)     :: lcheck,lerr
       real(dop), external :: dlamch
       logical(kind=4), save :: initialized=.false.
 
@@ -102,8 +105,8 @@ contains
 !-----------------------------------------------------------------------
 ! get array dimensions 
 !-----------------------------------------------------------------------
-         inquire(irst,opened=check)
-         if (check) close(irst)
+         inquire(irst,opened=lcheck)
+         if (lcheck) close(irst)
          filename=rname(1:rlaenge)//'/restart'
          ilbl=index(filename,' ')-1
          open(irst,file=filename(1:ilbl),form='unformatted',status='old',&
@@ -139,36 +142,19 @@ contains
 ! Allocate memory 
 !-----------------------------------------------------------------------
          allocmemory=0
-         call alloc_dvrdat
-         call alloc_grddat
+         call alloc_sysdat(sysdat)
+         call alloc_grddat(grddat)
          call alloc_operdef
          if (ldd .or. ltraj) then
-            allocate(gwpdim(1,1))
             allocate(zcent(1,1))
             allocate(vdimgp(1,1))
             allocate(dimgp(1,1))
             allocate(ndimgp(1,1))
             allocate(zgp(1))
             allocate(nsgp(1))
-            allocate(rsbaspar(sbaspar,maxdim,1))
-            call alloc_dirdyn(ilog)
          endif
-
-!-----------------------------------------------------------------------
-! Read system / DVR information
-!-----------------------------------------------------------------------
-         filename=dname(1:dlaenge)//'/dvr'
-         ilbl=index(filename,' ')-1
-         open(idvr,file=filename,form='unformatted',status='old',iostat=ierr)
-         if (ierr .ne. 0) then
-            routine='SHzagreb_interface'
-            ilbl=index(filename,' ')-1
-            message = 'Cannot open file: '//filename(1:ilbl)
-            call errormsg
-         endif
-         chkdvr=1
-         call dvrinfo(lerr,chkdvr)
-         close(idvr)
+         call alloc_dirdyn(ilog)
+         if (ldd) call alloc_dddb(ilog)
 
 !-----------------------------------------------------------------------
 ! Read data from oper file
@@ -183,10 +169,10 @@ contains
             message = 'Cannot open file: '//filename(1:ilbl)
             call errormsg
          endif
-         chkdvr=1
-         chkdvr=2
-         chkgrd=1
-         call operinfo(lerr,chkdvr,chkgrd)
+         check=1
+         call rddvrinfo(irst,check)
+         call rdgrdinfo(ioper,check)
+         call rdoperinfo(ioper)
 
 !----------------------------------------------------------------------- 
 ! read in coordinate transformation information
@@ -195,6 +181,12 @@ contains
             call alloc_dbcootrans
             call rdddtrans(ioper)
          endif
+
+!-----------------------------------------------------------------------
+! Read data needed by the operator
+!-----------------------------------------------------------------------
+         allocate(hops(hopsdim))
+         call rdoper(ioper,hops)
 
          close(ioper)
 
@@ -206,15 +198,6 @@ contains
             call getdbnrec(dbnrec)
             call alloc_dddb(ilog)
          endif
-
-!-----------------------------------------------------------------------
-! Read data needed by the operator
-!-----------------------------------------------------------------------
-         operfile=oname(1:olaenge)//'/oper'
-         allocate(hops(hopsdim))
-         chkdvr=2
-         chkgrd=1
-         call rdoper(hops,chkdvr,chkgrd)
 
 !-----------------------------------------------------------------------
 ! DD needs to read restart file for info on how Shepard Interpolation is 
@@ -230,11 +213,8 @@ contains
               message = 'Cannot open file: '//filename(1:ilbl)
               call errormsg
            endif
-           chkdvr=0
-           chkgrd=0
-           chkpsi=0
-           chkprp=1
-           call rstinfo(linwf,lerr,chkdvr,chkgrd,chkpsi,chkprp)
+           call rdrstinfo(irst,outdat)
+           call loadoutdat(outdat)
            close(irst)
          endif
 
@@ -248,7 +228,6 @@ contains
 ! qcentdim is needed in getddpes as dimension of Ndof (effectively 1GWP)
 !-----------------------------------------------------------------------
          if (ldd) then
-            gwpdim(1,1) = 1
             zcent(1,1) = 1
             gwpm(1)=.true.
             qcentdim = nspfdof(1)
@@ -350,7 +329,6 @@ contains
       do f=1,ndof
          if (basis(f) .eq. 19) qcoo1(f) = rpbaspar(1,f)
       enddo
-
 
 ! Initialise local DBs. Need to be in Cartesians.
       if (ldd .and. ldbsmall) then
