@@ -3,12 +3,12 @@ $system
  nstate =    4
  istate =    4
 $surfhop                                                                        
- fssh  adiabatic
+ fssh  diabatic
  nadvec  linear
  velocity nadvec
  tdse_steps 10
 $dynamics
- tstep = 1.25
+ tstep = 1.35
  max_time =   100.0000
  max_toten_d = 0.05
 $output

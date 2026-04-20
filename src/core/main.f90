@@ -28,7 +28,6 @@ program zaghop
     use file_mod, only : check_is_dir
     use hopping_mod
     use nuclear_dyn_mod
-    use vc_evaluator_mod, only : vc_evaluator
     implicit none
 
     logical :: check
@@ -144,10 +143,7 @@ program zaghop
             call run_qm(tr1, .true.)
             call sh_rescalevelo(ctrl%vrescale, ctrl%fhop, tr1%qind, tr2%wf%active_state, tr1%pot, &
             &                   tr1%mass, tr1%velo, tr1%wf%active_state)
-            select type(p => tr1%pot)
-            type is (vc_evaluator)
-                tr1%grad(:, tr1%qind) = p%get_gradient('adiabatic', tr1%wf%active_state)
-            end select
+            tr1%grad(:, tr1%qind) = tr1%pot%get_gradient('adiabatic', tr1%wf%active_state)
         end if
 
         ! Stop the program after max_time was reached. Add tinydp to time for precision.

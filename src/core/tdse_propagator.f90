@@ -111,13 +111,16 @@ contains
         complex(dp), intent(in) :: c_dt(:)
         complex(dp), intent(in) :: p(:, :)
         real(dp) :: prob(size(c_t))
+        real(dp) :: b_diff
         integer :: a
+        real(dp), parameter :: tiny = 1.0e-10_dp
 
         prob = 0.0_dp
+        b_diff = 1 - abs(c_dt(b))**2 / abs(c_t(b))**2
+        if (abs(b_diff) <= tiny) return
         do a = 1, size(c_t)
             if (a == b) cycle
-            prob(a) = max((1 - abs(c_dt(b))**2 / abs(c_t(b))**2) * &
-            &         real(c_dt(a) * conjg(p(a, b)) * conjg(c_t(b))) / &
+            prob(a) = max(b_diff * real(c_dt(a) * conjg(p(a, b)) * conjg(c_t(b))) / &
             &         (abs(c_t(b))**2 - real(c_dt(b) * conjg(p(b, b)) * conjg(c_t(b)))), 0.0_dp)
         end do
     end function prob_sharc

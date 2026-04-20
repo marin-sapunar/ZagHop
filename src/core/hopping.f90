@@ -127,14 +127,11 @@ contains
 
         if (stdp2) write(stdout, '(5x,a)') 'Ensuring energy conservation.'
 
-        select type(p => pot)
-        type is (vc_evaluator)
-            pgrd = p%get_gradient('adiabatic', pst)
-            cgrd = p%get_gradient('adiabatic', cst)
-            if (opt_mc == 3) then
-                nadv = p%get_nadv('adiabatic', pst, cst)
-            end if
-        end select
+        pgrd = pot%get_gradient('adiabatic', pst)
+        cgrd = pot%get_gradient('adiabatic', cst)
+        if (opt_mc == 3) then
+            nadv = pot%get_nadv('adiabatic', pst, cst)
+        end if
 
         ! Work with temporary arrays and use mass-weighted coordinates.
         m = spread(mass(amask), 1, size(velo, 1))

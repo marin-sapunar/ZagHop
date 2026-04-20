@@ -27,9 +27,6 @@ module control_var
         character(len=:), allocatable :: maindir !< Program working directory.
         character(len=:), allocatable :: output_dir !< Main output directory name.
 
-        integer :: qlib=0 !< Flag to call library instead of file-based interface.
-        !! - 0 - File-based interface.
-        !! - 1 - Quantics interface module.
         character(len=:), allocatable :: qprog !< Program for QM calculations.
         character(len=:), allocatable :: mprog !< Program for MM calculations.
         character(len=:), allocatable :: oprog !< Program for overlap calculations.

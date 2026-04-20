@@ -14,15 +14,19 @@ module evaluator_base_mod
         procedure(get_transformation), deferred :: get_transformation
         procedure(get_energy_single), deferred :: get_energy_single
         procedure(get_energy_all), deferred :: get_energy_all
+        procedure(get_gradient), deferred :: get_gradient
+        procedure(get_nadv), deferred :: get_nadv
         generic :: get_energy => get_energy_single, get_energy_all
     end type potential_evaluator
 
+    
     abstract interface
         subroutine eval(self)
             import potential_evaluator
             class(potential_evaluator), intent(inout) :: self
         end subroutine eval
     end interface
+
 
     abstract interface
         pure function get_energy_single(self, state) result(energy)
@@ -33,6 +37,7 @@ module evaluator_base_mod
             real(dp) :: energy
         end function get_energy_single
     end interface
+
 
     abstract interface
         pure function get_energy_all(self) result(energy)
@@ -73,6 +78,30 @@ module evaluator_base_mod
             character(len=*), intent(in) :: from_basis, to_basis
             real(dp), allocatable :: trans(:, :)
         end function get_transformation
+    end interface
+
+
+    abstract interface
+        function get_gradient(self, basis, istate) result(grad)
+            use global_defs, only : dp
+            import potential_evaluator
+            class(potential_evaluator), intent(in) :: self
+            character(len=*), intent(in) :: basis
+            integer, intent(in) :: istate
+            real(dp), allocatable :: grad(:, :)
+        end function get_gradient
+    end interface
+
+
+    abstract interface
+        function get_nadv(self, basis, istate1, istate2) result(nadv)
+            use global_defs, only : dp
+            import potential_evaluator
+            class(potential_evaluator), intent(in) :: self
+            character(len=*), intent(in) :: basis
+            integer, intent(in) :: istate1, istate2
+            real(dp), allocatable :: nadv(:)
+        end function get_nadv
     end interface
 
 

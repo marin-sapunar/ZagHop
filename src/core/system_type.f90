@@ -440,13 +440,9 @@ contains
 
         if (popt(32)) then
             wrk = t%pot%get_transformation('adiabatic', 'adiabatic')
-            write(punit(32), 1006) wrk(:, t%wf%active_state, :)
+            write(punit(32), 1006) wrk(:, t%wf%active_state)
         end if
-
-
-    !    if (popt(10)) then
-    !        write(punit(10), 1006) t%qo
-    !    end if
+        
 
 1001 format (f12.5,1x,i4)
 1002 format (1x,1000f18.10)

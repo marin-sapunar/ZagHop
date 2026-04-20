@@ -130,7 +130,7 @@ contains
 
     
     function vc_get_nadv(self, basis, istate1, istate2) result(nadv)
-        class(vc_evaluator) :: self
+        class(vc_evaluator), intent(in) :: self
         character(len=*), intent(in) :: basis
         integer, intent(in) :: istate1, istate2
         real(dp), allocatable :: nadv(:)

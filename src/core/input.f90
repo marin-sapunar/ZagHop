@@ -102,7 +102,6 @@ contains
         allocate(rng_pcg_xsh_rr::ctrl%rng)
         ctrl%rng%seed = -1
         ! Method options.
-        ctrl%qlib = 0
         ctrl%noise = 0.0_dp
         ctrl%vc_template = 'LVC.template'
         ! Set start step at 0
@@ -201,16 +200,16 @@ contains
         end if
 
         ! Set initial directory.
-        if (ctrl%qlib == 0) then
-            ctrl%qmdir = 'qmdir'
-            call get_environment_variable('QMDIR', temp)
-            if (temp /= '') ctrl%qmdir = trim(adjustl(temp))
-            if (stdp1) then
-                write(stdout, *)
-                write(stdout, '(1x,a,a)') "Work directory for QM calculations: ", ctrl%qmdir
-            end if
-            call system('mkdir -p '//ctrl%qmdir)
-        end if
+        ! if (ctrl%qlib == 0) then
+        !     ctrl%qmdir = 'qmdir'
+        !     call get_environment_variable('QMDIR', temp)
+        !     if (temp /= '') ctrl%qmdir = trim(adjustl(temp))
+        !     if (stdp1) then
+        !         write(stdout, *)
+        !         write(stdout, '(1x,a,a)') "Work directory for QM calculations: ", ctrl%qmdir
+        !     end if
+        !     call system('mkdir -p '//ctrl%qmdir)
+        ! end if
 
         ! If restarting don't read initial conditions.
         if (.not. ctrl%restart) then
@@ -544,8 +543,11 @@ contains
     !! In this section, programs to run the QM and MM calculations are selected.
     !----------------------------------------------------------------------------------------------
     subroutine read_method(readf)
-        use tully_mod, only : qmodel
+        use tully_mod, only : tully_model
         type(reader), intent(inout) :: readf
+        logical :: qlib
+
+        qlib = .false.
 
         if (.not. allocated(ctrl%qprog)) ctrl%qprog = ''
         if (.not. allocated(ctrl%mprog)) ctrl%mprog = ''
@@ -577,14 +579,17 @@ contains
                     &                       '" will be used for overlap calculations.'
                 end if
             case('qlib')
+                qlib = .true.
                 select case(readf%args(2)%s)
                 case('quantics')
-                    ctrl%qlib = 1
+                    call errstop('read_method', 'Quantics interface is under development.')
                 case('model')
-                    ctrl%qlib = 2
-                    call qmodel%init(readf%args(3:))
+                    allocate(tully_model :: tr1%pot)
+                    select type(p => tr1%pot)
+                    type is (tully_model)
+                        call p%init(readf%args(3:))
+                    end select
                 case('vibronic_coupling')
-                    ctrl%qlib = 3
                     if (readf%narg > 2) ctrl%vc_template = readf%args(3)%s
                     call vc_data%init(ctrl%vc_template)
                     allocate(vc_evaluator :: tr1%pot)
@@ -606,7 +611,7 @@ contains
             end select
         end do
 
-        if ((ctrl%qlib > 0) .and. (ctrl%qprog /= '')) then
+        if ((qlib) .and. (ctrl%qprog /= '')) then
             write(stderr, *) 'Error in Input module, read_method subroutine.'
             write(stderr, *) '  Both qlib and qm keywords given in input.'
             stop

@@ -31,7 +31,7 @@ contains
 #endif
         use system_type_mod, only : system_type, vc_potential
         use matrix_mod, only : unit_mat
-        use tully_mod, only : qmodel
+        use tully_mod, only : tully_model
         use json_module, only : json_core, json_file, json_value
         type(system_type), intent(inout) :: t
         logical, intent(in) :: hop
@@ -42,12 +42,13 @@ contains
         type(json_file) :: read_json
         type(json_value), pointer :: base, p_top, p_array_i, p_array_j
       !  type(json_value), pointer :: p_array_0, p_geom_entry
-        real(dp), allocatable :: wrk_en(:)
-        real(dp), allocatable :: wrk_nadv(:, :, :)
-        real(dp), allocatable :: wrk_soc(:, :)
-        real(dp), allocatable :: wrk_adt(:, :)
-        integer, allocatable :: spinv(:)
         logical :: found
+
+        if (.not. hop) then
+            call t%pot%update_geometry(t%geom)
+            call t%pot%eval()
+        end if
+        t%grad(:, t%qind) = t%pot%get_gradient('adiabatic', t%wf%active_state)
 
         ! !> @todo Move this allocation check to wf object?
         ! do i = 1, t%wf%n_state
@@ -70,8 +71,8 @@ contains
         !     end if
         ! end do
 
-        select case (ctrl%qlib)
-        case(0)
+        ! select case (ctrl%qlib)
+        ! case(0)
             ! if ((t%step > 0) .and. (.not. hop)) then
             !     call system('rm -rf prevstep')
             !     call system('cp -r '//ctrl%qmdir//' prevstep')
@@ -179,12 +180,12 @@ contains
             !                 end do
             !             end do
             !             close(cunit)
-            !         end if
-            !     end do
-            ! end do
-        case(1)
-! #ifdef QUANTICS
-!             !> @todo This is a workaround which avoids changing quantics_inter.f90 for now,
+!             !         end if
+!             !     end do
+!             ! end do
+!         case(1)
+! ! #ifdef QUANTICS
+! !             !> @todo This is a workaround which avoids changing quantics_inter.f90 for now,
 !             ! but the interface should be modified so temporary arrays are not required.
 !             if (ctrl%tdc_type == "nadvec" .or. ctrl%vrescale == 3) then
 !                 allocate(wrk_nadv(t%natom * t%ndim, t%wf%n_state, t%wf%n_state), source=0.0_dp)
@@ -210,52 +211,17 @@ contains
 !                         t%wf%qm_state(i)%soc(j) = wrk_soc(i, j)
 !                     end if
 !                 end do
-!             end do
-!             if (ctrl%adt) then
-!                 t%wf%adt = wrk_adt
-!             end if
-! #else
-            call errstop("run_qm", "Code not compiled with quantics interface.", 1)
-! #endif
-        case(2)
-            ! !> @todo This is a workaround which avoids changing qmodel%eval for now,
-            ! ! but the interface should be modified so temporary arrays are not required.
-            ! if (ctrl%tdc_type == "nadvec" .or. ctrl%vrescale == 3) then
-            !     allocate(wrk_nadv(t%natom * t%ndim, t%wf%n_state, t%wf%n_state))
-            ! end if
-            ! if (ctrl%adt) then
-            !     allocate(wrk_adt(t%wf%n_state, t%wf%n_state))
-            ! end if
-            ! if (.not. allocated(t%wf%qm_state(t%wf%active_state)%gradient)) then
-            !     allocate(t%wf%qm_state(t%wf%active_state)%gradient(t%ndim, t%qnatom))
-            ! end if
-            ! call qmodel%eval(t%geom, t%wf%active_state, t%wf%en, t%wf%qm_state(t%wf%active_state)%gradient, &
-            ! &                wrk_nadv, wrk_adt)
-            ! do i = 1, t%wf%n_state
-            !     do j = 1, t%wf%n_state
-            !         if (t%wf%need_nadv(i, j)) then
-            !             t%wf%qm_state(i)%nadv(j)%c = wrk_nadv(:, i, j)
-            !         end if
-            !         if (t%wf%need_soc(i, j)) then
-            !             t%wf%qm_state(i)%soc(j) = wrk_soc(i, j)
-            !         end if
-            !     end do
-            ! end do
-            ! if (ctrl%adt) then
-            !     t%wf%adt = wrk_adt
-            ! end if    
-        case(3)
-            if (.not. hop) then
-                call t%pot%update_geometry(t%geom)
-                call t%pot%eval()
-            end if
-            select type(p => t%pot)
-            type is (vc_evaluator)
-                t%grad(:, t%qind) = p%get_gradient('adiabatic', t%wf%active_state)
-            end select
-        case default
-            call errstop("run_qm", "Unrecognized QM interface.", 1)
-        end select
+! !             end do
+! !             if (ctrl%adt) then
+! !                 t%wf%adt = wrk_adt
+! !             end if
+! ! #else
+!             call errstop("run_qm", "Code not compiled with quantics interface.", 1)
+! ! #endif
+
+!         case default
+!             call errstop("run_qm", "Unrecognized QM interface.", 1)
+!         end select
 
         
         

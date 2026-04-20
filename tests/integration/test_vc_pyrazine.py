@@ -25,8 +25,8 @@ class VcPyrazineTest(ZagHopTest):
         self.compare_energy()
         self.stdout_contains("Change in total energy too large.")
 
-    def test_fssh(self):
-        """ Test adiabatic basis FSSH on pyrazine model."""
+    def test_ldsh(self):
+        """ Test diabatic basis FSSH on pyrazine model."""
         self.run_traj()
         self.compare_energy()
 

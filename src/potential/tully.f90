@@ -1,4 +1,4 @@
-!--------------------------------------------------------------------------------------------------
+ !--------------------------------------------------------------------------------------------------
 ! MODULE: tully_mod
 !> @author Marin Sapunar, Ruđer Bošković Institute
 !> @date September, 2024
@@ -9,22 +9,24 @@
 module tully_mod
     use global_defs
     use string_mod
+    use evaluator_diabatic_mod
     implicit none
 
     private
-    public :: qmodel
-    public :: model_system
+    public :: tully_model
 
 
-    type model_system
+    type, extends(diabatic_evaluator) :: tully_model
         character(len=:), allocatable :: name
         real(dp), allocatable :: params(:)
+        real(dp) :: x = 0.0_dp
+        real(dp), allocatable :: saved_nadv(:, :, :)
     contains
         procedure :: init => model_init
-        procedure :: eval => model_eval_sym2d
-    end type model_system
-
-    type(model_system) :: qmodel
+        procedure :: update_geometry => model_update_geometry
+        procedure :: eval => model_eval
+        procedure :: get_nadv => model_get_nadv
+    end type tully_model
 
 contains
 
@@ -33,11 +35,11 @@ contains
     ! SUBROUTINE: model_init
     !
     ! DESCRIPTION:
-    !> @brief
+    !> @brief Initialize the model system with the given arguments.
     !> @details
     !----------------------------------------------------------------------------------------------
     subroutine model_init(self, args)
-        class(model_system) :: self
+        class(tully_model) :: self
         type(string), intent(in) :: args(:)
         integer :: i
 
@@ -99,60 +101,106 @@ contains
                 end select
             end do
         end select
+
+        ! Initialize diabatic_evaluator arrays for 2 states, 1 group.
+        self%n_state = 2
+        self%n_group = 1
+        allocate(self%group_nstate(1), source=2)
+        allocate(self%group_i0(1), source=1)
+        allocate(self%diab_w(2, 2))
+        allocate(self%diab_dw(1, 2, 2))
+        allocate(self%adiab_w(2, 2))
+        allocate(self%adiab_dw(1, 2, 2))
+        allocate(self%group_adiab_w(2, 2))
+        allocate(self%group_adiab_dw(1, 2, 2))
+        allocate(self%group_adiab_trans(2, 2))
+        allocate(self%saved_nadv(1, 2, 2))
     end subroutine model_init
 
 
-    subroutine model_eval_sym2d(self, x, cstate, en, grad, nadv, adt)
-        class(model_system) :: self
-        real(dp), intent(in) :: x(1, 1)
-        integer, intent(in) :: cstate
-        real(dp), intent(out) :: en(2)
-        real(dp), intent(out) :: grad(1, 1)
-        real(dp), allocatable, intent(inout) :: nadv(:, :, :)
-        real(dp), allocatable, intent(inout) :: adt(:, :)
-        real(dp) :: v(3) !< Vij matrix elements V11, V22, V12.
-        real(dp) :: dv(3) !< Derivative of Vij matrix elements.
-        real(dp) :: diag_dif
-        real(dp) :: diag_dif_g
-        real(dp) :: sq
-        real(dp) :: sum_gr
+    subroutine model_update_geometry(self, geometry)
+        class(tully_model), intent(inout) :: self
+        real(dp), intent(in) :: geometry(:, :)
 
+        self%x = geometry(1, 1)
+        if (allocated(self%adiab_trans)) self%ldiab_trans = self%adiab_trans
+    end subroutine model_update_geometry
+
+
+    subroutine model_eval(self)
+        class(tully_model), intent(inout) :: self
+        real(dp) :: v(3)
+        real(dp) :: dv(3)
+        real(dp) :: edif
+        integer :: imode
+        real(dp), parameter :: tiny_hf = 1.0e-8_dp
+
+        ! Compute diabatic matrix elements.
         select case(self%name)
         case('tully-i')
-            call tully_1(self%params, x(1, 1), v, dv)
+            call tully_1(self%params, self%x, v, dv)
         case('tully-ii')
-            call tully_2(self%params, x(1, 1), v, dv)
+            call tully_2(self%params, self%x, v, dv)
         case('tully-iii')
-            call tully_3(self%params, x(1, 1), v, dv)
+            call tully_3(self%params, self%x, v, dv)
         end select
- 
-        diag_dif = (v(2) - v(1)) * 0.5_dp
-        diag_dif_g = (dv(2) - dv(1)) * 0.5_dp
-        sq = sqrt(diag_dif**2 + v(3)**2)
-        sum_gr = diag_dif * diag_dif_g + v(3) * dv(3)
 
-        en(1) = (v(1) + v(2)) * 0.5_dp - sq
-        en(2) = (v(1) + v(2)) * 0.5_dp + sq
+        ! Set diabatic Hamiltonian.
+        self%diab_w(1, 1) = v(1)
+        self%diab_w(2, 2) = v(2)
+        self%diab_w(1, 2) = v(3)
+        self%diab_w(2, 1) = v(3)
 
-        if (cstate == 1) then
-            grad(1, 1) = (dv(1) + dv(2)) * 0.5_dp - sum_gr / sq
-        else
-            grad(1, 1) = (dv(1) + dv(2)) * 0.5_dp + sum_gr / sq
+        ! Set diabatic gradient (1 mode).
+        self%diab_dw(1, 1, 1) = dv(1)
+        self%diab_dw(1, 2, 2) = dv(2)
+        self%diab_dw(1, 1, 2) = dv(3)
+        self%diab_dw(1, 2, 1) = dv(3)
+
+        ! Diagonalize to get adiabatic transformation.
+        call self%eval_eigvec('adiabatic')
+        call self%eval_eigvec('group_adiabatic')
+
+        ! Phase matching with previous step.
+        if (allocated(self%ldiab_trans)) then
+            call match_phase(self%ldiab_trans, self%adiab_trans)
         end if
 
-        if (allocated(nadv)) then
-            nadv = 0.0_dp
-            nadv(1, 1, 2) = 0.5_dp / (1 + v(3)**2 / diag_dif**2) 
-            nadv(1, 1, 2) = nadv(1, 1, 2) * (dv(3) / diag_dif - v(3) * diag_dif_g / diag_dif**2)
-            nadv(1, 2, 1) = - nadv(1, 1, 2)
+        ! Transform to adiabatic basis.
+        self%adiab_w = self%diab_w
+        self%adiab_dw = self%diab_dw
+        call self%change_basis('adiabatic', self%adiab_w)
+        do imode = 1, 1
+            call self%change_basis('adiabatic', self%adiab_dw(imode, :, :))
+        end do
+
+        self%group_adiab_w = self%diab_w
+        self%group_adiab_dw = self%diab_dw
+        call self%change_basis('group_adiabatic', self%group_adiab_w)
+        do imode = 1, 1
+            call self%change_basis('group_adiabatic', self%group_adiab_dw(imode, :, :))
+        end do
+
+        ! Compute and store nonadiabatic coupling vectors.
+        self%saved_nadv = 0.0_dp
+        edif = self%adiab_w(2, 2) - self%adiab_w(1, 1)
+        if (abs(edif) < tiny_hf) then
+            edif = sign(tiny_hf, edif)
         end if
-        if (allocated(adt)) then
-            adt(1, 1) = - (diag_dif + sq) / sqr2 / sqrt((v(3)**2 + diag_dif * (sq + diag_dif)))
-            adt(1, 2) = - (diag_dif - sq) / sqr2 / sqrt((v(3)**2 - diag_dif * (sq - diag_dif)))
-            adt(2, 1) = v(3) / sqrt(v(3)**2 + (sq + diag_dif)**2)
-            adt(2, 2) = v(3) / sqrt(v(3)**2 + (sq - diag_dif)**2)
-        end if
-    end subroutine model_eval_sym2d
+        self%saved_nadv(1, 1, 2) = self%adiab_dw(1, 1, 2) / edif
+        self%saved_nadv(1, 2, 1) = -self%saved_nadv(1, 1, 2)
+    end subroutine model_eval
+
+
+    function model_get_nadv(self, basis, istate1, istate2) result(nadv)
+        class(tully_model), intent(in) :: self
+        character(len=*), intent(in) :: basis
+        integer, intent(in) :: istate1, istate2
+        real(dp), allocatable :: nadv(:)
+
+        allocate(nadv(1))
+        nadv(1) = self%saved_nadv(1, istate1, istate2)
+    end function model_get_nadv
 
 
     subroutine tully_1(p, x, v, dv)

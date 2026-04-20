@@ -3,7 +3,7 @@ $system
  nstate =    4
  istate =    4
 $surfhop                                                                        
- fssh  adiabatic                                                                
+ fssh  diabatic                                                                
  nadvec  linear                                                                 
  velocity nadvec                                                                
  tdse_steps 10                                                                 
