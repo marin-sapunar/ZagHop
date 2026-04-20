@@ -2,6 +2,7 @@
 import argparse
 from zagpy.sample import state, wigner
 from zagpy.plot import trajectory, population
+from zagpy.ensemble import population as ensemble_population
 
 
 def main():
@@ -17,6 +18,12 @@ def main():
     state.add_subparser(sample_sub)
     wigner.add_subparser(sample_sub)
 
+    # ensemble subcommand with its own subparsers
+    ensemble_parser = subparsers.add_parser(
+        "ensemble", help="Calculate ensemble quantities from trajectory data.")
+    ensemble_sub = ensemble_parser.add_subparsers(dest="ensemble_type")
+    ensemble_population.add_subparser(ensemble_sub)
+
     # plot subcommand with its own subparsers
     plot_parser = subparsers.add_parser(
         "plot", help="Plot trajectory data.")
@@ -29,6 +36,8 @@ def main():
         args.func(args)
     elif args.command == "sample" and args.method is None:
         sample_parser.print_help()
+    elif args.command == "ensemble" and args.ensemble_type is None:
+        ensemble_parser.print_help()
     elif args.command == "plot" and args.plot_type is None:
         plot_parser.print_help()
     else:
