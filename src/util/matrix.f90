@@ -12,7 +12,7 @@ module matrix_mod
 
 
     private
-    public :: diagonal_mat
+    public :: diag
     public :: block_diagonal_mat
     public :: unit_mat
     public :: vec_outer
@@ -22,6 +22,13 @@ module matrix_mod
     public :: mat_sy_exp
     public :: mat_ge_det
     public :: mat_ge_mmm
+    public :: unitary_transform
+
+
+    interface diag
+        module procedure diag_dp
+        module procedure diag_dp_mat
+    end interface diag
 
 
     interface vec_outer
@@ -32,6 +39,26 @@ module matrix_mod
 
 contains
 
+
+    pure function diag_dp(v) result(res)
+        real(dp), intent(in) :: v(:)
+        real(dp) :: res(size(v), size(v))
+        integer :: i
+        res = 0
+        do i = 1, size(v)
+          res(i,i) = v(i)
+        end do
+    end function diag_dp
+
+
+    pure function diag_dp_mat(A) result(res)
+        real(dp), intent(in) :: A(:, :)
+        real(dp) :: res(minval(shape(A)))
+        integer :: i
+        do i = 1, minval(shape(A))
+          res(i) = A(i,i)
+        end do
+    end function diag_dp_mat
 
     !----------------------------------------------------------------------------------------------
     ! FUNCTION: diagonal_mat
@@ -65,7 +92,6 @@ contains
         real(dp), allocatable :: full_mat(:, :)
         integer, allocatable :: reps(:)
         integer :: i, j, i0, ns
-        integer :: nblocks
 
         if (present(block_repeat)) then
             reps = block_repeat
@@ -322,6 +348,23 @@ contains
         call gemm(a, b, wrk, transa=wrk_transa)
         call gemm(wrk, c, d, transb=wrk_transc)
     end subroutine mat_ge_mmm
+
+
+    subroutine unitary_transform(u, mat, trans)
+        real(dp), intent(in) :: u(:, :) !< Unitary transformation matrix.
+        real(dp), intent(inout) :: mat(:, :) !< Matrix to be transformed.
+        logical, intent(in), optional :: trans !< Whether to transpose the unitary matrix.
+        logical :: trans_opt
+
+        trans_opt = .false.
+        if (present(trans)) trans_opt = trans
+
+        if (trans_opt) then
+            mat = matmul(matmul(transpose(u), mat), u)
+        else
+            mat = matmul(matmul(u, mat), transpose(u))
+        end if
+    end subroutine unitary_transform
 
 
 end module matrix_mod

@@ -36,7 +36,7 @@ contains
         use ode_call_mod ! Interface to Shampine/Gordon ODE solver.
         use mqc_wave_function_mod, only : mqc_wave_function
         use random_mod, only : rng_type
-        use matrix_mod, only : diagonal_mat
+        use matrix_mod, only : diag
         use tdc_mod, only : hst_tdc, nadvec2tdc, npi_tdc_integrated
         character(len=*), intent(in) :: opt_clvl !< Method for calculating time-derivative couplings.
         integer, intent(in) :: interpolation_en !< Method for interpolating energies during the time step.
@@ -69,13 +69,13 @@ contains
         real(dp), allocatable :: tdc_t(:, :) !< TDC matrix at current time.
         real(dp), allocatable :: wrk_1(:, :) !< Work array for storing TDCs at half step.
         real(dp), allocatable :: wrk_2(:, :) !< Work array for storing TDCs at half step.
+        complex(dp), allocatable :: cmat(:,:) !< Coupling matrix for the ODE function.
         complex(dp), allocatable :: soc_t1(:, :) !< Spin-orbit coupling matrix at t1.
         complex(dp), allocatable :: soc_t2(:, :) !< Spin-orbit coupling matrix at t2.
         complex(dp), allocatable :: soc_t(:, :) !< Spin-orbit coupling matrix at current time.
         complex, parameter :: im_i = cmplx(0.0_dp, 1.0_dp, kind=dp)
 
-        odens = size(wf_t2%coeff)
-        allocate(odecmat(odens, odens))
+        allocate(cmat(wf_t1%n_state, wf_t1%n_state), source=(0.0_dp, 0.0_dp))
 
         ! Propagation time step.
         tt = t1
@@ -115,22 +115,22 @@ contains
             ! Get energies and TDCs for current substep.
             call sh_interpolate_energy(interpolation_en, t1, t2, tt, wf_t1%en, wf_t2%en, en_t)
             call sh_interpolate_tdc(interpolation_tdc, t1, t2, tt, tdc_t1, tdc_t2, tdc_t)
-            odecmat = cmplx(0.0_dp, -diagonal_mat(en_t), kind=dp) - tdc_t
+            cmat = cmplx(0.0_dp, -diag(en_t), kind=dp) - tdc_t
             if (any(wf_t2%need_soc)) then
                 call sh_interpolate_soc(interpolation_tdc, t1, t2, tt, soc_t1, soc_t2, soc_t)
-                odecmat = odecmat - im_i * soc_t
+                cmat = cmat - im_i * soc_t
             end if
             
             ! Propagate wf coefficients.
-            call callode(odens, wf_t2%coeff, tt, edt, de_flag)
+            call callode(cmat, wf_t2%coeff, tt, edt)
             tt = tt + edt
 
             ! Determine hopping probabilities.
             call rng%uniform(rnum)
             cprob = 0.0_dp
-            hop: do st = 1, odens
+            hop: do st = 1, wf_t2%n_state
                 if (st == cstate) cycle
-                prob = - real(conjg(wf_t2%coeff(st)) * wf_t2%coeff(cstate) * odecmat(st, cstate))
+                prob = - real(conjg(wf_t2%coeff(st)) * wf_t2%coeff(cstate) * cmat(st, cstate))
                 prob = prob * 2 * edt / abs(wf_t2%coeff(cstate))**2
                 if (prob > 0.0_dp) then ! Not actual probability, can be negative.
                     cprob = cprob + prob
@@ -144,8 +144,6 @@ contains
         end do
 
         wf_t2%active_state = cstate
-
-        deallocate(odecmat)
     end subroutine sh_adiabatic
 
     function build_nadvec_matrix(need_nadv, states) result(nadvec)

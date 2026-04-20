@@ -28,6 +28,7 @@ program zaghop
     use file_mod, only : check_is_dir
     use hopping_mod
     use nuclear_dyn_mod
+    use vc_evaluator_mod, only : vc_evaluator
     implicit none
 
     logical :: check
@@ -80,6 +81,8 @@ program zaghop
         if (stdp1) write(stdout, '(a)') ' Running initial QM calculation: '
         if (stdp1) call stepclock%start()
         call run_qm(tr1, .false.)
+        tr1%wf%h_t1 = tr1%pot%get_Hamiltonian('adiabatic')
+        tr1%wf%u_t1 = tr1%pot%get_transformation('diabatic', 'adiabatic')
         if (stdp1) call stepclock%print(stdout, '  QM run time:')
         call tr1%writestep(ctrl%print, ctrl%print_units)
         call trajectory_next(ctrl%dt)
@@ -123,7 +126,7 @@ program zaghop
         !     end do
         ! end if
         if (stdp2) write(stdout, *) '  Running QM calculation.'
-        call run_qm(tr1, .false., tr2)
+        call run_qm(tr1, .false.)
 
         ! Get new velocity.
         call dyn_updatevelo(ctrl%dt, tr1%mass, tr1%geom, tr2%grad, tr1%grad, tr2%velo,        &
@@ -138,13 +141,13 @@ program zaghop
                 write(stdout, '(5x,a,i0)') 'Current state: ', tr1%wf%active_state
                 write(stdout, '(5x,a)') 'Running QM gradient calculation for new state.'
             end if
-            call run_qm(tr1, .true., tr2)
-            call sh_rescalevelo(ctrl%vrescale, ctrl%fhop, tr1%qind, tr2%wf%active_state, tr1%wf, &
-            &                   tr1%mass, tr1%velo)
-            !> @todo Move this to a more appropriate place.
-            do i = 1, tr1%qnatom
-                tr1%grad(:, tr1%qind(i)) = tr1%wf%qm_state(tr1%wf%active_state)%gradient(:, i)
-            end do
+            call run_qm(tr1, .true.)
+            call sh_rescalevelo(ctrl%vrescale, ctrl%fhop, tr1%qind, tr2%wf%active_state, tr1%pot, &
+            &                   tr1%mass, tr1%velo, tr1%wf%active_state)
+            select type(p => tr1%pot)
+            type is (vc_evaluator)
+                tr1%grad(:, tr1%qind) = p%get_gradient('adiabatic', tr1%wf%active_state)
+            end select
         end if
 
         ! Stop the program after max_time was reached. Add tinydp to time for precision.
@@ -168,7 +171,7 @@ program zaghop
 
         ! Stop the program at S0/S1 conical intersection.
         if (tr1%wf%n_state > 1) then
-            if (tr1%wf%en(2) - tr1%wf%en(1) < ctrl%stop_s0s1_ci) then
+            if (tr1%pot%get_energy(2) - tr1%pot%get_energy(1) < ctrl%stop_s0s1_ci) then
                 if (stdp1) write(stdout, *) '  Intersection with ground state.'
                 abort_flag = .true.
             end if

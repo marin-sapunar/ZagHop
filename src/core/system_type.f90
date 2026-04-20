@@ -11,6 +11,7 @@ module system_type_mod
     use global_defs
     use constants
     use mqc_wave_function_mod
+    use tdse_propagator_mod
     use vc_evaluator_mod
     use vc_model_mod
     implicit none
@@ -56,7 +57,8 @@ module system_type_mod
         ! QM system:
         integer :: qnatom = 0 !< Number of QM atoms.
         integer, allocatable :: qind(:) !< Indexes of the QM atoms in the full system.
-        type(mqc_wave_function) :: wf !< Wave function of the system.
+        class(potential_evaluator), allocatable :: pot
+        type(tdse_propagator) :: wf !< Wave function of the system.
 
         ! MM system:
         integer :: mnatom = 0 !< Number of MM atoms.
@@ -118,7 +120,7 @@ contains
     pure function traj_pote(t) result(pote)
         class(system_type), intent(in) :: t
         real(dp) :: pote
-        pote = t%wf%en(t%wf%active_state) + t%men(2) - t%men(1)
+        pote = t%pot%get_energy(t%wf%active_state) + t%men(2) - t%men(1)
     end function traj_pote
 
     pure function traj_kine(t) result(kine)
@@ -301,26 +303,39 @@ contains
         if (popt(6)) then
             open(newunit=punit(6), file=res_dir//'/cwf.dat', action='write', position='append')
         end if
-
+        
         if (popt(7)) then
-            open(newunit=punit(7), file=res_dir//'/overlap', action='write', position='append')
+            open(newunit=punit(7), file=res_dir//'/prob', action='write', position='append')
         end if
-
-        if (popt(8)) then
-            open(newunit=punit(8), file=res_dir//'/adt', action='write', position='append')
-        end if
-
-        if (popt(9)) then
-            open(newunit=punit(9), file=res_dir//'/prob', action='write', position='append')
-        end if
-
+        
         if (popt(10)) then
             open(newunit=punit(10), file=res_dir//'/oscill.dat', action='write', position='append')
         end if
 
-        if (popt(11)) then
-            open(newunit=punit(11), file=res_dir//'/qm_traj.xyz', action='write', position='append')
+        if (popt(20)) then
+            open(newunit=punit(20), file=res_dir//'/trans_ldiab', action='write', position='append')
         end if
+
+        if (popt(21)) then
+            open(newunit=punit(21), file=res_dir//'/trans_diab', action='write', position='append')
+        end if
+
+        if (popt(22)) then
+            open(newunit=punit(22), file=res_dir//'/trans_adiab', action='write', position='append')
+        end if
+
+        if (popt(30)) then
+            open(newunit=punit(30), file=res_dir//'/cstate_ldiab', action='write', position='append')
+        end if
+
+        if (popt(31)) then
+            open(newunit=punit(31), file=res_dir//'/cstate_diab', action='write', position='append')
+        end if
+
+        if (popt(32)) then
+            open(newunit=punit(32), file=res_dir//'/cstate_adiab', action='write', position='append')
+        end if
+
     end subroutine traj_open_files
 
 
@@ -337,12 +352,14 @@ contains
         integer, intent(in) :: punit(:) !< Units for output files.
         integer :: i
         real(dp) :: time_fs
+        real(dp), allocatable :: wrk(:, :)
+        real(dp), allocatable :: cstate(:)
 
         time_fs = t%time * aut_fs
         if (popt(1)) then
             write(punit(1), 1001, advance='no') time_fs, t%wf%active_state
             write(punit(1), 1002, advance='no') t%tote(), t%pote()
-            write(punit(1), 1002, advance='no') t%wf%en
+            write(punit(1), 1002, advance='no') t%pot%get_energy()
             write(punit(1), *)
 
             if (t%mnatom > 0) then
@@ -355,7 +372,7 @@ contains
 
         if (popt(2)) then
             write(punit(2), *) t%natom
-            write(punit(2), *) 't= ', time_fs, 'fs, state=', t%wf%active_state
+            write(punit(2), *) '# t= ', time_fs, 'fs, state=', t%wf%active_state
             do i = 1, t%natom
                 write(punit(2), 1003) t%sym(i), t%geom(:, i) * a0_A
             end do
@@ -384,35 +401,52 @@ contains
         end if
 
         if (popt(7)) then
-            write(punit(7), *) 't= ', time_fs, 'fs, state=', t%wf%active_state
+            write(punit(7), 1006) t%wf%prob
+        end if
+
+        if (popt(20) .and. t%step > 0) then
+            write(punit(20), *) '# t= ', time_fs, 'fs, state=', t%wf%active_state
+            wrk = t%pot%get_transformation('locally_diabatic', 'adiabatic')
             do i = 1, t%wf%n_state
-                write(punit(7), 1006) t%wf%overlap(i, :)
+                write(punit(20), 1006) wrk(:, i)
             end do
         end if
 
-        if (popt(8)) then
-           write(punit(8), *) 't= ', time_fs, 'fs, state=', t%wf%active_state
+        if (popt(21)) then
+           write(punit(21), *) '# t= ', time_fs, 'fs, state=', t%wf%active_state
+           wrk = t%pot%get_transformation('diabatic', 'adiabatic')
            do i = 1, t%wf%n_state
-               write(punit(8), 1006) t%wf%adt(i, :)
+               write(punit(21), 1006) wrk(:, i)
            end do
        end if
 
-        if (popt(9)) then
-            write(punit(9), 1006) t%wf%prob
+        if (popt(22)) then
+            write(punit(22), *) '# t= ', time_fs, 'fs, state=', t%wf%active_state
+            wrk = t%pot%get_transformation('adiabatic', 'adiabatic')
+            do i = 1, t%wf%n_state
+                write(punit(22), 1006) wrk(:, i)
+            end do
         end if
+
+        if (popt(30) .and. t%step > 0) then
+            wrk = t%pot%get_transformation('locally_diabatic', 'adiabatic')
+            write(punit(30), 1006) wrk(:, t%wf%active_state)
+        end if
+
+        if (popt(31)) then
+            wrk = t%pot%get_transformation('diabatic', 'adiabatic')
+            write(punit(31), 1006) wrk(:, t%wf%active_state)
+        end if
+
+        if (popt(32)) then
+            wrk = t%pot%get_transformation('adiabatic', 'adiabatic')
+            write(punit(32), 1006) wrk(:, t%wf%active_state, :)
+        end if
+
 
     !    if (popt(10)) then
     !        write(punit(10), 1006) t%qo
     !    end if
-
-        if (popt(11)) then
-            write(punit(11), *) t%qnatom
-            write(punit(11), *) 't= ', time_fs, 'fs, state=', t%wf%active_state
-            do i = 1, t%qnatom
-                write(punit(11), 1003) t%sym(t%qind(i)), t%geom(:, t%qind(i)) * a0_A
-            end do
-        end if
-
 
 1001 format (f12.5,1x,i4)
 1002 format (1x,1000f18.10)

@@ -47,7 +47,7 @@ module control_var
         !------------------------------------------------------------------------------------------
         ! Program flow control.
         !------------------------------------------------------------------------------------------
-        class(rng_type), allocatable :: rng !< Random number generator to use. Using a custom RNG
+        class(rng_type), pointer :: rng !< Random number generator to use. Using a custom RNG
         !! to ensure the results are reproducible since the Fortran `random_number` subroutine is
         !! compiler dependent.
         logical :: restart = .false. !< Restart from backup of previous run.
@@ -156,8 +156,6 @@ module control_var
         !! - 1 - Remove states higher than cstate + 1 and min_nstate when the absolute value of
         !!       their coefficient in the total electronic wave functions drops below 0.01.
         logical :: oscill !< Signal to read oscillator strengths from the QM calculation.
-        
-
 
     end type control
 

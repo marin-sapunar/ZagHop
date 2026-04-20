@@ -46,7 +46,6 @@ contains
         allocate(self%diab_dw(self%model%nmode, self%n_state, self%n_state))
         allocate(self%adiab_w(self%n_state, self%n_state))
         allocate(self%adiab_dw(self%model%nmode, self%n_state, self%n_state))
-        allocate(self%adiab_trans(self%n_state, self%n_state))
         allocate(self%group_adiab_w(self%n_state, self%n_state))
         allocate(self%group_adiab_dw(self%model%nmode, self%n_state, self%n_state))
         allocate(self%group_adiab_trans(self%n_state, self%n_state))
@@ -55,7 +54,7 @@ contains
 
 
     subroutine vc_update_geometry(self, geometry)
-        class(vc_evaluator) :: self
+        class(vc_evaluator), intent(inout) :: self
         real(dp), intent(in) :: geometry(:, :)
 
         if (size(geometry, 1) /= 1) then
@@ -65,19 +64,16 @@ contains
         end if
 
         self%q = geometry(1, :)
+        if (allocated(self%adiab_trans)) self%ldiab_trans = self%adiab_trans
     end subroutine vc_update_geometry
 
 
-    subroutine vc_eval(self, previous)
+    subroutine vc_eval(self)
         use linalg_wrapper_mod, only : syev
         use matrix_mod, only : block_diagonal_mat
-        class(vc_evaluator) :: self
-        real(dp), intent(in), optional :: previous(:, :)
+        class(vc_evaluator), intent(inout) :: self
         type(rmat) :: w_block(3)
         integer :: i, imode
-        real(dp), allocatable :: wrk_mat(:, :)
-        integer, allocatable :: phase(:)
-        real(dp), allocatable :: eigvec_olap(:, :)
 
         if (.not. associated(self%model)) then
             write(stderr, *) 'Error in vc_evaluator_mod, eval subroutine.'
@@ -106,9 +102,8 @@ contains
             self%diab_dw(imode, :, :) = block_diagonal_mat(w_block, [1, 2, 3])
         end do
         
-        if (present(previous)) then
-            call match_phase(previous, self%adiab_trans)
-          !  call match_phase(previous%group_adiab_trans, self%group_adiab_trans)
+        if (allocated(self%ldiab_trans)) then
+            call match_phase(self%ldiab_trans, self%adiab_trans)
         end if
 
         self%adiab_w = self%diab_w
@@ -186,9 +181,8 @@ contains
         character(len=*), intent(in) :: basis
         integer, intent(in) :: istate
         real(dp), allocatable :: oscill(:)
-        integer :: i, jstate
+        integer :: jstate
         real(dp), allocatable :: edif(:)
-        real(dp) :: mu2
         real(dp), allocatable :: dm_bas(:, :, :)
 
         allocate(oscill(self%model%tot_ns), source=0.0_dp)
@@ -216,7 +210,7 @@ contains
             stop
         end select
 
-        oscill = 2.0_dp / 3.0_dp * edif * sum(dm_bas(:, istate, :)**2, dim=2)
+        oscill = 2.0_dp / 3.0_dp * edif * sum(dm_bas(:, istate, :)**2, dim=1)
     end function vc_get_oscill
 
 

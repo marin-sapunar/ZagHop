@@ -7,7 +7,7 @@
 module nuclear_dyn_mod
     ! Import variables
     use global_defs
-    use matrix_mod, only : diagonal_mat
+    use matrix_mod, only : diag
     implicit none
 
     private
@@ -42,7 +42,7 @@ contains
 
         if (stdp3) write(stdout, *) '  Updating geometry using velocity Verlet algorithm.'
 
-        masi = diagonal_mat(1.0_dp / mass)
+        masi = diag(1.0_dp / mass)
         q = velo - dt * matmul(grad, masi) * 0.5_dp
         if (allocated(ctrl%cns)) call rattle_geom(ctrl%cns, dt, geo1, masi, q)
         geo2 = geo1 + dt * q
@@ -78,7 +78,7 @@ contains
 
         if (stdp3) write(stdout, *) '  Updating velocity using velocity Verlet algorithm.'
 
-        masi = diagonal_mat(1.0_dp / mass)
+        masi = diag(1.0_dp / mass)
         vel2 = vel1 - dt * matmul(grd1 + grd2, masi) * 0.5_dp
         if (ctrl%thermostat == 1) then
             call berendsen_thermostat(ctrl%target_t, ctrl%tau_t, dt, mass, vel2)

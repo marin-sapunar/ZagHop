@@ -1,11 +1,11 @@
 module evaluator_diabatic_mod
+    use global_defs
     use evaluator_base_mod
     implicit none
 
 
     type, abstract, extends(potential_evaluator) :: diabatic_evaluator
         integer :: n_group = 1
-        integer :: n_state = 0
         integer, allocatable :: group_nstate(:)
         integer, allocatable :: group_i0(:)
         real(dp), allocatable :: diab_w(:, :)
@@ -16,17 +16,117 @@ module evaluator_diabatic_mod
         real(dp), allocatable :: group_adiab_w(:, :)
         real(dp), allocatable :: group_adiab_dw(:, :, :)
         real(dp), allocatable :: group_adiab_trans(:, :)
+        real(dp), allocatable :: ldiab_trans(:, :)
     contains
         procedure :: change_basis => change_basis_mat
         procedure :: eval_eigvec => eval_eigvec
+        procedure :: get_Hamiltonian => get_Hamiltonian
+        procedure :: get_transformation => get_transformation
+        procedure :: get_energy_single => get_energy_single
+        procedure :: get_energy_all => get_energy_all
+        procedure :: get_gradient => get_gradient
     end type diabatic_evaluator
 
 
 contains
 
+    function get_Hamiltonian(self, basis) result(H)
+        class(diabatic_evaluator), intent(in) :: self
+        character(len=*), intent(in) :: basis
+        real(dp), allocatable :: H(:, :)
+
+        select case(basis)
+        case('diabatic')
+            H = self%diab_w
+        case('adiabatic')
+            H = self%adiab_w
+        case('group_adiabatic')
+            H = self%group_adiab_w
+        case default
+            write(stderr, *) 'Error in evaluator_diabatic_mod, get_Hamiltonian function.'
+            write(stderr, *) '  Unknown basis: ', basis
+            stop
+        end select
+    end function get_Hamiltonian
+
+
+    function get_transformation(self, from_basis, to_basis) result(trans)
+        use matrix_mod, only : unit_mat
+        class(diabatic_evaluator), intent(in) :: self
+        character(len=*), intent(in) :: from_basis, to_basis
+        real(dp), allocatable :: trans(:, :)
+
+        if (from_basis == to_basis) then
+            trans = unit_mat(self%n_state)
+            return
+        end if
+
+        select case(from_basis)
+        case('diabatic')
+            trans = unit_mat(self%n_state)
+        case('adiabatic')
+            trans = transpose(self%adiab_trans)
+        case('group_adiabatic')
+            trans = transpose(self%group_adiab_trans)
+        case('locally_diabatic')
+            trans = transpose(self%ldiab_trans)
+        end select
+
+        select case(to_basis)
+        case('diabatic')
+            ! No change of basis needed for diabatic representation
+        case('adiabatic')
+            trans = matmul(trans, self%adiab_trans)
+        case('group_adiabatic')
+            trans = matmul(trans, self%group_adiab_trans)
+        case('locally_diabatic')
+            trans = matmul(trans, self%ldiab_trans)
+        end select
+    end function get_transformation
+
+
+    function get_gradient(self, basis, istate) result(grad)
+        class(diabatic_evaluator), intent(in) :: self
+        character(len=*), intent(in) :: basis
+        integer, intent(in) :: istate
+        real(dp), allocatable :: grad(:, :)
+
+        allocate(grad(1, size(self%diab_dw, 1)))
+
+        select case(basis)
+        case('diabatic')
+            grad(1, :) = self%diab_dw(:, istate, istate)
+        case('adiabatic')
+            grad(1, :) = self%adiab_dw(:, istate, istate)
+        case('group_adiabatic')
+            grad(1, :) = self%group_adiab_dw(:, istate, istate)
+        case default
+            write(stderr, *) 'Error in evaluator_diabatic_mod, get_gradient function.'
+            write(stderr, *) '  Unknown basis: ', basis
+            stop
+        end select
+    end function get_gradient
+
+
+    pure function get_energy_single(self, state) result(energy)
+        class(diabatic_evaluator), intent(in) :: self
+        integer, intent(in) :: state
+        real(dp) :: energy
+
+        energy = self%adiab_w(state, state)
+    end function get_energy_single
+
+    pure function get_energy_all(self) result(energy)
+        use matrix_mod, only : diag
+        class(diabatic_evaluator), intent(in) :: self
+        real(dp), allocatable :: energy(:)
+
+        energy = diag(self%adiab_w)
+    end function get_energy_all
+
 
     subroutine eval_eigvec(self, basis)
-        class(diabatic_evaluator) :: self
+        class(diabatic_evaluator), intent(inout) :: self
         character(len=*), intent(in) :: basis
         integer :: i, i0, ns
 
@@ -97,6 +197,7 @@ contains
 
 
     subroutine change_basis_mat(self, basis, mat)
+        use matrix_mod, only : unitary_transform
         class(diabatic_evaluator) :: self
         character(len=*), intent(in) :: basis
         real(dp), intent(inout) :: mat(:, :)
@@ -105,11 +206,11 @@ contains
         case('diabatic')
             ! No change of basis needed for diabatic representation
         case('adiabatic')
-            mat = matmul(transpose(self%adiab_trans), mat)
-            mat = matmul(mat, self%adiab_trans)
+            call unitary_transform(self%adiab_trans, mat, trans=.true.)
         case('group_adiabatic')
-            mat = matmul(transpose(self%group_adiab_trans), mat)
-            mat = matmul(mat, self%group_adiab_trans)
+            call unitary_transform(self%group_adiab_trans, mat, trans=.true.)
+        case('locally_diabatic')
+            call unitary_transform(self%ldiab_trans, mat, trans=.true.)
         case default
             write(stderr, *) 'Error in evaluator_diabatic_mod, change_basis_mat subroutine.'
             write(stderr, *) '  Unknown basis: ', basis

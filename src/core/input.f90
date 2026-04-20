@@ -18,6 +18,8 @@ module input_mod
     use string_mod
     use file_mod, only : reader
     use constants
+    use vc_evaluator_mod, only : vc_evaluator
+    use evaluator_base_mod, only : potential_evaluator
 
     implicit none
 
@@ -266,8 +268,8 @@ contains
 
         ! Allocate all arrays of size tr1%wf%n_state.
         if (.not. ctrl%restart) then
-            tr1%wf%need_gradient = .false.
-            tr1%wf%need_gradient(tr1%wf%active_state) = .true.
+            ! tr1%wf%need_gradient = .false.
+            ! tr1%wf%need_gradient(tr1%wf%active_state) = .true.
         !    if (ctrl%oscill) allocate(tr1%qo(tr1%max_nstate - 1))
             select case(ctrl%sh)
             case(1)
@@ -276,31 +278,31 @@ contains
                 tr1%wf%coeff(tr1%wf%active_state) = cmplx((1.0_dp, 0.0_dp), kind = dp)
                 select case (ctrl%tdc_type)
                 case('hst', 'npi')
-                    allocate(tr1%wf%overlap(tr1%wf%n_state, tr1%wf%n_state))
+                    ! allocate(tr1%wf%overlap(tr1%wf%n_state, tr1%wf%n_state))
                 case('nadvec')
-                    do i = 1, tr1%wf%n_state
-                        do j = 1, tr1%wf%n_state
-                            if (i == j) cycle
-                            if (tr1%wf%qm_state(i)%spin2 /= tr1%wf%qm_state(j)%spin2) cycle
-                            if (tr1%wf%qm_state(i)%ms2 /= tr1%wf%qm_state(j)%ms2) cycle
-                            tr1%wf%need_nadv(i, j) = .true.
-                        end do
-                    end do
+                    ! do i = 1, tr1%wf%n_state
+                    !     do j = 1, tr1%wf%n_state
+                    !         if (i == j) cycle
+                    !         if (tr1%wf%qm_state(i)%spin2 /= tr1%wf%qm_state(j)%spin2) cycle
+                    !         if (tr1%wf%qm_state(i)%ms2 /= tr1%wf%qm_state(j)%ms2) cycle
+                    !         tr1%wf%need_nadv(i, j) = .true.
+                    !     end do
+                    ! end do
                 end select
                 if (ctrl%soc) then
-                    do i = 1, tr1%wf%n_state
-                        allocate(tr1%wf%qm_state(i)%soc(tr1%wf%n_state), source=0.0_dp)
-                        do j = 1, tr1%wf%n_state
-                            if (i == j) cycle
-                            if ((tr1%wf%qm_state(i)%spin2 == tr1%wf%qm_state(j)%spin2) .and. &
-                               (tr1%wf%qm_state(i)%ms2 == tr1%wf%qm_state(j)%ms2)) cycle
-                            tr1%wf%need_soc(i, j) = .true.
-                        end do
-                    end do
+                    ! do i = 1, tr1%wf%n_state
+                    !     allocate(tr1%wf%qm_state(i)%soc(tr1%wf%n_state), source=0.0_dp)
+                    !     do j = 1, tr1%wf%n_state
+                    !         if (i == j) cycle
+                    !         if ((tr1%wf%qm_state(i)%spin2 == tr1%wf%qm_state(j)%spin2) .and. &
+                    !            (tr1%wf%qm_state(i)%ms2 == tr1%wf%qm_state(j)%ms2)) cycle
+                    !         tr1%wf%need_soc(i, j) = .true.
+                    !     end do
+                    ! end do
                 end if
-                if (ctrl%print(8) .and. (.not. allocated(tr1%wf%adt))) then
-                    allocate(tr1%wf%adt(tr1%wf%n_state, tr1%wf%n_state), source=0.0_dp)
-                end if
+                ! if (ctrl%print(8) .and. (.not. allocated(tr1%wf%adt))) then
+                !     allocate(tr1%wf%adt(tr1%wf%n_state, tr1%wf%n_state), source=0.0_dp)
+                ! end if
             end select
         end if
 
@@ -585,7 +587,11 @@ contains
                     ctrl%qlib = 3
                     if (readf%narg > 2) ctrl%vc_template = readf%args(3)%s
                     call vc_data%init(ctrl%vc_template)
-                    call vc_potential%initialize(vc_data)
+                    allocate(vc_evaluator :: tr1%pot)
+                    select type(p => tr1%pot)
+                    type is (vc_evaluator)
+                        call p%initialize(vc_data)
+                    end select
                 case default
                     write(stderr, *) 'Error in Input module, read_method subroutine.'
                     write(stderr, *) '  Unrecognized qlib keyword: ', readf%args(2)%s
@@ -699,7 +705,7 @@ contains
             end select
         end do
 
-        call tr1%wf%initialize(nstate, multiplicity, tr1%wf%active_state)
+        call tr1%wf%initialize(ctrl%rng, tr1%pot%n_state)
 
     end subroutine read_system
 
@@ -1101,7 +1107,7 @@ contains
     !----------------------------------------------------------------------------------------------
     subroutine maxwell_boltzmann_velo(rng, mass, temperature, veloc)
         use random_mod, only : rng_type
-        class(rng_type), allocatable, intent(in) :: rng
+        class(rng_type), pointer, intent(in) :: rng
         real(dp), intent(in) :: mass(:)
         real(dp), intent(in) :: temperature
         real(dp), intent(out) :: veloc(:, :)

@@ -26,7 +26,7 @@ contains
     !! Propagates electronic wave function coefficients and determines hops for the SH method.
     !----------------------------------------------------------------------------------------------
     subroutine sh_diabatic(t1, t2, wf_t1, wf_t2, rng)
-        use matrix_mod, only : diagonal_mat, &
+        use matrix_mod, only : diag, &
                                mat_sy_exp
         use orthog_mod, only : orthog_lowdin
         use linalg_wrapper_mod, only : gemm, gemv
@@ -59,9 +59,9 @@ contains
         call orthog_lowdin(t)
 
         ! Generate Z matrix. (Approx. Hamiltonian at half step.)
-        call gemm(t, diagonal_mat(wf_t2%en), w1)
+        call gemm(t, diag(wf_t2%en), w1)
         call gemm(w1, t, w2, transb='T') ! H(t+dt/2) = T.E(t+dt).Tt
-        w2 = (diagonal_mat(wf_t1%en) + w2) * 0.5_dp ! Z = (E(0) + H(t+dt))/2
+        w2 = (diag(wf_t1%en) + w2) * 0.5_dp ! Z = (E(0) + H(t+dt))/2
 
         ! Generate U matrix. (Transformation matrix.)
         w3 = mat_sy_exp(w2, cmplx(0.0_dp, t1-t2, kind=dp)) ! exp(-i * Z * dt)

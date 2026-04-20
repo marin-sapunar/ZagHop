@@ -42,200 +42,200 @@ contains
         logical :: gap_min_before_bisect
         logical :: check_hop
 
-        if (tr1%step < 2) return
-        ! Prevent re-checking at the same gap minimum if the trajectory was rewound
-        ! due to a hop which was rejected due to energy conservation.
-        if (tr1%substep == -2) then
-            tr1%substep = -1
-            i = trajectory_data(index_offset(data_index_1, -2))%wf%active_state
-            if (tr2%wf%active_state == i) return
-        end if
+!         if (tr1%step < 2) return
+!         ! Prevent re-checking at the same gap minimum if the trajectory was rewound
+!         ! due to a hop which was rejected due to energy conservation.
+!         if (tr1%substep == -2) then
+!             tr1%substep = -1
+!             i = trajectory_data(index_offset(data_index_1, -2))%wf%active_state
+!             if (tr2%wf%active_state == i) return
+!         end if
 
-        gap_min_before_bisect = .true.
-        allocate(check(tr1%wf%n_state))
+!         gap_min_before_bisect = .true.
+!         allocate(check(tr1%wf%n_state))
 
-        select case(tr1%substep)
-        case(-1)
-            t0 => trajectory_data(index_offset(data_index_1, -2))
-            t1 => trajectory_data(data_index_2)
-            t2 => trajectory_data(data_index_1)
-        case(1)
-            ! Now in step 0.5 (between steps 0 and 1 from previous call).
-            ! First checking for gap between steps 0, 0.5 and 1.
-            t0 => trajectory_data(data_index_2)
-            t1 => trajectory_data(data_index_1)
-            t2 => trajectory_data(index_offset(data_index_1, 1))
-            cstate = t1%wf%active_state
-            check = check_gap(t0%wf%active_state, cstate, t0%wf%en, t1%wf%en, t2%wf%en)
-            if (.not. any(check)) then
-                ! Now checking for gap between steps 0.5, 1 and 2.
-                t_wrk => trajectory_data(data_index_2)
-                t0 => trajectory_data(data_index_1)
-                t1 => trajectory_data(index_offset(data_index_1, 1))
-                t2 => trajectory_data(index_offset(data_index_1, 2))
-                gap_min_before_bisect = .false.
-            end if
-        case(2)
-            ! Now in step 1.5 (between steps 1 and 2 from previous call).
-            ! First checking for gap between steps 0, 1 and 1.5.
-            t0 => trajectory_data(index_offset(data_index_1, -2))
-            t1 => trajectory_data(data_index_2)
-            t2 => trajectory_data(data_index_1)
-            cstate = t1%wf%active_state
-            check = check_gap(t0%wf%active_state, cstate, t0%wf%en, t1%wf%en, t2%wf%en)
-            if (.not. any(check)) then
-                ! Now checking for gap between steps 1, 1.5 and 2.
-                t_wrk => trajectory_data(index_offset(data_index_1, -2))
-                t0 => trajectory_data(data_index_2)
-                t1 => trajectory_data(data_index_1)
-                t2 => trajectory_data(index_offset(data_index_1, 1))
-                gap_min_before_bisect = .false.
-            end if
-        end select
+!         select case(tr1%substep)
+!         case(-1)
+!             t0 => trajectory_data(index_offset(data_index_1, -2))
+!             t1 => trajectory_data(data_index_2)
+!             t2 => trajectory_data(data_index_1)
+!         case(1)
+!             ! Now in step 0.5 (between steps 0 and 1 from previous call).
+!             ! First checking for gap between steps 0, 0.5 and 1.
+!             t0 => trajectory_data(data_index_2)
+!             t1 => trajectory_data(data_index_1)
+!             t2 => trajectory_data(index_offset(data_index_1, 1))
+!             cstate = t1%wf%active_state
+!             check = check_gap(t0%wf%active_state, cstate, t0%wf%en, t1%wf%en, t2%wf%en)
+!             if (.not. any(check)) then
+!                 ! Now checking for gap between steps 0.5, 1 and 2.
+!                 t_wrk => trajectory_data(data_index_2)
+!                 t0 => trajectory_data(data_index_1)
+!                 t1 => trajectory_data(index_offset(data_index_1, 1))
+!                 t2 => trajectory_data(index_offset(data_index_1, 2))
+!                 gap_min_before_bisect = .false.
+!             end if
+!         case(2)
+!             ! Now in step 1.5 (between steps 1 and 2 from previous call).
+!             ! First checking for gap between steps 0, 1 and 1.5.
+!             t0 => trajectory_data(index_offset(data_index_1, -2))
+!             t1 => trajectory_data(data_index_2)
+!             t2 => trajectory_data(data_index_1)
+!             cstate = t1%wf%active_state
+!             check = check_gap(t0%wf%active_state, cstate, t0%wf%en, t1%wf%en, t2%wf%en)
+!             if (.not. any(check)) then
+!                 ! Now checking for gap between steps 1, 1.5 and 2.
+!                 t_wrk => trajectory_data(index_offset(data_index_1, -2))
+!                 t0 => trajectory_data(data_index_2)
+!                 t1 => trajectory_data(data_index_1)
+!                 t2 => trajectory_data(index_offset(data_index_1, 1))
+!                 gap_min_before_bisect = .false.
+!             end if
+!         end select
 
-        cstate = t1%wf%active_state
+!         cstate = t1%wf%active_state
 
-        check = check_gap(t0%wf%active_state, cstate, t0%wf%en, t1%wf%en, t2%wf%en)
-        if ((tr1%substep > 0) .and. (.not. any(check))) then
-            write(stderr, *) 'Warning. Gap minimum not found after adding an extra time step.'
-            write(stderr, '(999(e24.16, 1x))') t_wrk%time, t_wrk%wf%en
-            write(stderr, '(999(e24.16, 1x))') t0%time, t0%wf%en
-            write(stderr, '(999(e24.16, 1x))') t1%time, t1%wf%en
-            write(stderr, '(999(e24.16, 1x))') t2%time, t2%wf%en
-        end if
+!         check = check_gap(t0%wf%active_state, cstate, t0%wf%en, t1%wf%en, t2%wf%en)
+!         if ((tr1%substep > 0) .and. (.not. any(check))) then
+!             write(stderr, *) 'Warning. Gap minimum not found after adding an extra time step.'
+!             write(stderr, '(999(e24.16, 1x))') t_wrk%time, t_wrk%wf%en
+!             write(stderr, '(999(e24.16, 1x))') t0%time, t0%wf%en
+!             write(stderr, '(999(e24.16, 1x))') t1%time, t1%wf%en
+!             write(stderr, '(999(e24.16, 1x))') t2%time, t2%wf%en
+!         end if
 
-        if (.not. any(check)) return
+!         if (.not. any(check)) return
 
-500     need_bisect = .false.
+! 500     need_bisect = .false.
 
-        t1%wf%prob = 0.0_dp
-        ! Evaluate hopping probability and decide whether the time step should be reduced
-        do i = 1, t1%wf%n_state
-            if (.not. check(i)) cycle
-            g0 = t0%wf%en(cstate) - t0%wf%en(i)
-            g1 = t1%wf%en(cstate) - t1%wf%en(i)
-            g2 = t2%wf%en(cstate) - t2%wf%en(i)
-            gap_err = abs((g0 - 2*g1 + g2) / 2)
-            if ((t1%gap_2deriv(2, i) == 0.0_dp) .or. (gap_err > 20 * qm_en_err)) then
-                ! Calculate 2nd derivative of the gap if it hasn't already been calculated
-                ! for this pair of states at this gap minimum.
-                ! Also re-calculate the 2nd derivative of the gap if the energies of the states
-                ! have changed significantly enough with respect to the convergence threshold
-                ! for the energy.
-                gap_sd = sec_deriv_3p_err(t0%time, t1%time, t2%time, g0, g1, g2, qm_en_err)
-                t1%gap_2deriv(:, i) = gap_sd
-            else
-                ! Otherwise, keep previously calculated 2nd derivative since the random errors
-                ! in the energies due to the convergence threshold might cause larger errors
-                ! in the calculated second derivative.
-                continue
-            end if
-            call lz_prob_err_gap(g1, t1%gap_2deriv(2, i), gap_err, qm_en_err, prob)
-            t1%wf%prob(i) = prob(2)
-            if (stdp3) then
-                write(stdout, '(3x,a)') 'LZSH probability estimates:'
-                write(stdout, '(5x,a,e15.7)') 'Pmin = ', prob(1)
-                write(stdout, '(5x,a,e15.7)') 'P = ', prob(2)
-                write(stdout, '(5x,a,e15.7)') 'Pmax = ', prob(3)
-            end if
-            if (prob(3) - prob(1) > prob_conv) then
-                if (min_dt >= dt) then
-                    if (stdp3) write(stdout, '(3x,a)') 'LZSH not bisecting due to time step.'
-                    cycle
-                end if
-                if (gap_err < 2 * qm_en_err) then
-                    if (stdp3) write(stdout, '(3x,a)') 'LZSH not bisecting due to qm_en_err.'
-                    cycle
-                end if
-                need_bisect = .true.
-                ! Not returning from the subroutine right away so we can also calculate the
-                ! second derivative of the gap between the current state and another state if
-                ! needed.
-            end if
-        !   call lz_prob_err_both(g1, gap_sd, gap_err, qm_en_err, prob)
-        end do
+!         t1%wf%prob = 0.0_dp
+!         ! Evaluate hopping probability and decide whether the time step should be reduced
+!         do i = 1, t1%wf%n_state
+!             if (.not. check(i)) cycle
+!             g0 = t0%wf%en(cstate) - t0%wf%en(i)
+!             g1 = t1%wf%en(cstate) - t1%wf%en(i)
+!             g2 = t2%wf%en(cstate) - t2%wf%en(i)
+!             gap_err = abs((g0 - 2*g1 + g2) / 2)
+!             if ((t1%gap_2deriv(2, i) == 0.0_dp) .or. (gap_err > 20 * qm_en_err)) then
+!                 ! Calculate 2nd derivative of the gap if it hasn't already been calculated
+!                 ! for this pair of states at this gap minimum.
+!                 ! Also re-calculate the 2nd derivative of the gap if the energies of the states
+!                 ! have changed significantly enough with respect to the convergence threshold
+!                 ! for the energy.
+!                 gap_sd = sec_deriv_3p_err(t0%time, t1%time, t2%time, g0, g1, g2, qm_en_err)
+!                 t1%gap_2deriv(:, i) = gap_sd
+!             else
+!                 ! Otherwise, keep previously calculated 2nd derivative since the random errors
+!                 ! in the energies due to the convergence threshold might cause larger errors
+!                 ! in the calculated second derivative.
+!                 continue
+!             end if
+!             call lz_prob_err_gap(g1, t1%gap_2deriv(2, i), gap_err, qm_en_err, prob)
+!             t1%wf%prob(i) = prob(2)
+!             if (stdp3) then
+!                 write(stdout, '(3x,a)') 'LZSH probability estimates:'
+!                 write(stdout, '(5x,a,e15.7)') 'Pmin = ', prob(1)
+!                 write(stdout, '(5x,a,e15.7)') 'P = ', prob(2)
+!                 write(stdout, '(5x,a,e15.7)') 'Pmax = ', prob(3)
+!             end if
+!             if (prob(3) - prob(1) > prob_conv) then
+!                 if (min_dt >= dt) then
+!                     if (stdp3) write(stdout, '(3x,a)') 'LZSH not bisecting due to time step.'
+!                     cycle
+!                 end if
+!                 if (gap_err < 2 * qm_en_err) then
+!                     if (stdp3) write(stdout, '(3x,a)') 'LZSH not bisecting due to qm_en_err.'
+!                     cycle
+!                 end if
+!                 need_bisect = .true.
+!                 ! Not returning from the subroutine right away so we can also calculate the
+!                 ! second derivative of the gap between the current state and another state if
+!                 ! needed.
+!             end if
+!         !   call lz_prob_err_both(g1, gap_sd, gap_err, qm_en_err, prob)
+!         end do
 
-        if (need_bisect) then
-            if (1.5*(t1%time - t0%time) > (t2%time - t1%time)) then
-                ! Set t0 as the current step and slide t1 and t2 forward in the array
-                ! so they don't get overwritten by the extra step.
-                dt = 0.5_dp * (t1%time - t0%time)
-                call trajectory_slide_forward(t0%step, 2, .true.)
-                tr1%substep = 1
-                tr1%step = maxval(trajectory_data(:)%step) + 1
-            else
-                ! Set t1 as the current step and slide t2 forward in the array
-                ! so it doesn't get overwritten by the extra step.
-                dt = 0.5_dp * (t2%time - t1%time)
-                call trajectory_slide_forward(t1%step, 1, .true.)
-                tr1%substep = 2
-                tr1%step = maxval(trajectory_data(:)%step) + 1
-            end if
-            if (stdp1) then
-                write(stdout, '(3x,a, i0)') 'Adding new substep: ', tr1%substep
-                write(stdout, '(5x,a,f10.4)') 't=', (tr1%time + dt) * aut_fs
-            end if
-            return
-        end if
+!         if (need_bisect) then
+!             if (1.5*(t1%time - t0%time) > (t2%time - t1%time)) then
+!                 ! Set t0 as the current step and slide t1 and t2 forward in the array
+!                 ! so they don't get overwritten by the extra step.
+!                 dt = 0.5_dp * (t1%time - t0%time)
+!                 call trajectory_slide_forward(t0%step, 2, .true.)
+!                 tr1%substep = 1
+!                 tr1%step = maxval(trajectory_data(:)%step) + 1
+!             else
+!                 ! Set t1 as the current step and slide t2 forward in the array
+!                 ! so it doesn't get overwritten by the extra step.
+!                 dt = 0.5_dp * (t2%time - t1%time)
+!                 call trajectory_slide_forward(t1%step, 1, .true.)
+!                 tr1%substep = 2
+!                 tr1%step = maxval(trajectory_data(:)%step) + 1
+!             end if
+!             if (stdp1) then
+!                 write(stdout, '(3x,a, i0)') 'Adding new substep: ', tr1%substep
+!                 write(stdout, '(5x,a,f10.4)') 't=', (tr1%time + dt) * aut_fs
+!             end if
+!             return
+!         end if
 
-        ! Check if a hop should occur.
-        if (sum(t1%wf%prob) > 1.0_dp) then
-            write(stderr, *) ' Warning. Sum of hopping probabilities for all states higher than 1.'
-            write(stderr, *) '   time:', t1%time
-            write(stderr, *) '   cstate:', t1%wf%active_state
-            write(stderr, *) '   fprob:', t1%wf%prob
-        end if
-        check_hop = .false.
-        prob(2) = 0.0_dp
-        call rng%uniform(rnum)
-        do i = 1, size(t1%wf%prob)
-            prob(2) = prob(2) + t1%wf%prob(i)
-            if (rnum < prob(2)) then
-                check_hop = .true.
-                t1%wf%active_state = i
-                exit
-            end if
-        end do
+!         ! Check if a hop should occur.
+!         if (sum(t1%wf%prob) > 1.0_dp) then
+!             write(stderr, *) ' Warning. Sum of hopping probabilities for all states higher than 1.'
+!             write(stderr, *) '   time:', t1%time
+!             write(stderr, *) '   cstate:', t1%wf%active_state
+!             write(stderr, *) '   fprob:', t1%wf%prob
+!         end if
+!         check_hop = .false.
+!         prob(2) = 0.0_dp
+!         call rng%uniform(rnum)
+!         do i = 1, size(t1%wf%prob)
+!             prob(2) = prob(2) + t1%wf%prob(i)
+!             if (rnum < prob(2)) then
+!                 check_hop = .true.
+!                 t1%wf%active_state = i
+!                 exit
+!             end if
+!         end do
 
-        if (check_hop) then
-            if (stdp1) then
-                write(stdout, '(3x,a,f0.4,a)') 'Hop occurred, resuming trajectory from t=', &
-                &                               t1%time * aut_fs, '.'
-            end if
-            call trajectory_set_current(t1%step)
-            tr1%substep = -2
-        else
-            if (stdp2) write(stdout, '(3x,a)') 'Hop probability evaluated, no hop.'
-            if (tr1%substep > 0) then
-                if (gap_min_before_bisect) then
-                    if (tr1%substep == 1) then
-                        t0 => trajectory_data(data_index_1)
-                        t1 => trajectory_data(index_offset(data_index_1, 1))
-                        t2 => trajectory_data(index_offset(data_index_1, 2))
-                    else if (tr1%substep == 2) then
-                        t0 => trajectory_data(data_index_2)
-                        t1 => trajectory_data(data_index_1)
-                        t2 => trajectory_data(index_offset(data_index_1, 1))
-                    end if
-                    cstate = t1%wf%active_state
-                    check = check_gap(t0%wf%active_state, cstate, t0%wf%en, t1%wf%en, t2%wf%en)
-                    if (any(check)) then
-                        if (stdp2) write(stdout, '(3x,a)') ' Extra gap minimum in same step.'
-                        if (stdp2) write(stdout, '(3x,a)') ' Running LZSH procedure for new steps.'
-                        goto 500
-                    end if
-                end if
-            end if
-            if (stdp1) then
-                write(stdout, '(3x,a,f0.4,a)') 'Resuming trajectory from t=', t2%time * aut_fs, '.'
-            end if
-            call trajectory_set_current(t2%step)
-            tr1%substep = -1
-        end if
+!         if (check_hop) then
+!             if (stdp1) then
+!                 write(stdout, '(3x,a,f0.4,a)') 'Hop occurred, resuming trajectory from t=', &
+!                 &                               t1%time * aut_fs, '.'
+!             end if
+!             call trajectory_set_current(t1%step)
+!             tr1%substep = -2
+!         else
+!             if (stdp2) write(stdout, '(3x,a)') 'Hop probability evaluated, no hop.'
+!             if (tr1%substep > 0) then
+!                 if (gap_min_before_bisect) then
+!                     if (tr1%substep == 1) then
+!                         t0 => trajectory_data(data_index_1)
+!                         t1 => trajectory_data(index_offset(data_index_1, 1))
+!                         t2 => trajectory_data(index_offset(data_index_1, 2))
+!                     else if (tr1%substep == 2) then
+!                         t0 => trajectory_data(data_index_2)
+!                         t1 => trajectory_data(data_index_1)
+!                         t2 => trajectory_data(index_offset(data_index_1, 1))
+!                     end if
+!                     cstate = t1%wf%active_state
+!                     check = check_gap(t0%wf%active_state, cstate, t0%wf%en, t1%wf%en, t2%wf%en)
+!                     if (any(check)) then
+!                         if (stdp2) write(stdout, '(3x,a)') ' Extra gap minimum in same step.'
+!                         if (stdp2) write(stdout, '(3x,a)') ' Running LZSH procedure for new steps.'
+!                         goto 500
+!                     end if
+!                 end if
+!             end if
+!             if (stdp1) then
+!                 write(stdout, '(3x,a,f0.4,a)') 'Resuming trajectory from t=', t2%time * aut_fs, '.'
+!             end if
+!             call trajectory_set_current(t2%step)
+!             tr1%substep = -1
+!         end if
 
-        ! Reset parameters changed by the adaptive-step LZSH algorithm
-        dt = dt_0
-        tr1%gap_2deriv = 0.0_dp
+!         ! Reset parameters changed by the adaptive-step LZSH algorithm
+!         dt = dt_0
+!         tr1%gap_2deriv = 0.0_dp
     end subroutine lzsh
 
 

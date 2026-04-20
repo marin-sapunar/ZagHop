@@ -43,59 +43,18 @@ def add_subparser(subparsers):
         metavar="FILE",
         help="Save the figure to FILE instead of displaying it.")
     parser.add_argument(
-        "--nstate-mult",
+        "--nstate",
         type=int,
         nargs=3,
         default=None,
         metavar=("NSINGLET", "NDOUBLET", "NTRIPLET"),
-        help="""Number of singlet, doublet, and triplet states.
-             Populations of degenerate components are summed.""")
+        help="""Number of singlet, doublet, and triplet states.""")
+    parser.add_argument(
+        "--sum-mult",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Sum populations of states with the same multiplicity.")
     parser.set_defaults(func=run)
-
-
-def apop_from_bool(state, axis=0):
-    """Calculate adiabatic population from boolean array of state occupation."""
-    norm = state.shape[axis]
-    apop = np.count_nonzero(state, axis=axis) / norm
-    return apop
-
-
-def get_apop(cstate, bootstrap=True):
-    """Calculate adiabatic population from array of state indices."""
-    nstate = int(np.max(cstate)) + 1
-    populated = np.array([cstate == i for i in range(nstate)])
-    populated = np.moveaxis(populated, 0, -1)
-    apop = apop_from_bool(populated, axis=0)
-    if not bootstrap:
-        return apop, None
-    conf = scipy.stats.bootstrap([populated], apop_from_bool, batch=100, method='basic', axis=0)
-    return apop, conf
-
-
-def get_cstate_proj(cstate, data):
-    """Get projection of data onto the current state."""
-    cs = np.array(cstate, ndmin=1)
-    cs = np.expand_dims(cs, axis=(-2, -1))
-    proj = np.take_along_axis(data, cs, axis=-1).squeeze()
-    return proj
-
-
-def dpop_from_proj(data, axis=None):
-    """Calculate diabatic population from projected data."""
-    if axis is None:
-        return np.sum(data**2) / len(data)
-    dpop = np.sum(data**2, axis=axis) / data.shape[axis]
-    return dpop
-
-
-def get_dpop(cstate, adt, bootstrap=True):
-    """Calculate diabatic population from array of state indices and transformation matrices."""
-    proj = get_cstate_proj(cstate, adt)
-    dpop = dpop_from_proj(proj, axis=0)
-    if not bootstrap:
-        return dpop, None
-    conf = scipy.stats.bootstrap([proj], dpop_from_proj, vectorized=True, batch=100, n_resamples=50)
-    return dpop, conf
 
 
 def plot_population(time, pop, ax=None, conf_interval=None,
@@ -124,66 +83,57 @@ def plot_population(time, pop, ax=None, conf_interval=None,
     return ax
 
 
-def reindex_mult(state, nstate_mult):
-    """Convert from raw state index to multiplicity-grouped state index."""
-    cs = state
-    i0 = 1
-    for mult, i in zip([1, 2, 3], nstate_mult):
-        if i * mult > cs:
-            return i0 + (cs % i) - 1
-        cs -= i * mult
-        i0 += i
-    raise ValueError("State index out of range for given nstate_mult.")
-
-
-def make_mult_labels(n_singlets, n_doublets, n_triplets):
-    """Build state labels for the grouped multiplicity states."""
-    labels = [f"S$_{{{i}}}$" for i in range(n_singlets)]
-    labels += [f"D$_{{{i + 1}}}$" for i in range(n_doublets)]
-    labels += [f"T$_{{{i + 1}}}$" for i in range(n_triplets)]
-    return labels
-
-
 def run(args):
     efile = os.path.join(args.dirs[0], "Results", "energy.dat")
     time = np.loadtxt(efile, comments="#", usecols=0)
+    ntraj = len(args.dirs)
     ntime = time.shape[0]
 
-    states = []
-    for cdir in args.dirs:
-        efile = os.path.join(cdir, "Results", "energy.dat")
-        states.append(np.loadtxt(efile, comments="#", usecols=1, dtype=int))
-    cstate = np.array(states) - 1  # shape: (ntraj, ntime)
-
-    if args.representation == "diabatic":
-        adt = []
-        for cdir in args.dirs:
-            adt_file = os.path.join(cdir, "Results", "adt")
-            data = np.loadtxt(adt_file, comments="t")
-            nstate = data.shape[1]
-            adt.append(data.reshape(ntime, nstate, nstate))
-        adt = np.array(adt)  # (ntraj, ntime, nstate, nstate)
-
-    labels = None
-    if args.nstate_mult is not None:
-        cstate = np.vectorize(reindex_mult, excluded=[1])(cstate, args.nstate_mult)
-        labels = make_mult_labels(*args.nstate_mult)
-        nstate_mult = sum(args.nstate_mult)
-        if args.representation == "diabatic":
-
-            adt_mult = np.zeros((adt.shape[0], adt.shape[1], nstate_mult, nstate_mult))
-            for i in range(nstate_mult):
-                for j in range(nstate_mult):
-                    mi = reindex_mult(i, args.nstate_mult)
-                    mj = reindex_mult(j, args.nstate_mult)
-                    adt_mult[..., i, j] += adt[..., mi, mj]
-            adt = adt_mult
-
-
     if args.representation == "adiabatic":
-        population, conf = get_apop(cstate, bootstrap=args.bootstrap)
+        states = []
+        for cdir in args.dirs:
+            efile = os.path.join(cdir, "Results", "energy.dat")
+            states.append(np.loadtxt(efile, comments="#", usecols=1, dtype=int))
+        cstate = np.array(states)  # shape: (ntraj, ntime)
+        nstate = np.max(cstate)
+        cpop = np.zeros((ntraj, ntime, nstate))
+        for i in range(nstate):
+            cpop[..., i] = cstate == i + 1
+    elif args.representation == "diabatic":
+        cpop = []
+        for cfile in args.dirs:
+            cstate_file = os.path.join(cfile, "Results", "cstate_diab")
+            cpop.append(np.loadtxt(cstate_file, comments="#"))
+        cpop = np.array(cpop)**2
+
+    if args.sum_mult:
+        i0 = args.nstate[0]
+        for mult, mult_ns in zip([2, 3], args.nstate[1:]):
+            for i in range(1, mult):
+                cpop[..., i0:i0+mult_ns] += cpop[..., i0+mult_ns*i:i0+mult_ns*(i+1)]
+            i0 += mult_ns * mult
+        cpop = cpop[..., :sum(args.nstate)]
+    if args.nstate is not None:
+        if args.sum_mult:
+            labels = [f"S$_{{{i}}}$" for i in range(args.nstate[0])]
+            labels += [f"D$_{{{i + 1}}}$" for i in range(args.nstate[1])]
+            labels += [f"T$_{{{i + 1}}}$" for i in range(args.nstate[2])]
+        else:
+            labels = [f"S$_{{{i},0}}$" for i in range(args.nstate[0])]
+            labels += [f"D$_{{{i + 1},1/2}}$" for i in range(args.nstate[1])]
+            labels += [f"D$_{{{i + 1},-1/2}}$" for i in range(args.nstate[1])]
+            labels += [f"T$_{{{i + 1},0}}$" for i in range(args.nstate[2])]
+            labels += [f"T$_{{{i + 1},1}}$" for i in range(args.nstate[2])]
+            labels += [f"T$_{{{i + 1},-1}}$" for i in range(args.nstate[2])]
+
     else:
-        population, conf = get_dpop(cstate, adt, bootstrap=args.bootstrap)
+        labels = [f"S$_{{{i}}}$" for i in range(1, cpop.shape[-1] + 1)]
+
+    population = cpop.mean(axis=0)
+    if args.bootstrap:
+        conf = scipy.stats.bootstrap([cpop], np.mean, vectorized=True, batch=100, n_resamples=50)
+    else:
+        conf = None
 
     _, ax = plt.subplots()
     plot_population(time, population, ax=ax, conf_interval=conf,

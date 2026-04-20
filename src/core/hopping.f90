@@ -39,44 +39,47 @@ contains
         integer :: i
         real(dp) :: t0
 
-        if ((ctrl%adt) .and. (tr1%step /= 0)) then
-            call adt2overlap(tr2%wf%adt, tr1%wf%adt, tr1%wf%overlap)
-        end if
+        ! if ((ctrl%adt) .and. (tr1%step /= 0)) then
+        !     call adt2overlap(tr2%wf%adt, tr1%wf%adt, tr1%wf%overlap)
+        ! end if
         !> @todo Move this to more appropriate place.
-        if ((ctrl%tdc_type /= 'nadvec') .and. (ctrl%vrescale == 3)) then
-            tr1%wf%need_nadv = .false.
-        end if
+        ! if ((ctrl%tdc_type /= 'nadvec') .and. (ctrl%vrescale == 3)) then
+        !     tr1%wf%need_nadv = .false.
+        ! end if
 
 
         ctrl%hop = .false.
-        select case(ctrl%sh)
-        case(1)
-            call lzsh(ctrl%dt, ctrl%qm_en_err, ctrl%lz_prob_conv, ctrl%lz_min_dt, &
-            &         ctrl%dt_0, ctrl%rng)
-        case(2)
+        !select case(ctrl%sh)
+        ! case(1)
+        !     call lzsh(ctrl%dt, ctrl%qm_en_err, ctrl%lz_prob_conv, ctrl%lz_min_dt, &
+        !     &         ctrl%dt_0, ctrl%rng)
+        ! case(2)
+        !     call decoherence()
+        !     call phasematch()
+        !     t0 = trajectory_data(index_offset(data_index_1, -2))%time !< @todo Clean up this type of indexing.
+        !     call sh_adiabatic(ctrl%tdc_type, ctrl%ene_interpolate, ctrl%tdc_interpolate, t0, &
+        !     &                 tr2%time, tr1%time, tr2%wf, tr1%wf, ctrl%shnstep, &
+        !     &                 tr2%velo(:, tr2%qind), tr1%velo(:, tr1%qind), ctrl%rng)
+        ! case(3)
+        !     call decoherence()
+        !     call phasematch()
+        !     call sh_diabatic(tr2%time, tr1%time, tr2%wf, tr1%wf, ctrl%rng)
+        !case(2)
             call decoherence()
-            call phasematch()
-            t0 = trajectory_data(index_offset(data_index_1, -2))%time !< @todo Clean up this type of indexing.
-            call sh_adiabatic(ctrl%tdc_type, ctrl%ene_interpolate, ctrl%tdc_interpolate, t0, &
-            &                 tr2%time, tr1%time, tr2%wf, tr1%wf, ctrl%shnstep, &
-            &                 tr2%velo(:, tr2%qind), tr1%velo(:, tr1%qind), ctrl%rng)
-        case(3)
-            call decoherence()
-            call phasematch()
-            call sh_diabatic(tr2%time, tr1%time, tr2%wf, tr1%wf, ctrl%rng)
-        end select
+            call tr1%wf%propagate(tr1%time, tr1%pot)
+        !end select
 
         if (tr2%wf%active_state /= tr1%wf%active_state) then
             ctrl%hop = .true.
-            !> @todo Move this to a more appropriate place.
-            tr1%wf%need_gradient(tr2%wf%active_state) = .false.
-            tr1%wf%need_gradient(tr1%wf%active_state) = .true.
-            ! If vrescale=3 (rescale along nonadiabatic coupling vector), ensure that the
-            ! nonadiabatic coupling vector between the previous and current state is allocated
-            if (ctrl%vrescale == 3) then
-                tr1%wf%need_nadv(tr1%wf%active_state, tr2%wf%active_state) = .true.
-                tr1%wf%need_nadv(tr2%wf%active_state, tr1%wf%active_state) = .true.
-            end if
+            ! !> @todo Move this to a more appropriate place.
+            ! tr1%wf%need_gradient(tr2%wf%active_state) = .false.
+            ! tr1%wf%need_gradient(tr1%wf%active_state) = .true.
+            ! ! If vrescale=3 (rescale along nonadiabatic coupling vector), ensure that the
+            ! ! nonadiabatic coupling vector between the previous and current state is allocated
+            ! if (ctrl%vrescale == 3) then
+            !     tr1%wf%need_nadv(tr1%wf%active_state, tr2%wf%active_state) = .true.
+            !     tr1%wf%need_nadv(tr2%wf%active_state, tr1%wf%active_state) = .true.
+            ! end if
         end if
     end subroutine hopping
 
@@ -101,17 +104,18 @@ contains
     !! - 2 - Return to previous state, but also invert the velocity along the rescale direction.
     !!       (this option only makes sense with opt_mc=2 or 3)
     !----------------------------------------------------------------------------------------------
-    subroutine sh_rescalevelo(opt_mc, opt_fh, amask, pst, wf, mass, velo)
+    subroutine sh_rescalevelo(opt_mc, opt_fh, amask, pst, pot, mass, velo, cst)
         use system_type_mod, only : ekin
-        use mqc_wave_function_mod, only : mqc_wave_function
+        use vc_evaluator_mod, only : vc_evaluator
+        use evaluator_base_mod, only : potential_evaluator
         integer, intent(in) :: opt_mc !< Type of momentum correction.
         integer, intent(in) :: opt_fh !< Behaviour at frustrated hop.
         integer, intent(in) :: amask(:) !< Atoms considered when rescaling.
         integer, intent(in) :: pst !< Previous state.
-        type(mqc_wave_function), intent(inout) :: wf !< Wave function at previous step.
+        class(potential_evaluator), intent(inout) :: pot !< Wave function at previous step.
         real(dp), intent(in) :: mass(:) !< Masses.
         real(dp), intent(inout) :: velo(:, :) !< Velocities.
-        integer :: cst !< Current state.
+        integer, intent(inout) :: cst !< Current state.
         real(dp) :: mvel(size(velo, 1), size(amask)) !< Mass weighted velocity.
         real(dp) :: pgrd(size(velo, 1), size(amask)) !< Gradient of the previous state.
         real(dp) :: cgrd(size(velo, 1), size(amask)) !< Gradient of the current state.
@@ -123,12 +127,14 @@ contains
 
         if (stdp2) write(stdout, '(5x,a)') 'Ensuring energy conservation.'
 
-        cst = wf%active_state
-        pgrd = wf%qm_state(pst)%gradient
-        cgrd = wf%qm_state(cst)%gradient
-        if (opt_mc == 3) then
-            nadv = wf%qm_state(pst)%nadv(cst)%c
-        end if
+        select type(p => pot)
+        type is (vc_evaluator)
+            pgrd = p%get_gradient('adiabatic', pst)
+            cgrd = p%get_gradient('adiabatic', cst)
+            if (opt_mc == 3) then
+                nadv = p%get_nadv('adiabatic', pst, cst)
+            end if
+        end select
 
         ! Work with temporary arrays and use mass-weighted coordinates.
         m = spread(mass(amask), 1, size(velo, 1))
@@ -146,7 +152,7 @@ contains
         end select
 
         ! Rescale velocity
-        delta_e = wf%en(cst) - wf%en(pst)
+        delta_e = pot%get_energy(cst) - pot%get_energy(pst)
         rescale_dir = rescale_dir / sqrt(sum(rescale_dir**2))
         mvel_dir = sum(rescale_dir * mvel)
         if (mvel_dir**2 > 2 * delta_e) then
@@ -163,10 +169,7 @@ contains
                 write(stdout, '(7x,a,e16.8)') 'Available energy:', mvel_dir**2 / 2
             end if
 
-            !> @todo Move this to a more appropriate place.
-            wf%need_gradient(cst) = .false.
-            wf%need_gradient(pst) = .true.
-            wf%active_state = pst
+            cst = pst
 
             select case(opt_fh)
             case(1) ! Just return to previous state.
