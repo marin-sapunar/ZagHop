@@ -137,67 +137,67 @@ contains
     !     wf_t2%active_state = cstate
     ! end subroutine sh_adiabatic
 
-    function build_nadvec_matrix(need_nadv, states) result(nadvec)
-        use state_mod, only : state
-        logical, intent(in) :: need_nadv(:, :)
-        type(state), intent(in) :: states(:)
-        real(dp), allocatable :: nadvec(:, :, :)
-        integer :: i, j, n_dof
+    ! function build_nadvec_matrix(need_nadv, states) result(nadvec)
+    !     use state_mod, only : state
+    !     logical, intent(in) :: need_nadv(:, :)
+    !     type(state), intent(in) :: states(:)
+    !     real(dp), allocatable :: nadvec(:, :, :)
+    !     integer :: i, j, n_dof
 
-        if (.not. any(need_nadv)) then
-            call errstop("sh_fssh_mod", "No nonadiabatic coupling vectors requested.", 1)
-        end if
-        do i = 1, size(states)
-            if (.not. allocated(states(i)%nadv)) then
-                call errstop("sh_fssh_mod", "Nonadiabatic coupling vectors not allocated.", 1)
-            end if
-            do j = 1, size(states)
-                if (need_nadv(i, j)) then
-                    if (.not. allocated(states(i)%nadv(j)%c)) then
-                        call errstop("sh_fssh_mod", "Nonadiabatic coupling vector requested but not allocated.", 1)
-                    end if
-                    n_dof = size(states(i)%nadv(j)%c)
-                end if
-            end do
-        end do
+    !     if (.not. any(need_nadv)) then
+    !         call errstop("sh_fssh_mod", "No nonadiabatic coupling vectors requested.", 1)
+    !     end if
+    !     do i = 1, size(states)
+    !         if (.not. allocated(states(i)%nadv)) then
+    !             call errstop("sh_fssh_mod", "Nonadiabatic coupling vectors not allocated.", 1)
+    !         end if
+    !         do j = 1, size(states)
+    !             if (need_nadv(i, j)) then
+    !                 if (.not. allocated(states(i)%nadv(j)%c)) then
+    !                     call errstop("sh_fssh_mod", "Nonadiabatic coupling vector requested but not allocated.", 1)
+    !                 end if
+    !                 n_dof = size(states(i)%nadv(j)%c)
+    !             end if
+    !         end do
+    !     end do
 
-        allocate(nadvec(n_dof, size(states), size(states)), source=0.0_dp)
-        do i = 1, size(states)
-            do j = 1, size(states)
-                if (need_nadv(i, j)) nadvec(:, i, j) = states(i)%nadv(j)%c
-            end do
-        end do
-    end function build_nadvec_matrix
+    !     allocate(nadvec(n_dof, size(states), size(states)), source=0.0_dp)
+    !     do i = 1, size(states)
+    !         do j = 1, size(states)
+    !             if (need_nadv(i, j)) nadvec(:, i, j) = states(i)%nadv(j)%c
+    !         end do
+    !     end do
+    ! end function build_nadvec_matrix
 
 
-    function build_soc_matrix(need_soc, states) result(soc_mat)
-        use state_mod, only : state
-        logical, intent(in) :: need_soc(:, :)
-        type(state), intent(in) :: states(:)
-        complex(dp), allocatable :: soc_mat(:, :)
-        integer :: i, j, n_states
+    ! function build_soc_matrix(need_soc, states) result(soc_mat)
+    !     use state_mod, only : state
+    !     logical, intent(in) :: need_soc(:, :)
+    !     type(state), intent(in) :: states(:)
+    !     complex(dp), allocatable :: soc_mat(:, :)
+    !     integer :: i, j, n_states
 
-        if (.not. any(need_soc)) then
-            call errstop("sh_fssh_mod", "No spin-orbit couplings requested.", 1)
-        end if
-        n_states = size(states)
-        do i = 1, n_states
-            if (any(need_soc(i, :))) then
-                if (.not. allocated(states(i)%soc)) then
-                    call errstop("sh_fssh_mod", "Spin-orbit couplings not allocated.", 1)
-                end if
-            end if
-        end do
+    !     if (.not. any(need_soc)) then
+    !         call errstop("sh_fssh_mod", "No spin-orbit couplings requested.", 1)
+    !     end if
+    !     n_states = size(states)
+    !     do i = 1, n_states
+    !         if (any(need_soc(i, :))) then
+    !             if (.not. allocated(states(i)%soc)) then
+    !                 call errstop("sh_fssh_mod", "Spin-orbit couplings not allocated.", 1)
+    !             end if
+    !         end if
+    !     end do
 
-        allocate(soc_mat(n_states, n_states), source=(0.0_dp, 0.0_dp))
-        do i = 1, n_states
-            do j = 1, n_states
-                if (need_soc(i, j)) then
-                    soc_mat(i, j) = states(i)%soc(j)
-                end if
-            end do
-        end do
-    end function build_soc_matrix
+    !     allocate(soc_mat(n_states, n_states), source=(0.0_dp, 0.0_dp))
+    !     do i = 1, n_states
+    !         do j = 1, n_states
+    !             if (need_soc(i, j)) then
+    !                 soc_mat(i, j) = states(i)%soc(j)
+    !             end if
+    !         end do
+    !     end do
+    ! end function build_soc_matrix
 
     !----------------------------------------------------------------------------------------------
     ! SUBROUTINE: SH_Interpolate_Energy
