@@ -30,12 +30,7 @@ contains
         use system_type_mod
         use control_var
         use decoherence_mod
-        use phase_mod
-        use tdc_mod
-        use constants
-        integer :: i
-        real(dp) :: t0
-
+        
         ! if ((ctrl%adt) .and. (tr1%step /= 0)) then
         !     call adt2overlap(tr2%wf%adt, tr1%wf%adt, tr1%wf%overlap)
         ! end if

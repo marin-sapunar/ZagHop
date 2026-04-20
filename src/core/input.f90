@@ -164,7 +164,7 @@ contains
     subroutine read_input()
         use nuclear_dyn_mod
         character(len=1000) :: temp
-        integer :: i, j
+        integer :: i
         logical :: check
         logical :: buffer
         type(reader) :: readf
@@ -902,6 +902,8 @@ contains
                 end if
             case('tdse_steps')
                 read(readf%args(2)%s, *) tr1%wf%n_substep
+            case('prob_formula')
+                read(readf%args(2)%s, *) tr1%wf%prob_formula
             case('decoherence')
                 select case(readf%args(2)%s)
                 case('off')

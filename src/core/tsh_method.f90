@@ -10,6 +10,7 @@ module tsh_method_mod
     type :: tsh_method
         class(rng_type), pointer :: rng
         character(len=:), allocatable :: representation
+        character(len=:), allocatable :: prob_formula
         integer :: active_state = 0
         integer :: n_state = 0
         integer :: n_substep = 1
@@ -37,6 +38,7 @@ contains
         allocate(self%coeff(self%n_state), source=cmplx(0.0_dp, 0.0_dp, kind=dp))
         allocate(self%prob(self%n_state), source=0.0_dp)
         self%representation = 'locally_diabatic'
+        self%prob_formula = 'sharc'
     end subroutine initialize
 
 
@@ -49,19 +51,20 @@ contains
         real(dp) :: t(self%n_state, self%n_state) !< Orthogonalized overlap matrix.
         real(dp) :: h_t(self%n_state, self%n_state) !< Hamiltonian during substep.
         real(dp) :: h_t2(self%n_state, self%n_state) !< Hamiltonian at time t2.
-        complex(dp) :: u(self%n_state, self%n_state) !< Transformation matrix.
         complex(dp) :: w3(self%n_state, self%n_state) !< Work array 3.
         complex(dp) :: w4(self%n_state, self%n_state) !< Work array 4.
         real(dp), allocatable :: u_t2(:, :)
         integer :: i, cstate
         real(dp) :: cprob
         real(dp) :: rnum
-        complex(dp) :: coeff_t0(self%n_state) !< Coefficients at start of substep.
-        complex(dp) :: coeff_diab(self%n_state) !< Diabatic coefficients during propagation.
+        complex(dp) :: c_propagation_t0(self%n_state) !< Coefficients at start of substep in propagation representation.
+        complex(dp) :: c_propagation_dt(self%n_state) !< Coefficients at end of substep in propagation representation.
+        complex(dp) :: c_hopping_t0(self%n_state) !< Coefficients at start of substep in hopping representation.
+        complex(dp) :: c_hopping_dt(self%n_state) !< Coefficients at end of substep in hopping representation.
 
         cstate = self%active_state
-        coeff_t0 = self%coeff
-        coeff_diab = self%coeff
+        c_propagation_t0 = self%coeff
+        c_hopping_t0 = self%coeff
         self%prob = 0.0_dp
         u_t2 = potential%get_transformation('diabatic', 'adiabatic')
         h_t2 = potential%get_Hamiltonian('adiabatic')
@@ -81,12 +84,22 @@ contains
         do i = 1, self%n_substep
             h_t = self%h_t1 + h_t2 * real(i - 0.5_dp, dp) / self%n_substep
             w3 = mat_sy_exp(h_t, cmplx(0.0_dp, -dt, kind=dp))
-            coeff_diab = matmul(w3, coeff_t0)
-            coeff_t0 = self%coeff
-            self%coeff = matmul(transpose(t), coeff_diab)
-            w4 = matmul(transpose(t), w3)
-            self%prob = self%prob + prob_sharc(cstate, coeff_t0, self%coeff, w4)
-            coeff_t0 = coeff_diab
+            c_propagation_dt = matmul(w3, c_propagation_t0)
+            c_hopping_dt = matmul(transpose(t), c_propagation_dt)
+            select case(self%prob_formula)
+            case('sharc')
+                w4 = matmul(transpose(t), w3)
+                self%prob = self%prob + prob_sharc(cstate, c_hopping_t0, c_hopping_dt, w4)
+            case('ld01')
+                w4 = matmul(transpose(t), w3)
+                self%prob = self%prob + prob_ld01(cstate, c_hopping_t0, c_hopping_dt, w4)
+            case('ld01_l')
+                self%prob = self%prob + prob_ld01_l(cstate, c_hopping_t0, c_hopping_dt, t)
+            case('ld19')
+                self%prob = self%prob + prob_ld19(cstate, c_hopping_t0, c_hopping_dt, t)
+            end select
+            c_propagation_t0 = c_propagation_dt
+            c_hopping_t0 = c_hopping_dt
         end do
 
         cprob = 0.0_dp
@@ -100,7 +113,7 @@ contains
             end if
         end do
 
-        ! self%coeff = coeff_t
+        self%coeff = c_hopping_dt
         self%u_t1 = u_t2
         self%h_t1 = h_t2
         self%t = t2
@@ -150,7 +163,7 @@ contains
         integer, intent(in) :: m
         complex(dp), intent(in) :: c_t(:)
         complex(dp), intent(in) :: c_dt(:)
-        complex(dp), intent(in) :: u(:, :)
+        real(dp), intent(in) :: u(:, :)
         real(dp) :: prob(size(c_t))
         integer :: n
 
@@ -166,7 +179,7 @@ contains
         integer, intent(in) :: m
         complex(dp), intent(in) :: c_t(:)
         complex(dp), intent(in) :: c_dt(:)
-        complex(dp), intent(in) :: u(:, :)
+        real(dp), intent(in) :: u(:, :)
         real(dp) :: prob(size(c_t))
         integer :: n
         real(dp) :: w_m
