@@ -10,8 +10,7 @@ module system_type_mod
     ! Import variables
     use global_defs
     use constants
-    use mqc_wave_function_mod
-    use tdse_propagator_mod
+    use tsh_method_mod
     use vc_evaluator_mod
     use vc_model_mod
     implicit none
@@ -58,7 +57,7 @@ module system_type_mod
         integer :: qnatom = 0 !< Number of QM atoms.
         integer, allocatable :: qind(:) !< Indexes of the QM atoms in the full system.
         class(potential_evaluator), allocatable :: pot
-        type(tdse_propagator) :: wf !< Wave function of the system.
+        type(tsh_method) :: wf !< Wave function of the system.
 
         ! MM system:
         integer :: mnatom = 0 !< Number of MM atoms.

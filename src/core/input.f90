@@ -130,7 +130,6 @@ contains
         ctrl%sodegen = .true.
         ctrl%soc = .false.
         ctrl%socbas = .false.
-        ctrl%shnstep = 10000
         ctrl%decohlvl = 1
         ctrl%tdc_type = 'hst'
         ctrl%tdc_interpolate = 2
@@ -902,7 +901,7 @@ contains
                     end select
                 end if
             case('tdse_steps')
-                read(readf%args(2)%s, *) ctrl%shnstep
+                read(readf%args(2)%s, *) tr1%wf%n_substep
             case('decoherence')
                 select case(readf%args(2)%s)
                 case('off')

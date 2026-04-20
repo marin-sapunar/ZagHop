@@ -31,9 +31,6 @@ contains
         use control_var
         use decoherence_mod
         use phase_mod
-        use sh_ldiab_mod
-        use sh_fssh_mod
-        use sh_lz_mod
         use tdc_mod
         use constants
         integer :: i
@@ -47,27 +44,10 @@ contains
         !     tr1%wf%need_nadv = .false.
         ! end if
 
-
         ctrl%hop = .false.
-        !select case(ctrl%sh)
-        ! case(1)
-        !     call lzsh(ctrl%dt, ctrl%qm_en_err, ctrl%lz_prob_conv, ctrl%lz_min_dt, &
-        !     &         ctrl%dt_0, ctrl%rng)
-        ! case(2)
-        !     call decoherence()
-        !     call phasematch()
-        !     t0 = trajectory_data(index_offset(data_index_1, -2))%time !< @todo Clean up this type of indexing.
-        !     call sh_adiabatic(ctrl%tdc_type, ctrl%ene_interpolate, ctrl%tdc_interpolate, t0, &
-        !     &                 tr2%time, tr1%time, tr2%wf, tr1%wf, ctrl%shnstep, &
-        !     &                 tr2%velo(:, tr2%qind), tr1%velo(:, tr1%qind), ctrl%rng)
-        ! case(3)
-        !     call decoherence()
-        !     call phasematch()
-        !     call sh_diabatic(tr2%time, tr1%time, tr2%wf, tr1%wf, ctrl%rng)
-        !case(2)
-            call decoherence()
-            call tr1%wf%propagate(tr1%time, tr1%pot)
-        !end select
+        
+        call decoherence()
+        call tr1%wf%propagate(tr1%time, tr1%pot)
 
         if (tr2%wf%active_state /= tr1%wf%active_state) then
             ctrl%hop = .true.

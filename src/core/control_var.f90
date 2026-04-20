@@ -106,7 +106,6 @@ module control_var
         logical :: soc !< Signal to include spin-orbit coupling in the Hamiltonian.
         logical :: sodegen ! spin-orbit degeneration treatment 
         logical :: socbas ! spin-obit basis representation
-        integer :: shnstep !< Number of steps in the integration of the TDSE.
 
         integer :: decohlvl !< Method of decoherence correction during dynamics:
         !!  - 0 - No decoherence correction.

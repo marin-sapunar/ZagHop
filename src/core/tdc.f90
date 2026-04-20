@@ -10,11 +10,9 @@
 !--------------------------------------------------------------------------------------------------
 module tdc_mod
     use global_defs
-    use npi_mod, only : npi_tdc_integrated
     implicit none
 
     private
-    public :: npi_tdc_integrated
     public :: adt2overlap
     public :: hst_tdc
     public :: nadvec2tdc

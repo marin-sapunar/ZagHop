@@ -1,4 +1,4 @@
-module tdse_propagator_mod
+module tsh_method_mod
     use global_defs, only : dp
     use evaluator_base_mod, only : potential_evaluator
     use orthog_mod, only : orthog_lowdin
@@ -7,7 +7,7 @@ module tdse_propagator_mod
     use linalg_wrapper_mod, only : gemm
     implicit none
 
-    type :: tdse_propagator
+    type :: tsh_method
         class(rng_type), pointer :: rng
         character(len=:), allocatable :: representation
         integer :: active_state = 0
@@ -21,14 +21,14 @@ module tdse_propagator_mod
     contains
         procedure :: initialize
         procedure :: propagate
-    end type tdse_propagator
+    end type tsh_method
 
 
 contains
 
     subroutine initialize(self, rng, n_state)
         use matrix_mod, only : unit_mat
-        class(tdse_propagator), intent(inout) :: self
+        class(tsh_method), intent(inout) :: self
         class(rng_type), pointer, intent(in) :: rng
         integer, intent(in) :: n_state
 
@@ -41,8 +41,8 @@ contains
 
 
     subroutine propagate(self, t2, potential)
-        use matrix_mod, only : unitary_transform
-        class(tdse_propagator), intent(inout) :: self
+        use matrix_mod, only : unitary_transform, unit_mat
+        class(tsh_method), intent(inout) :: self
         class(potential_evaluator), intent(in) :: potential
         real(dp), intent(in) :: t2 !< Time after propagation
         real(dp) :: dt
@@ -56,16 +56,15 @@ contains
         integer :: i, cstate
         real(dp) :: cprob
         real(dp) :: rnum
-        complex(dp) :: coeff_t(self%n_state) !< Coefficients at time t.
+        complex(dp) :: coeff_t0(self%n_state) !< Coefficients at start of substep.
+        complex(dp) :: coeff_diab(self%n_state) !< Diabatic coefficients during propagation.
 
         cstate = self%active_state
-        coeff_t = self%coeff
+        coeff_t0 = self%coeff
+        coeff_diab = self%coeff
+        self%prob = 0.0_dp
         u_t2 = potential%get_transformation('diabatic', 'adiabatic')
         h_t2 = potential%get_Hamiltonian('adiabatic')
-
-        ! if (t2 > 59.40_dp / 0.02418884326509_dp) then
-        !     write(*,*) "here"
-        ! end if
 
         ! Get overlap matrix.
         t = matmul(transpose(self%u_t1), u_t2) ! T = U(t)^t . U(t+dt)
@@ -76,16 +75,19 @@ contains
 
         dt = (t2 - self%t) / self%n_substep
 
+        w4 = cmplx(0.0_dp, 0.0_dp, kind=dp)
+        w4 = w4 + unit_mat(self%n_state)
+
         do i = 1, self%n_substep
-             h_t = self%h_t1 + h_t2 * real(i - 0.5_dp, dp) / self%n_substep
-             w3 = mat_sy_exp(h_t, cmplx(0.0_dp, -dt, kind=dp))
-             coeff_t = matmul(w3, coeff_t)
+            h_t = self%h_t1 + h_t2 * real(i - 0.5_dp, dp) / self%n_substep
+            w3 = mat_sy_exp(h_t, cmplx(0.0_dp, -dt, kind=dp))
+            coeff_diab = matmul(w3, coeff_t0)
+            coeff_t0 = self%coeff
+            self%coeff = matmul(transpose(t), coeff_diab)
+            w4 = matmul(transpose(t), w3)
+            self%prob = self%prob + prob_sharc(cstate, coeff_t0, self%coeff, w4)
+            coeff_t0 = coeff_diab
         end do
-        
-        w4 = cmplx(t, 0.0_dp, dp)
-        coeff_t = matmul(transpose(w4), coeff_t)
-        w3 = matmul(transpose(w4), w3)
-        self%prob = prob_sharc(cstate, self%coeff, coeff_t, w3)
 
         cprob = 0.0_dp
         call self%rng%uniform(rnum)
@@ -98,7 +100,7 @@ contains
             end if
         end do
 
-        self%coeff = coeff_t
+        ! self%coeff = coeff_t
         self%u_t1 = u_t2
         self%h_t1 = h_t2
         self%t = t2
@@ -183,4 +185,4 @@ contains
     end function prob_ld19
 
 
-end module tdse_propagator_mod
+end module tsh_method_mod

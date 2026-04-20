@@ -14,137 +14,128 @@ module sh_fssh_mod
     implicit none
 
     private
-    public :: sh_adiabatic
+    ! public :: sh_adiabatic
     
 
 contains
 
-    !----------------------------------------------------------------------------------------------
-    ! SUBROUTINE: sh_adiabatic
-    !
-    ! DESCRIPTION:
-    !> @brief Tully's Fewest Switches Surface Hopping Method.
-    !> @details
-    !! Propagates electronic wave function coefficients and determines hops for the FSSH method.
-    !! The coefficients are propagated using an external subroutine for solving the system of
-    !! ordinary differential equations.
-    !! The nuclear time step (dt) is split into smaller time steps for which the coefficients and
-    !! hopping probabilities are calculated.
-    !----------------------------------------------------------------------------------------------
-    subroutine sh_adiabatic(opt_clvl, interpolation_en, interpolation_tdc, t0, t1, t2, wf_t1, &
-    &                       wf_t2, nstep, vel_t1, vel_t2, rng)
-        use ode_call_mod ! Interface to Shampine/Gordon ODE solver.
-        use mqc_wave_function_mod, only : mqc_wave_function
-        use random_mod, only : rng_type
-        use matrix_mod, only : diag
-        use tdc_mod, only : hst_tdc, nadvec2tdc, npi_tdc_integrated
-        character(len=*), intent(in) :: opt_clvl !< Method for calculating time-derivative couplings.
-        integer, intent(in) :: interpolation_en !< Method for interpolating energies during the time step.
-        integer, intent(in) :: interpolation_tdc !< Method for interpolating overlaps during the time step.
-        real(dp), intent(in) :: t0 !< Time at previous step.
-        real(dp), intent(in) :: t1 !< Time at current step.
-        real(dp), intent(in) :: t2 !< Time at next step.
-        type(mqc_wave_function), intent(in) :: wf_t1 !< Wave function at t1.
-        type(mqc_wave_function), intent(inout) :: wf_t2 !< Wave function at t2.
-        integer, intent(in) :: nstep !< Number of substeps.
-        real(dp), intent(in) :: vel_t1(:, :) !< Velocities at t1.
-        real(dp), intent(in) :: vel_t2(:, :) !< Velocities at t2.
-        class(rng_type), allocatable, intent(inout) :: rng !< Random number generator to use.
+    ! !----------------------------------------------------------------------------------------------
+    ! ! SUBROUTINE: sh_adiabatic
+    ! !
+    ! ! DESCRIPTION:
+    ! !> @brief Tully's Fewest Switches Surface Hopping Method.
+    ! !> @details
+    ! !! Propagates electronic wave function coefficients and determines hops for the FSSH method.
+    ! !! The coefficients are propagated using an external subroutine for solving the system of
+    ! !! ordinary differential equations.
+    ! !! The nuclear time step (dt) is split into smaller time steps for which the coefficients and
+    ! !! hopping probabilities are calculated.
+    ! !----------------------------------------------------------------------------------------------
+    ! subroutine sh_adiabatic(opt_clvl, interpolation_en, interpolation_tdc, t0, t1, t2, wf_t1, &
+    ! &                       wf_t2, nstep, vel_t1, vel_t2, rng)
+    !     use random_mod, only : rng_type
+    !     use matrix_mod, only : diag
+    !     use tdc_mod, only : hst_tdc, nadvec2tdc
+    !     character(len=*), intent(in) :: opt_clvl !< Method for calculating time-derivative couplings.
+    !     integer, intent(in) :: interpolation_en !< Method for interpolating energies during the time step.
+    !     integer, intent(in) :: interpolation_tdc !< Method for interpolating overlaps during the time step.
+    !     real(dp), intent(in) :: t0 !< Time at previous step.
+    !     real(dp), intent(in) :: t1 !< Time at current step.
+    !     real(dp), intent(in) :: t2 !< Time at next step.
+    !     type(mqc_wave_function), intent(in) :: wf_t1 !< Wave function at t1.
+    !     type(mqc_wave_function), intent(inout) :: wf_t2 !< Wave function at t2.
+    !     integer, intent(in) :: nstep !< Number of substeps.
+    !     real(dp), intent(in) :: vel_t1(:, :) !< Velocities at t1.
+    !     real(dp), intent(in) :: vel_t2(:, :) !< Velocities at t2.
+    !     class(rng_type), allocatable, intent(inout) :: rng !< Random number generator to use.
         
-        real(dp) :: edt !< Time step for the propagation of the electronic WF.
-        real(dp) :: tt !< Current time during propagation.
-        real(dp) :: prob !< Probability of hopping into a state.
-        real(dp) :: cprob !< Cumulative probability of hopping into any state.
+    !     real(dp) :: edt !< Time step for the propagation of the electronic WF.
+    !     real(dp) :: tt !< Current time during propagation.
+    !     real(dp) :: prob !< Probability of hopping into a state.
+    !     real(dp) :: cprob !< Cumulative probability of hopping into any state.
 
-        integer :: cstate !< Current state index.
-        integer :: i
-        integer :: st
-        integer :: de_flag
-        real(dp) :: rnum !< Random number for surface hopping.
-        real(dp), allocatable :: nadv1(:, :, :) !< Nonadiabatic coupling vectors at t1.
-        real(dp), allocatable :: nadv2(:, :, :) !< Nonadiabatic coupling vectors at t2.
-        real(dp), allocatable :: en_t(:) !< Energies at current time.
-        real(dp), allocatable :: tdc_t1(:, :) !< TDC matrix at t1.
-        real(dp), allocatable :: tdc_t2(:, :) !< TDC matrix at t2.
-        real(dp), allocatable :: tdc_t(:, :) !< TDC matrix at current time.
-        real(dp), allocatable :: wrk_1(:, :) !< Work array for storing TDCs at half step.
-        real(dp), allocatable :: wrk_2(:, :) !< Work array for storing TDCs at half step.
-        complex(dp), allocatable :: cmat(:,:) !< Coupling matrix for the ODE function.
-        complex(dp), allocatable :: soc_t1(:, :) !< Spin-orbit coupling matrix at t1.
-        complex(dp), allocatable :: soc_t2(:, :) !< Spin-orbit coupling matrix at t2.
-        complex(dp), allocatable :: soc_t(:, :) !< Spin-orbit coupling matrix at current time.
-        complex, parameter :: im_i = cmplx(0.0_dp, 1.0_dp, kind=dp)
+    !     integer :: cstate !< Current state index.
+    !     integer :: i
+    !     integer :: st
+    !     integer :: de_flag
+    !     real(dp) :: rnum !< Random number for surface hopping.
+    !     real(dp), allocatable :: nadv1(:, :, :) !< Nonadiabatic coupling vectors at t1.
+    !     real(dp), allocatable :: nadv2(:, :, :) !< Nonadiabatic coupling vectors at t2.
+    !     real(dp), allocatable :: en_t(:) !< Energies at current time.
+    !     real(dp), allocatable :: tdc_t1(:, :) !< TDC matrix at t1.
+    !     real(dp), allocatable :: tdc_t2(:, :) !< TDC matrix at t2.
+    !     real(dp), allocatable :: tdc_t(:, :) !< TDC matrix at current time.
+    !     real(dp), allocatable :: wrk_1(:, :) !< Work array for storing TDCs at half step.
+    !     real(dp), allocatable :: wrk_2(:, :) !< Work array for storing TDCs at half step.
+    !     complex(dp), allocatable :: cmat(:,:) !< Coupling matrix for the ODE function.
+    !     complex(dp), allocatable :: soc_t1(:, :) !< Spin-orbit coupling matrix at t1.
+    !     complex(dp), allocatable :: soc_t2(:, :) !< Spin-orbit coupling matrix at t2.
+    !     complex(dp), allocatable :: soc_t(:, :) !< Spin-orbit coupling matrix at current time.
+    !     complex, parameter :: im_i = cmplx(0.0_dp, 1.0_dp, kind=dp)
 
-        allocate(cmat(wf_t1%n_state, wf_t1%n_state), source=(0.0_dp, 0.0_dp))
+    !     allocate(cmat(wf_t1%n_state, wf_t1%n_state), source=(0.0_dp, 0.0_dp))
 
-        ! Propagation time step.
-        tt = t1
-        edt = (t2 - t1) / nstep
-        cstate = wf_t1%active_state
+    !     ! Propagation time step.
+    !     tt = t1
+    !     edt = (t2 - t1) / nstep
+    !     cstate = wf_t1%active_state
 
-        select case(opt_clvl)
-        case("hst")
-            call hst_tdc(t1-t0, wf_t1%overlap, wrk_1)
-            call hst_tdc(t2-t1, wf_t2%overlap, wrk_2)
-            call sh_interpolate_tdc(interpolation_tdc, 0.5_dp*(t0 + t1), 0.5_dp*(t1 + t2), &
-            &                       t1, wrk_1, wrk_2, tdc_t1)
-            call sh_interpolate_tdc(interpolation_tdc, 0.5_dp*(t0 + t1), 0.5_dp*(t1 + t2), &
-            &                       t2, wrk_1, wrk_2, tdc_t2)
-        case("npi")
-            call npi_tdc_integrated(t1-t0, wf_t1%overlap, wrk_1)
-            call npi_tdc_integrated(t2-t1, wf_t2%overlap, wrk_2)
-            call sh_interpolate_tdc(interpolation_tdc, 0.5_dp*(t0 + t1), 0.5_dp*(t1 + t2), &
-            &                       t1, wrk_1, wrk_2, tdc_t1)
-            call sh_interpolate_tdc(interpolation_tdc, 0.5_dp*(t0 + t1), 0.5_dp*(t1 + t2), &
-            &                       t2, wrk_1, wrk_2, tdc_t2)
-        case("nadvec")
-            nadv1 = build_nadvec_matrix(wf_t1%need_nadv, wf_t1%qm_state)
-            nadv2 = build_nadvec_matrix(wf_t2%need_nadv, wf_t2%qm_state)
-            call nadvec2tdc(nadv1, vel_t1, tdc_t1)
-            call nadvec2tdc(nadv2, vel_t2, tdc_t2)
-        end select
+    !     select case(opt_clvl)
+    !     case("hst")
+    !         call hst_tdc(t1-t0, wf_t1%overlap, wrk_1)
+    !         call hst_tdc(t2-t1, wf_t2%overlap, wrk_2)
+    !         call sh_interpolate_tdc(interpolation_tdc, 0.5_dp*(t0 + t1), 0.5_dp*(t1 + t2), &
+    !         &                       t1, wrk_1, wrk_2, tdc_t1)
+    !         call sh_interpolate_tdc(interpolation_tdc, 0.5_dp*(t0 + t1), 0.5_dp*(t1 + t2), &
+    !         &                       t2, wrk_1, wrk_2, tdc_t2)
+    !     case("nadvec")
+    !         nadv1 = build_nadvec_matrix(wf_t1%need_nadv, wf_t1%qm_state)
+    !         nadv2 = build_nadvec_matrix(wf_t2%need_nadv, wf_t2%qm_state)
+    !         call nadvec2tdc(nadv1, vel_t1, tdc_t1)
+    !         call nadvec2tdc(nadv2, vel_t2, tdc_t2)
+    !     end select
 
-        if (any(wf_t2%need_soc)) then
-            soc_t1 = build_soc_matrix(wf_t1%need_soc, wf_t1%qm_state)
-            soc_t2 = build_soc_matrix(wf_t2%need_soc, wf_t2%qm_state)
-        end if
+    !     if (any(wf_t2%need_soc)) then
+    !         soc_t1 = build_soc_matrix(wf_t1%need_soc, wf_t1%qm_state)
+    !         soc_t2 = build_soc_matrix(wf_t2%need_soc, wf_t2%qm_state)
+    !     end if
 
-        wf_t2%prob = 0.0_dp
+    !     wf_t2%prob = 0.0_dp
 
-        do i = 1, nstep
-            ! Get energies and TDCs for current substep.
-            call sh_interpolate_energy(interpolation_en, t1, t2, tt, wf_t1%en, wf_t2%en, en_t)
-            call sh_interpolate_tdc(interpolation_tdc, t1, t2, tt, tdc_t1, tdc_t2, tdc_t)
-            cmat = cmplx(0.0_dp, -diag(en_t), kind=dp) - tdc_t
-            if (any(wf_t2%need_soc)) then
-                call sh_interpolate_soc(interpolation_tdc, t1, t2, tt, soc_t1, soc_t2, soc_t)
-                cmat = cmat - im_i * soc_t
-            end if
+    !     do i = 1, nstep
+    !         ! Get energies and TDCs for current substep.
+    !         call sh_interpolate_energy(interpolation_en, t1, t2, tt, wf_t1%en, wf_t2%en, en_t)
+    !         call sh_interpolate_tdc(interpolation_tdc, t1, t2, tt, tdc_t1, tdc_t2, tdc_t)
+    !         cmat = cmplx(0.0_dp, -diag(en_t), kind=dp) - tdc_t
+    !         if (any(wf_t2%need_soc)) then
+    !             call sh_interpolate_soc(interpolation_tdc, t1, t2, tt, soc_t1, soc_t2, soc_t)
+    !             cmat = cmat - im_i * soc_t
+    !         end if
             
-            ! Propagate wf coefficients.
-            call callode(cmat, wf_t2%coeff, tt, edt)
-            tt = tt + edt
+    !         ! Propagate wf coefficients.
+    !         call callode(cmat, wf_t2%coeff, tt, edt)
+    !         tt = tt + edt
 
-            ! Determine hopping probabilities.
-            call rng%uniform(rnum)
-            cprob = 0.0_dp
-            hop: do st = 1, wf_t2%n_state
-                if (st == cstate) cycle
-                prob = - real(conjg(wf_t2%coeff(st)) * wf_t2%coeff(cstate) * cmat(st, cstate))
-                prob = prob * 2 * edt / abs(wf_t2%coeff(cstate))**2
-                if (prob > 0.0_dp) then ! Not actual probability, can be negative.
-                    cprob = cprob + prob
-                    wf_t2%prob(st) = wf_t2%prob(st) + prob
-                    if (rnum < cprob) then
-                        cstate = st
-                        exit hop
-                    end if
-                end if
-            end do hop
-        end do
+    !         ! Determine hopping probabilities.
+    !         call rng%uniform(rnum)
+    !         cprob = 0.0_dp
+    !         hop: do st = 1, wf_t2%n_state
+    !             if (st == cstate) cycle
+    !             prob = - real(conjg(wf_t2%coeff(st)) * wf_t2%coeff(cstate) * cmat(st, cstate))
+    !             prob = prob * 2 * edt / abs(wf_t2%coeff(cstate))**2
+    !             if (prob > 0.0_dp) then ! Not actual probability, can be negative.
+    !                 cprob = cprob + prob
+    !                 wf_t2%prob(st) = wf_t2%prob(st) + prob
+    !                 if (rnum < cprob) then
+    !                     cstate = st
+    !                     exit hop
+    !                 end if
+    !             end if
+    !         end do hop
+    !     end do
 
-        wf_t2%active_state = cstate
-    end subroutine sh_adiabatic
+    !     wf_t2%active_state = cstate
+    ! end subroutine sh_adiabatic
 
     function build_nadvec_matrix(need_nadv, states) result(nadvec)
         use state_mod, only : state
