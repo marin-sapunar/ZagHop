@@ -29,8 +29,7 @@ def add_subparser(subparsers):
         default=False,
         help="""Plot confidence intervals if available. Requires files with
           suffixes '.lbound' and '.ubound' containing the lower and upper 
-          bounds of the confidence intervals, respectively."""
-    )
+          bounds of the confidence intervals, respectively.""")
     parser.add_argument(
         "--save",
         type=str,
@@ -44,6 +43,12 @@ def add_subparser(subparsers):
         metavar="FILE",
         help="""File containing labels for each state. Should have one label per line,
           in the same order as the states in the population file.""")
+    parser.add_argument(
+        "--title",
+        type=str,
+        default=None,
+        metavar="TEXT",
+        help="Set the title of the plot.")
     parser.set_defaults(func=run)
 
 
@@ -91,6 +96,8 @@ def run(args):
     _, ax = plt.subplots()
     plot_population(time, pop, ax=ax, lbound=lbound, ubound=ubound,
                    labels=labels, threshold=args.threshold)
+    if args.title is not None:
+        ax.set_title(args.title)
     if args.save:
         plt.savefig(args.save)
     else:

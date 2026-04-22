@@ -78,9 +78,6 @@ contains
 
         dt = (t2 - self%t) / self%n_substep
 
-        w4 = cmplx(0.0_dp, 0.0_dp, kind=dp)
-        w4 = w4 + unit_mat(self%n_state)
-
         do i = 1, self%n_substep
             h_t = self%h_t1 + h_t2 * real(i - 0.5_dp, dp) / self%n_substep
             w3 = mat_sy_exp(h_t, cmplx(0.0_dp, -dt, kind=dp))
@@ -101,7 +98,7 @@ contains
             c_propagation_t0 = c_propagation_dt
             c_hopping_t0 = c_hopping_dt
         end do
-
+        
         cprob = 0.0_dp
         call self%rng%uniform(rnum)
         do i = 1, self%n_state

@@ -169,21 +169,6 @@ contains
     end subroutine match_phase
 
 
-    subroutine eval_group_adiab_trans(self)
-        class(diabatic_evaluator) :: self
-        integer :: i, i0, ns
-        real(dp), allocatable :: wrk_mat(:, :)
-        real(dp), allocatable :: wrk_e(:)
-
-        do i = 1, self%n_group
-            i0 = self%group_i0(i)
-            ns = self%group_nstate(i)
-            wrk_mat = self%diab_w(i0:(i0 + ns - 1), i0:(i0 + ns - 1))
-            self%group_adiab_trans(i0:(i0 + ns - 1), i0:(i0 + ns - 1)) = get_eigvec(wrk_mat)
-        end do
-    end subroutine eval_group_adiab_trans
-
-
     function get_eigvec(mat) result(eigv)
         use linalg_wrapper_mod, only : syev
         real(dp), intent(in) :: mat(:, :)

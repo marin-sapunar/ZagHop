@@ -197,11 +197,11 @@ project(ZagHop LANGUAGES Fortran)
     foreach(_line ${_tully_test_lines})
       string(REGEX MATCH "def (test_[A-Za-z0-9_]+)" _ "${_line}")
       set(_test_name "${CMAKE_MATCH_1}")
-      add_test(NAME "ZagHopTest:Tully::${_test_name}"
+      add_test(NAME "ZagHop:Tully::${_test_name}"
         COMMAND ${Python_EXECUTABLE} -m unittest -v
                 "test_tully.TullyTest.${_test_name}"
         WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
-      set_tests_properties("ZagHopTest:Tully::${_test_name}" PROPERTIES
+      set_tests_properties("ZagHop:Tully::${_test_name}" PROPERTIES
         ENVIRONMENT_MODIFICATION PATH=path_list_append:${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
     endforeach()
 
@@ -210,11 +210,24 @@ project(ZagHop LANGUAGES Fortran)
     foreach(_line ${_vc_pyrazine_test_lines})
       string(REGEX MATCH "def (test_[A-Za-z0-9_]+)" _ "${_line}")
       set(_test_name "${CMAKE_MATCH_1}")
-      add_test(NAME "ZagHopTest:VC::${_test_name}"
+      add_test(NAME "ZagHop:VC:Pyrazine::${_test_name}"
         COMMAND ${Python_EXECUTABLE} -m unittest -v
                 "test_vc_pyrazine.VcPyrazineTest.${_test_name}"
         WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
-      set_tests_properties("ZagHopTest:VC::${_test_name}" PROPERTIES
+      set_tests_properties("ZagHop:VC:Pyrazine::${_test_name}" PROPERTIES
+        ENVIRONMENT_MODIFICATION PATH=path_list_append:${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
+    endforeach()
+
+    file(STRINGS "${CMAKE_SOURCE_DIR}/tests/integration/test_vc_so2.py"
+         _vc_so2_test_lines REGEX "^    def (test_[A-Za-z0-9_]+)")
+    foreach(_line ${_vc_so2_test_lines})
+      string(REGEX MATCH "def (test_[A-Za-z0-9_]+)" _ "${_line}")
+      set(_test_name "${CMAKE_MATCH_1}")
+      add_test(NAME "ZagHop:VC:SO2::${_test_name}"
+        COMMAND ${Python_EXECUTABLE} -m unittest -v
+                "test_vc_so2.VcSo2Test.${_test_name}"
+        WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+      set_tests_properties("ZagHop:VC:SO2::${_test_name}" PROPERTIES
         ENVIRONMENT_MODIFICATION PATH=path_list_append:${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
     endforeach()
   else()
