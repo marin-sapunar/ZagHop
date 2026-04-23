@@ -23,14 +23,15 @@ project(ZagHop LANGUAGES Fortran)
 
 ################################################################################
 # Dependencies.                                                                #
+  set(JSONFORTRAN_SOURCE_DIR
+      ${CMAKE_SOURCE_DIR}/external/json-fortran)
   set(JSONFORTRAN_ENABLE_TESTS OFF CACHE BOOL "" FORCE)
-  include(FetchContent)
-  FetchContent_Declare(
-      jsonfortran
-      GIT_REPOSITORY https://github.com/jacobwilliams/json-fortran.git
-      GIT_TAG        9.0.4  # Pin to a specific release
-  )
-  FetchContent_MakeAvailable(jsonfortran)
+  if(NOT EXISTS ${JSONFORTRAN_SOURCE_DIR}/CMakeLists.txt)
+    message(FATAL_ERROR
+            "json-fortran submodule not found at ${JSONFORTRAN_SOURCE_DIR}. "
+            "Run 'git submodule update --init --recursive'.")
+  endif()
+  add_subdirectory(${JSONFORTRAN_SOURCE_DIR} ${CMAKE_BINARY_DIR}/jsonfortran)
 
 ################################################################################
 # Targets:                                                                     #
