@@ -8,22 +8,25 @@
 !--------------------------------------------------------------------------------------------------
 module shzagreb_inter
       use decimal
-      use global
-      use versions
-      use constants
+      use global, only: name,laenge,rname,rlaenge,oname,olaenge,ddname,&
+                        dname,dlaenge,ddpath,ldd,ldbsmall,lsocbas,ltraj,&
+                        macheps
+      use maxv, only: maxdim,allocmemory,rdmemdim
       
-      use dvrdatmod
-      use grddatmod
-      use operdef
-      use iodvrdef
-      use iogrddef
-      use rdopermod
+      use dvrdatmod, only: sysdat,basis,ndof,feb,gdim,dbmemdim,rpbaspar,&
+                           alloc_sysdat
+      use grddatmod, only: grddat,nspfdof,spfdof,gwpm,nddstate,alloc_grddat
+      use operdef, only: operdat,hopsdim,ldddb,alloc_operdat
+      use ioglobdef, only: rdglobinfo
+      use iodvrdef, only: rddvrinfo
+      use iogrddef, only: rdgrdinfo
+      use rdopermod, only: rdoperinfo,rdoper
       use iorst, only: rdrstinfo
       use dirdyn, only: ndoftsh,dercpdim,ndofddpes,&
                   dbnrec,nactdim,natmtsh,ldbsave,&
                   lupdhes,lnactdb,lddrddb,ddtrajnum,num_gp
       use dirdyn, only: alloc_dirdyn,alloc_dddb,atnam,nsmult,imultmap
-      use directdyn
+      use directdyn, only: getddpes
       use potevalmod, only: calcdiab,calcdiabder,calcvreps
       use psidef, only: qcentdim,zcent,vdimgp,dimgp,ndimgp,zgp,nsgp,totgp,&
                         sbaspar,rsbaspar
@@ -31,10 +34,11 @@ module shzagreb_inter
       use lalib, only: simtranbd
       use datenmod, only: outdat,loadoutdat
       use logdat, only: routine,message,errormsg
+      use channels, only: ilog,ioper,irst
       
       use dd_db, only: dddb_gp,getdbnrec,preparedb
-      use dbcootrans
-      use channels
+      use dbcootrans, only: ltshtrans,tshtransb,lddtrans,tshxcoo0,&
+                            alloc_dbcootrans,ddq2x,rdddtrans
       use op2lib, only: subvxxdo1
       use xvlib, only: mvxxdd1, mvtxdd1
 
@@ -103,7 +107,7 @@ contains
          lompqc=.false.
 
 !-----------------------------------------------------------------------
-! get array dimensions 
+! get basic array dimensions and global variables
 !-----------------------------------------------------------------------
          inquire(irst,opened=lcheck)
          if (lcheck) close(irst)
@@ -118,7 +122,36 @@ contains
             call errormsg
          endif
          call rdmemdim(irst)
+         check=1
+         call rdglobinfo(irst,check)
          close(irst)
+
+!-----------------------------------------------------------------------
+! Allocate memory 
+!-----------------------------------------------------------------------
+         allocmemory=0
+         call alloc_sysdat(sysdat)
+         call alloc_grddat(grddat)
+         call alloc_operdat(operdat)
+         call alloc_dirdyn(ilog)
+
+!-----------------------------------------------------------------------
+! Read data from oper file
+!-----------------------------------------------------------------------
+         ddpath = ' '
+         filename=oname(1:olaenge)//'/oper'
+         ilbl=index(filename,' ')-1
+         open(ioper,file=filename,form='unformatted',status='old',iostat=ierr)
+         if (ierr .ne. 0) then
+            routine='SHzagreb_interface'
+            ilbl=index(filename,' ')-1
+            message = 'Cannot open file: '//filename(1:ilbl)
+            call errormsg
+         endif
+         check=1
+         call rddvrinfo(ioper,check)
+         call rdgrdinfo(ioper,check)
+         call rdoperinfo(ioper)
 
 !-----------------------------------------------------------------------
 ! For DD calculations, DB needs to be read into memory
@@ -136,16 +169,7 @@ contains
                dbmemdim = 1  
                ldbsmall = .false.
             endif
-         endif
 
-!-----------------------------------------------------------------------
-! Allocate memory 
-!-----------------------------------------------------------------------
-         allocmemory=0
-         call alloc_sysdat(sysdat)
-         call alloc_grddat(grddat)
-         call alloc_operdef
-         if (ldd .or. ltraj) then
             allocate(zcent(1,1))
             allocate(vdimgp(1,1))
             allocate(dimgp(1,1))
@@ -153,26 +177,7 @@ contains
             allocate(zgp(1))
             allocate(nsgp(1))
          endif
-         call alloc_dirdyn(ilog)
          if (ldd) call alloc_dddb(ilog)
-
-!-----------------------------------------------------------------------
-! Read data from oper file
-!-----------------------------------------------------------------------
-         ddpath = ' '
-         filename=oname(1:olaenge)//'/oper'
-         ilbl=index(filename,' ')-1
-         open(ioper,file=filename,form='unformatted',status='old',iostat=ierr)
-         if (ierr .ne. 0) then
-            routine='SHzagreb_interface'
-            ilbl=index(filename,' ')-1
-            message = 'Cannot open file: '//filename(1:ilbl)
-            call errormsg
-         endif
-         check=1
-         call rddvrinfo(irst,check)
-         call rdgrdinfo(ioper,check)
-         call rdoperinfo(ioper)
 
 !----------------------------------------------------------------------- 
 ! read in coordinate transformation information
