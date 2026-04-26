@@ -18,6 +18,8 @@ module evaluator_diabatic_mod
         real(dp), allocatable :: group_adiab_trans(:, :)
         real(dp), allocatable :: ldiab_trans(:, :)
     contains
+        procedure :: eval => eval_all
+        procedure(eval_diab), deferred :: eval_diab
         procedure :: change_basis => change_basis_mat
         procedure :: eval_eigvec => eval_eigvec
         procedure :: get_Hamiltonian => get_Hamiltonian
@@ -28,7 +30,42 @@ module evaluator_diabatic_mod
     end type diabatic_evaluator
 
 
+    abstract interface
+        subroutine eval_diab(self)
+            import diabatic_evaluator
+            class(diabatic_evaluator), intent(inout) :: self
+        end subroutine eval_diab
+    end interface
+
+
 contains
+
+    subroutine eval_all(self)
+        class(diabatic_evaluator), intent(inout) :: self
+        integer :: imode
+
+        call self%eval_diab()
+        call self%eval_eigvec('adiabatic')
+        call self%eval_eigvec('group_adiabatic')
+
+        if (allocated(self%ldiab_trans)) then
+            call match_phase(self%ldiab_trans, self%adiab_trans)
+        end if
+
+        self%adiab_w = self%diab_w
+        self%adiab_dw = self%diab_dw
+        call self%change_basis('adiabatic', self%adiab_w)
+        do imode = 1, size(self%diab_dw, 1)
+            call self%change_basis('adiabatic', self%adiab_dw(imode, :, :))
+        end do
+
+        self%group_adiab_w = self%diab_w
+        self%group_adiab_dw = self%diab_dw
+        call self%change_basis('group_adiabatic', self%group_adiab_w)
+        do imode = 1, size(self%diab_dw, 1)
+            call self%change_basis('group_adiabatic', self%group_adiab_dw(imode, :, :))
+        end do
+    end subroutine eval_all
 
     function get_Hamiltonian(self, basis) result(H)
         class(diabatic_evaluator), intent(in) :: self

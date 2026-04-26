@@ -14,7 +14,7 @@ module vc_evaluator_mod
     contains
         procedure :: initialize => vc_initialize
         procedure :: update_geometry => vc_update_geometry
-        procedure :: eval => vc_eval
+        procedure :: eval_diab => vc_eval_diab
         procedure :: get_nadv => vc_get_nadv
         procedure :: get_oscill => vc_get_oscill
     end type vc_evaluator
@@ -68,8 +68,7 @@ contains
     end subroutine vc_update_geometry
 
 
-    subroutine vc_eval(self)
-        use linalg_wrapper_mod, only : syev
+    subroutine vc_eval_diab(self)
         use matrix_mod, only : block_diagonal_mat
         class(vc_evaluator), intent(inout) :: self
         type(rmat) :: w_block(3)
@@ -91,33 +90,12 @@ contains
             self%diab_w = self%diab_w + self%model%soc%eval(self%q)
         end if
 
-        call self%eval_eigvec('adiabatic')
-        call self%eval_eigvec('group_adiabatic')
-
         do imode = 1, self%model%nmode
             do i = 1, 3
                 if (self%model%nstate(i) == 0) cycle
                 w_block(i)%c = self%model%dw(imode, i)%eval(self%q)
             end do
             self%diab_dw(imode, :, :) = block_diagonal_mat(w_block, [1, 2, 3])
-        end do
-        
-        if (allocated(self%ldiab_trans)) then
-            call match_phase(self%ldiab_trans, self%adiab_trans)
-        end if
-
-        self%adiab_w = self%diab_w
-        self%adiab_dw = self%diab_dw
-        call self%change_basis('adiabatic', self%adiab_w)
-        do imode = 1, self%model%nmode
-            call self%change_basis('adiabatic', self%adiab_dw(imode, :, :))
-        end do
-
-        self%group_adiab_w = self%diab_w
-        self%group_adiab_dw = self%diab_dw
-        call self%change_basis('group_adiabatic', self%group_adiab_w)
-        do imode = 1, self%model%nmode
-            call self%change_basis('group_adiabatic', self%group_adiab_dw(imode, :, :))
         end do
 
         if (self%model%dm(1)%max_order >= 0) then
@@ -126,7 +104,7 @@ contains
             self%dm(2, :, :) = self%model%dm(2)%eval(self%q)
             self%dm(3, :, :) = self%model%dm(3)%eval(self%q)
         end if
-    end subroutine vc_eval
+    end subroutine vc_eval_diab
 
     
     function vc_get_nadv(self, basis, istate1, istate2) result(nadv)

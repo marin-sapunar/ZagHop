@@ -20,11 +20,10 @@ module tully_mod
         character(len=:), allocatable :: name
         real(dp), allocatable :: params(:)
         real(dp) :: x = 0.0_dp
-        real(dp), allocatable :: saved_nadv(:, :, :)
     contains
         procedure :: init => model_init
         procedure :: update_geometry => model_update_geometry
-        procedure :: eval => model_eval
+        procedure :: eval_diab => model_eval_diab
         procedure :: get_nadv => model_get_nadv
     end type tully_model
 
@@ -114,7 +113,6 @@ contains
         allocate(self%group_adiab_w(2, 2))
         allocate(self%group_adiab_dw(1, 2, 2))
         allocate(self%group_adiab_trans(2, 2))
-        allocate(self%saved_nadv(1, 2, 2))
     end subroutine model_init
 
 
@@ -127,13 +125,10 @@ contains
     end subroutine model_update_geometry
 
 
-    subroutine model_eval(self)
+    subroutine model_eval_diab(self)
         class(tully_model), intent(inout) :: self
         real(dp) :: v(3)
         real(dp) :: dv(3)
-        real(dp) :: edif
-        integer :: imode
-        real(dp), parameter :: tiny_hf = 1.0e-8_dp
 
         ! Compute diabatic matrix elements.
         select case(self%name)
@@ -156,40 +151,7 @@ contains
         self%diab_dw(1, 2, 2) = dv(2)
         self%diab_dw(1, 1, 2) = dv(3)
         self%diab_dw(1, 2, 1) = dv(3)
-
-        ! Diagonalize to get adiabatic transformation.
-        call self%eval_eigvec('adiabatic')
-        call self%eval_eigvec('group_adiabatic')
-
-        ! Phase matching with previous step.
-        if (allocated(self%ldiab_trans)) then
-            call match_phase(self%ldiab_trans, self%adiab_trans)
-        end if
-
-        ! Transform to adiabatic basis.
-        self%adiab_w = self%diab_w
-        self%adiab_dw = self%diab_dw
-        call self%change_basis('adiabatic', self%adiab_w)
-        do imode = 1, 1
-            call self%change_basis('adiabatic', self%adiab_dw(imode, :, :))
-        end do
-
-        self%group_adiab_w = self%diab_w
-        self%group_adiab_dw = self%diab_dw
-        call self%change_basis('group_adiabatic', self%group_adiab_w)
-        do imode = 1, 1
-            call self%change_basis('group_adiabatic', self%group_adiab_dw(imode, :, :))
-        end do
-
-        ! Compute and store nonadiabatic coupling vectors.
-        self%saved_nadv = 0.0_dp
-        edif = self%adiab_w(2, 2) - self%adiab_w(1, 1)
-        if (abs(edif) < tiny_hf) then
-            edif = sign(tiny_hf, edif)
-        end if
-        self%saved_nadv(1, 1, 2) = self%adiab_dw(1, 1, 2) / edif
-        self%saved_nadv(1, 2, 1) = -self%saved_nadv(1, 1, 2)
-    end subroutine model_eval
+    end subroutine model_eval_diab
 
 
     function model_get_nadv(self, basis, istate1, istate2) result(nadv)
@@ -197,9 +159,31 @@ contains
         character(len=*), intent(in) :: basis
         integer, intent(in) :: istate1, istate2
         real(dp), allocatable :: nadv(:)
+        real(dp) :: edif
+        real(dp), parameter :: tiny_hf = 1.0e-8_dp
 
-        allocate(nadv(1))
-        nadv(1) = self%saved_nadv(1, istate1, istate2)
+        allocate(nadv(1), source=0.0_dp)
+
+        select case(basis)
+        case('diabatic')
+            continue
+        case('adiabatic')
+            edif = self%adiab_w(istate2, istate2) - self%adiab_w(istate1, istate1)
+            if (abs(edif) < tiny_hf) then
+                edif = sign(tiny_hf, edif)
+            end if
+            nadv(1) = self%adiab_dw(1, istate1, istate2) / edif
+        case('group_adiabatic')
+            edif = self%group_adiab_w(istate2, istate2) - self%group_adiab_w(istate1, istate1)
+            if (abs(edif) < tiny_hf) then
+                edif = sign(tiny_hf, edif)
+            end if
+            nadv(1) = self%group_adiab_dw(1, istate1, istate2) / edif
+        case default
+            write(stderr, *) 'Error in tully_mod, model_get_nadv function.'
+            write(stderr, *) '  Unknown basis: ', basis
+            stop
+        end select
     end function model_get_nadv
 
 
