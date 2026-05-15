@@ -11,12 +11,12 @@ module shzagreb_inter
       use global, only: name,laenge,rname,rlaenge,oname,olaenge,ddname,&
                         dname,dlaenge,ddpath,ldd,ldbsmall,lsocbas,ltraj,&
                         macheps
-      use maxv, only: maxdim,allocmemory,rdmemdim
+      use maxv, only: maxdim,allocmemory,rdmemdim,dbmemdim
       
-      use dvrdatmod, only: sysdat,basis,ndof,feb,gdim,dbmemdim,rpbaspar,&
+      use dvrdatmod, only: sysdat,basis,ndof,feb,gdim,rpbaspar,&
                            alloc_sysdat
       use grddatmod, only: grddat,nspfdof,spfdof,gwpm,nddstate,alloc_grddat
-      use operdef, only: operdat,hopsdim,ldddb,alloc_operdat
+      use operdef, only: operdat,hopsdim,ldddb,alloc_operdef
       use ioglobdef, only: rdglobinfo
       use iodvrdef, only: rddvrinfo
       use iogrddef, only: rdgrdinfo
@@ -28,8 +28,7 @@ module shzagreb_inter
       use dirdyn, only: alloc_dirdyn,alloc_dddb,atnam,nsmult,imultmap
       use directdyn, only: getddpes
       use potevalmod, only: calcdiab,calcdiabder,calcvreps
-      use psidef, only: qcentdim,zcent,vdimgp,dimgp,ndimgp,zgp,nsgp,totgp,&
-                        sbaspar,rsbaspar
+      use psidef, only: psidat
       use openmpmod, only: lompqc
       use lalib, only: simtranbd
       use datenmod, only: outdat,loadoutdat
@@ -132,7 +131,7 @@ contains
          allocmemory=0
          call alloc_sysdat(sysdat)
          call alloc_grddat(grddat)
-         call alloc_operdat(operdat)
+         call alloc_operdef
          call alloc_dirdyn(ilog)
 
 !-----------------------------------------------------------------------
@@ -170,12 +169,12 @@ contains
                ldbsmall = .false.
             endif
 
-            allocate(zcent(1,1))
-            allocate(vdimgp(1,1))
-            allocate(dimgp(1,1))
-            allocate(ndimgp(1,1))
-            allocate(zgp(1))
-            allocate(nsgp(1))
+            allocate(psidat%zcent(1,1))
+            allocate(psidat%vdimgp(1,1))
+            allocate(psidat%dimgp(1,1))
+            allocate(psidat%ndimgp(1,1))
+            allocate(psidat%zgp(1))
+            allocate(psidat%nsgp(1))
          endif
          if (ldd) call alloc_dddb(ilog)
 
@@ -188,14 +187,6 @@ contains
          endif
 
 !-----------------------------------------------------------------------
-! Read data needed by the operator
-!-----------------------------------------------------------------------
-         allocate(hops(hopsdim))
-         call rdoper(ioper,hops)
-
-         close(ioper)
-
-!-----------------------------------------------------------------------
 ! Open DB and find out what it contains before allocating memory
 !-----------------------------------------------------------------------
          if (ldddb) then
@@ -203,6 +194,15 @@ contains
             call getdbnrec(dbnrec)
             call alloc_dddb(ilog)
          endif
+
+!-----------------------------------------------------------------------
+! Read data needed by the operator
+! Includes reading in DB data for a DD run.
+!-----------------------------------------------------------------------
+         allocate(hops(hopsdim))
+         call rdoper(ioper,hops)
+
+         close(ioper)
 
 !-----------------------------------------------------------------------
 ! DD needs to read restart file for info on how Shepard Interpolation is 
@@ -233,17 +233,17 @@ contains
 ! qcentdim is needed in getddpes as dimension of Ndof (effectively 1GWP)
 !-----------------------------------------------------------------------
          if (ldd) then
-            zcent(1,1) = 1
+            psidat%zcent(1,1) = 1
             gwpm(1)=.true.
-            qcentdim = nspfdof(1)
+            psidat%qcentdim = nspfdof(1)
 
 !needed for getddpes (No. of configurations is 1)
-            vdimgp(1,1) = 1
-            dimgp(1,1) = 1
-            ndimgp(1,1) = 1
-            nsgp(1)=1
-            totgp = 1
-            zgp(1) = 1
+            psidat%vdimgp(1,1) = 1
+            psidat%dimgp(1,1) = 1
+            psidat%ndimgp(1,1) = 1
+            psidat%nsgp(1)=1
+            psidat%totgp = 1
+            psidat%zgp(1) = 1
 
 ! no. of NACTS
             if (nddstate .gt. 1) then
