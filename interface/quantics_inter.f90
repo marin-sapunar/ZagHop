@@ -31,7 +31,8 @@ module shzagreb_inter
       use psidef, only: psidat
       use openmpmod, only: lompqc
       use lalib, only: simtranbd
-      use datenmod, only: outdat,loadoutdat
+      use datenmod, only: outdat
+      use iodaten, only: loadoutdat
       use logdat, only: routine,message,errormsg
       use channels, only: ilog,ioper,irst
       
@@ -118,7 +119,7 @@ contains
             routine='SHzagreb_interface'
             ilbl=index(filename,' ')-1
             message = 'Cannot open file: '//filename(1:ilbl)
-            call errormsg
+            call errormsg(ilog)
          endif
          call rdmemdim(irst)
          check=1
@@ -145,7 +146,7 @@ contains
             routine='SHzagreb_interface'
             ilbl=index(filename,' ')-1
             message = 'Cannot open file: '//filename(1:ilbl)
-            call errormsg
+            call errormsg(ilog)
          endif
          check=1
          call rddvrinfo(ioper,check)
@@ -216,10 +217,10 @@ contains
               routine='SHzagreb_interface'
               ilbl=index(filename,' ')-1
               message = 'Cannot open file: '//filename(1:ilbl)
-              call errormsg
+              call errormsg(ilog)
            endif
-           call rdrstinfo(irst,outdat)
            call loadoutdat(outdat)
+           call rdrstinfo(irst)
            close(irst)
          endif
 
