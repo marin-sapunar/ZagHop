@@ -15,7 +15,6 @@ module vc_evaluator_mod
         procedure :: initialize => vc_initialize
         procedure :: update_geometry => vc_update_geometry
         procedure :: eval_diab => vc_eval_diab
-        procedure :: get_nadv => vc_get_nadv
         procedure :: get_oscill => vc_get_oscill
     end type vc_evaluator
 
@@ -42,14 +41,15 @@ contains
             end do
         end do
         self%n_state = sum(self%group_nstate)
+        self%ndof = self%model%nmode
         allocate(self%diab_w(self%n_state, self%n_state))
-        allocate(self%diab_dw(self%model%nmode, self%n_state, self%n_state))
+        allocate(self%diab_dw(self%ndof, self%n_state, self%n_state))
         allocate(self%adiab_w(self%n_state, self%n_state))
-        allocate(self%adiab_dw(self%model%nmode, self%n_state, self%n_state))
+        allocate(self%adiab_dw(self%ndof, self%n_state, self%n_state))
         allocate(self%group_adiab_w(self%n_state, self%n_state))
-        allocate(self%group_adiab_dw(self%model%nmode, self%n_state, self%n_state))
+        allocate(self%group_adiab_dw(self%ndof, self%n_state, self%n_state))
         allocate(self%group_adiab_trans(self%n_state, self%n_state))
-        allocate(self%q(self%model%nmode))
+        allocate(self%q(self%ndof))
     end subroutine vc_initialize
 
 
@@ -105,53 +105,6 @@ contains
             self%dm(3, :, :) = self%model%dm(3)%eval(self%q)
         end if
     end subroutine vc_eval_diab
-
-    
-    function vc_get_nadv(self, basis, istate1, istate2) result(nadv)
-        class(vc_evaluator), intent(in) :: self
-        character(len=*), intent(in) :: basis
-        integer, intent(in) :: istate1, istate2
-        real(dp), allocatable :: nadv(:)
-        integer :: imode
-        real(dp) :: edif
-        real(dp), parameter :: tiny_hf = 1.0e-8_dp
-
-        allocate(nadv(self%model%nmode), source=0.0_dp)
-        select case(basis)
-        case('diabatic')
-            continue
-        case('adiabatic')
-            edif = self%adiab_w(istate2, istate2) - self%adiab_w(istate1, istate1)
-            if (abs(edif) < tiny_hf) then
-                if (stdp1) then
-                    write(stderr, *) 'Warning in vc_evaluator_mod, vc_get_nadv function.'
-                    write(stderr, *) '  Near-degeneracy between states ', istate1, ' and ', istate2, '.'
-                    write(stderr, *) '  Setting denominator to ', tiny_hf, ' Hartree.'
-                end if
-                edif = sign(tiny_hf, edif)
-            end if
-            do imode = 1, self%model%nmode
-                nadv(imode) = self%adiab_dw(imode, istate1, istate2) / edif
-            end do
-        case('group_adiabatic')
-             edif = self%group_adiab_w(istate2, istate2) - self%group_adiab_w(istate1, istate1)
-             if (abs(edif) < tiny_hf) then
-                if (stdp1) then
-                    write(stderr, *) 'Warning in vc_evaluator_mod, vc_get_nadv function.'
-                    write(stderr, *) '  Near-degeneracy between states ', istate1, ' and ', istate2, '.'
-                    write(stderr, *) '  Setting denominator to ', tiny_hf, ' Hartree.'
-                end if
-                edif = sign(tiny_hf, edif)
-            end if
-            do imode = 1, self%model%nmode
-                nadv(imode) = self%group_adiab_dw(imode, istate1, istate2) / edif
-            end do
-        case default
-            write(stderr, *) 'Error in vc_evaluator_mod, vc_get_nadv function.'
-            write(stderr, *) '  Unknown basis: ', basis
-            stop
-        end select
-    end function vc_get_nadv
 
     
     function vc_get_oscill(self, basis, istate) result(oscill)

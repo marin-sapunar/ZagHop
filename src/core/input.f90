@@ -20,6 +20,7 @@ module input_mod
     use constants
     use vc_evaluator_mod, only : vc_evaluator
     use evaluator_base_mod, only : potential_evaluator
+    use quantics_interface_mod, only : quantics_interface
 
     implicit none
 
@@ -581,7 +582,11 @@ contains
                 qlib = .true.
                 select case(readf%args(2)%s)
                 case('quantics')
-                    call errstop('read_method', 'Quantics interface is under development.')
+                    allocate(quantics_interface :: tr1%pot)
+                    select type(p => tr1%pot)
+                    type is (quantics_interface)
+                        call p%init()
+                    end select
                 case('model')
                     allocate(tully_model :: tr1%pot)
                     select type(p => tr1%pot)
@@ -708,6 +713,8 @@ contains
                 write(stderr, *) readf%line
             end select
         end do
+
+        call tr1%pot%set_group_nstate(nstate, multiplicity)
 
         call tr1%wf%initialize(ctrl%rng, tr1%pot%n_state)
 

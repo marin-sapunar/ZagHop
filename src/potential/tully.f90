@@ -24,7 +24,6 @@ module tully_mod
         procedure :: init => model_init
         procedure :: update_geometry => model_update_geometry
         procedure :: eval_diab => model_eval_diab
-        procedure :: get_nadv => model_get_nadv
     end type tully_model
 
 contains
@@ -43,6 +42,7 @@ contains
         integer :: i
 
         self%name = tolower(args(1)%s)
+        self%ndof = 1
 
         select case(self%name)
         case('tully-i')
@@ -152,39 +152,6 @@ contains
         self%diab_dw(1, 1, 2) = dv(3)
         self%diab_dw(1, 2, 1) = dv(3)
     end subroutine model_eval_diab
-
-
-    function model_get_nadv(self, basis, istate1, istate2) result(nadv)
-        class(tully_model), intent(in) :: self
-        character(len=*), intent(in) :: basis
-        integer, intent(in) :: istate1, istate2
-        real(dp), allocatable :: nadv(:)
-        real(dp) :: edif
-        real(dp), parameter :: tiny_hf = 1.0e-8_dp
-
-        allocate(nadv(1), source=0.0_dp)
-
-        select case(basis)
-        case('diabatic')
-            continue
-        case('adiabatic')
-            edif = self%adiab_w(istate2, istate2) - self%adiab_w(istate1, istate1)
-            if (abs(edif) < tiny_hf) then
-                edif = sign(tiny_hf, edif)
-            end if
-            nadv(1) = self%adiab_dw(1, istate1, istate2) / edif
-        case('group_adiabatic')
-            edif = self%group_adiab_w(istate2, istate2) - self%group_adiab_w(istate1, istate1)
-            if (abs(edif) < tiny_hf) then
-                edif = sign(tiny_hf, edif)
-            end if
-            nadv(1) = self%group_adiab_dw(1, istate1, istate2) / edif
-        case default
-            write(stderr, *) 'Error in tully_mod, model_get_nadv function.'
-            write(stderr, *) '  Unknown basis: ', basis
-            stop
-        end select
-    end function model_get_nadv
 
 
     subroutine tully_1(p, x, v, dv)

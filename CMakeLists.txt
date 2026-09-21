@@ -83,13 +83,13 @@ project(ZagHop LANGUAGES Fortran)
     set(QUANTICS_DIR $ENV{QUANTICS_DIR})
     set(QUANTICS_PLATFORM $ENV{QUANTICS_PLATFORM})
     set(QUANTICS_COMPILER $ENV{QUANTICS_COMPILER})
+    if(QUANTICS_COMPILER STREQUAL "default")
+      set(QUANTICS_COMPILER "gfortran")
+    endif()
     if(NOT (QUANTICS_DIR AND QUANTICS_PLATFORM AND QUANTICS_COMPILER))
       message(FATAL_ERROR
               "To compile with Quantics interface, set QUANTICS_DIR, "
               "QUANTICS_PLATFORM and QUANTICS_COMPILER environment variables.")
-    endif()
-    if(QUANTICS_COMPILER STREQUAL "default")
-      set(QUANTICS_COMPILER "gfortran")
     endif()
     set(QUANTICS_OBJ
        ${QUANTICS_DIR}/object/${QUANTICS_PLATFORM}/${QUANTICS_COMPILER})

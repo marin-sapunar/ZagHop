@@ -26,9 +26,6 @@ contains
     !! @todo UPDATE DOCS
     !----------------------------------------------------------------------------------------------
     subroutine run_qm(t, hop)
-#ifdef QUANTICS
-        use shzagreb_inter, only : shzagreb_run
-#endif
         use system_type_mod, only : system_type, vc_potential
         use matrix_mod, only : unit_mat
         use tully_mod, only : tully_model

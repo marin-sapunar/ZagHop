@@ -68,4 +68,11 @@ program run_vc
     end do
     close(iunit)
 
+    open(newunit=iunit, file='diab_w.dat', status='replace', action='write', iostat=io)
+    do i = 1, vc%model%tot_ns
+        write(iunit, '(*(e20.12))') vc%diab_w(:, i)
+    end do
+    close(iunit)
+
+
 end program run_vc

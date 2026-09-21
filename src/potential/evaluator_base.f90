@@ -7,6 +7,9 @@ module evaluator_base_mod
 
     type, abstract :: potential_evaluator
         integer :: n_state = 0
+        integer :: n_group = 0
+        integer, allocatable :: group_nstate(:)
+        integer, allocatable :: group_i0(:)
     contains
         procedure(eval), deferred :: eval
         procedure(update_geometry), deferred :: update_geometry
@@ -16,6 +19,7 @@ module evaluator_base_mod
         procedure(get_energy_all), deferred :: get_energy_all
         procedure(get_gradient), deferred :: get_gradient
         procedure(get_nadv), deferred :: get_nadv
+        procedure :: set_group_nstate
         generic :: get_energy => get_energy_single, get_energy_all
     end type potential_evaluator
 
@@ -103,6 +107,32 @@ module evaluator_base_mod
             real(dp), allocatable :: nadv(:)
         end function get_nadv
     end interface
+
+
+contains
+
+
+    subroutine set_group_nstate(self, nstate, multiplicity)
+        class(potential_evaluator), intent(inout) :: self
+        integer, intent(in) :: nstate(:)
+        integer, intent(in) :: multiplicity(:)
+        integer :: i, j, ci, cgroup
+
+        self%n_group = sum(multiplicity, mask=(nstate > 0))
+        allocate(self%group_nstate(self%n_group))
+        allocate(self%group_i0(self%n_group))
+        cgroup = 1
+        ci = 1
+        do i = 1, size(nstate)
+            if (nstate(i) == 0) cycle
+            do j = 1, multiplicity(i)
+                self%group_nstate(cgroup) = nstate(i)
+                self%group_i0(cgroup) = ci
+                cgroup = cgroup + 1
+                ci = ci + nstate(i)
+            end do
+        end do
+    end subroutine set_group_nstate
 
 
 end module evaluator_base_mod

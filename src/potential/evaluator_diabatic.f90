@@ -5,9 +5,7 @@ module evaluator_diabatic_mod
 
 
     type, abstract, extends(potential_evaluator) :: diabatic_evaluator
-        integer :: n_group = 1
-        integer, allocatable :: group_nstate(:)
-        integer, allocatable :: group_i0(:)
+        integer :: ndof = 0
         real(dp), allocatable :: diab_w(:, :)
         real(dp), allocatable :: diab_dw(:, :, :)
         real(dp), allocatable :: adiab_w(:, :)
@@ -27,6 +25,7 @@ module evaluator_diabatic_mod
         procedure :: get_energy_single => get_energy_single
         procedure :: get_energy_all => get_energy_all
         procedure :: get_gradient => get_gradient
+        procedure :: get_nadv => get_nadv
     end type diabatic_evaluator
 
 
@@ -186,6 +185,53 @@ contains
             stop
         end select
     end subroutine eval_eigvec
+
+
+    function get_nadv(self, basis, istate1, istate2) result(nadv)
+        class(diabatic_evaluator), intent(in) :: self
+        character(len=*), intent(in) :: basis
+        integer, intent(in) :: istate1, istate2
+        real(dp), allocatable :: nadv(:)
+        integer :: imode
+        real(dp) :: edif
+        real(dp), parameter :: tiny_hf = 1.0e-8_dp
+
+        allocate(nadv(self%ndof), source=0.0_dp)
+        select case(basis)
+        case('diabatic')
+            continue
+        case('adiabatic')
+            edif = self%adiab_w(istate2, istate2) - self%adiab_w(istate1, istate1)
+            if (abs(edif) < tiny_hf) then
+                if (stdp1) then
+                    write(stderr, *) 'Warning in evaluator_diabatic_mod, get_nadv function.'
+                    write(stderr, *) '  Near-degeneracy between states ', istate1, ' and ', istate2, '.'
+                    write(stderr, *) '  Setting denominator to ', tiny_hf, ' Hartree.'
+                end if
+                edif = sign(tiny_hf, edif)
+            end if
+            do imode = 1, self%ndof
+                nadv(imode) = self%adiab_dw(imode, istate1, istate2) / edif
+            end do
+        case('group_adiabatic')
+             edif = self%group_adiab_w(istate2, istate2) - self%group_adiab_w(istate1, istate1)
+             if (abs(edif) < tiny_hf) then
+                if (stdp1) then
+                    write(stderr, *) 'Warning in evaluator_diabatic_mod, get_nadv function.'
+                    write(stderr, *) '  Near-degeneracy between states ', istate1, ' and ', istate2, '.'
+                    write(stderr, *) '  Setting denominator to ', tiny_hf, ' Hartree.'
+                end if
+                edif = sign(tiny_hf, edif)
+            end if
+            do imode = 1, self%ndof
+                nadv(imode) = self%group_adiab_dw(imode, istate1, istate2) / edif
+            end do
+        case default
+            write(stderr, *) 'Error in evaluator_diabatic_mod, get_nadv function.'
+            write(stderr, *) '  Unknown basis: ', basis
+            stop
+        end select
+    end function get_nadv
 
 
     subroutine match_phase(bra, ket)
