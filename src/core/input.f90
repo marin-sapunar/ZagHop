@@ -714,7 +714,10 @@ contains
             end select
         end do
 
-        call tr1%pot%set_group_nstate(nstate, multiplicity)
+        ! Model interfaces determine their own state groups during initialization.
+        if (.not. allocated(tr1%pot%group_nstate)) then
+            call tr1%pot%set_group_nstate(nstate, multiplicity)
+        end if
 
         call tr1%wf%initialize(ctrl%rng, tr1%pot%n_state)
 
