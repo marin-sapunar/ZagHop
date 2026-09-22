@@ -20,7 +20,9 @@ module input_mod
     use constants
     use vc_evaluator_mod, only : vc_evaluator
     use evaluator_base_mod, only : potential_evaluator
+#ifdef QUANTICS
     use quantics_interface_mod, only : quantics_interface
+#endif
 
     implicit none
 
@@ -582,11 +584,16 @@ contains
                 qlib = .true.
                 select case(readf%args(2)%s)
                 case('quantics')
+#ifdef QUANTICS
                     allocate(quantics_interface :: tr1%pot)
                     select type(p => tr1%pot)
                     type is (quantics_interface)
                         call p%init()
                     end select
+#else
+                    call errstop('read_method', 'Program was compiled without &
+                        &the Quantics interface. Rebuild with QUANTICS=ON.')
+#endif
                 case('model')
                     allocate(tully_model :: tr1%pot)
                     select type(p => tr1%pot)
