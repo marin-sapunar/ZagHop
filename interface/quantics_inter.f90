@@ -12,14 +12,16 @@ module shzagreb_inter
                         dname,dlaenge,ddpath,ldd,ldbsmall,lsocbas,ltraj,&
                         macheps
       use maxv, only: maxdim,allocmemory,rdmemdim,dbmemdim
+      use globmemmod, only: hopsdim
       
       use dvrdatmod, only: sysdat,basis,ndof,feb,gdim,rpbaspar,&
                            alloc_sysdat
       use grddatmod, only: grddat,nspfdof,spfdof,gwpm,nddstate,alloc_grddat
-      use operdef, only: operdat,hopsdim,ldddb,alloc_operdef
+      use operdef, only: operdat,ldddb,alloc_operdef
       use ioglobdef, only: rdglobinfo
       use iodvrdef, only: rddvrinfo
       use iogrddef, only: rdgrdinfo
+      use iopsidef, only: loadpsidat
       use rdopermod, only: rdoperinfo,rdoper
       use iorst, only: rdrstinfo
       use dirdyn, only: ndoftsh,dercpdim,ndofddpes,&
@@ -263,6 +265,7 @@ contains
             enddo
             read(string(ilbl:jlbl),*) ddtrajnum
 
+            call loadpsidat(psidat)
          endif
 
 ! Check memory is free
