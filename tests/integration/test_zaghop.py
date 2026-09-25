@@ -12,6 +12,9 @@ import numpy as np
 class ZagHopTest(unittest.TestCase):
     """ Trajectory tests."""
 
+    # Subdirectory of the run directory in which zaghop is executed.
+    trajdir = ""
+
     @classmethod
     def setUpClass(cls):
         name = re.sub(r'Test$', '', cls.__name__)
@@ -45,7 +48,7 @@ class ZagHopTest(unittest.TestCase):
 
     def run_traj(self):
         """ Run zaghop for the current test case. """
-        os.chdir(self.rundir)
+        os.chdir(os.path.join(self.rundir, self.trajdir))
         with open("nad.stdout", "w") as out, open("nad.stderr", "w") as err:
             subprocess.call("zaghop", stdout=out, stderr=err)
         self.assertTrue(os.path.isdir("Results"), "Error termination.")
@@ -53,13 +56,13 @@ class ZagHopTest(unittest.TestCase):
 
     def compare_energy(self):
         """ Compare full contents of the energy.dat file. """
-        new = np.loadtxt(self.rundir + "/Results/energy.dat", comments="#")
+        new = np.loadtxt(os.path.join(self.rundir, self.trajdir, "Results/energy.dat"), comments="#")
         ref = np.loadtxt(self.rundir + "/Reference/energy.dat", comments="#")
         self.assertTrue(np.allclose(new, ref), "Difference in energy.dat file.")
 
     def stdout_contains(self, string):
         """ Assert that a string appears in the nad.stdout file. """
-        with open(os.path.join(self.rundir, "nad.stdout")) as f:
+        with open(os.path.join(self.rundir, self.trajdir, "nad.stdout")) as f:
             self.assertIn(string, f.read(), f"String not found in nad.stdout: {string!r}")
 
 
