@@ -39,9 +39,10 @@ module quantics_interface_mod
     implicit none
 
     type, extends(diabatic_evaluator) :: quantics_interface
-        real(dop), allocatable :: q(:)
+        real(dop), allocatable :: q(:) !< Dynamical coordinates (nspfdof(1)).
+        real(dop), allocatable :: gpoint(:) !< All Quantics DOFs (maxdim), including frozen DOFs.
         logical :: initialized = .false.
-        real(dop), allocatable :: hops(:)
+        real(dop), allocatable :: hops(:) !< Operator data read from the oper file (hopsdim).
     contains
         procedure :: init => quantics_initialize
         procedure :: update_geometry => quantics_update_geometry
@@ -57,42 +58,26 @@ contains
         real(dop), intent(in) :: geometry(:, :)
         integer :: i, n, f
 
-        if (size(geometry, 1) /= 1) then
+        if (size(geometry, 1) /= 1 .or. size(geometry, 2) /= self%ndof) then
             write(stderr, *) 'Error in quantics_mod, update_geometry subroutine.'
-            write(stderr, *) '  Geometry should have dimensions (1, nmode).'
+            write(stderr, *) '  Geometry should have dimensions (1, ndof).'
             stop
         end if
 
         self%q = geometry(1, :)
 
-        ! reform xyz -> qcoo (Quantics dynamical coordinates)
-        !  if (ltshtrans) then
-        !      call subvxxdo1(xyz,tshxcoo0,ndoftsh)
-        !      call mvxxdd1(tshtransb,xyz,qcoo,maxdim,ndoftsh,gdof)
-        !  else
-        ! qcoo = self%q
-        !  endif
-
-        ! ! need to add frozen coordinates to qcoo
-        ! ! (it assumes coordinates are the centre of a GWP)
-        ! f = 0
-        ! qcoo1 = 0.0_dop
-        ! do n=1,nspfdof(1)
-        !     f=spfdof(n,1)
-        !     qcoo1(f) = qcoo(n)
-        ! enddo
-        ! ! Add in any frozen coordinates
-        ! do f=1,ndof
-        !     if (basis(f) .eq. 19) qcoo1(f) = rpbaspar(1,f)
-        ! enddo
-
+        ! Place dynamical coordinates at their Quantics DOF index (frozen DOFs are set in init).
+        do n = 1, self%ndof
+            self%gpoint(spfdof(n, 1)) = self%q(n)
+        end do
+        if (allocated(self%adiab_trans)) self%ldiab_trans = self%adiab_trans
 
         ! ! Initialise local DBs. Need to be in Cartesians.
         ! if (ldd .and. ldbsmall) then
         !     if (lddtrans) then
-        !         call ddq2x(qcoo1,xgp)
+        !         call ddq2x(self%gpoint,xgp)
         !     else
-        !         xgp=qcoo1
+        !         xgp=self%gpoint
         !     endif
 
         !     num_gp = 1
@@ -107,7 +92,7 @@ contains
         character(len=c5)   :: filename, string
         logical(kind=4) :: check
         logical(kind=4) :: lerr
-        integer :: ilbl, ierr, icheck
+        integer :: ilbl, ierr, icheck, f
         integer :: chkdvr, chkgrd
         !, string
         !integer :: ilbl, jlbl, ierr, chkdvr, chkgrd, chkpsi, chkprp
@@ -215,6 +200,14 @@ contains
 
         close(ioper)
 
+        !-----------------------------------------------------------------------
+        ! Read data needed by the operator
+        !-----------------------------------------------------------------------
+        operfile=oname(1:olaenge)//'/oper'
+        allocate(self%hops(hopsdim))
+        chkdvr=2
+        chkgrd=1
+        call rdoper(self%hops,chkdvr,chkgrd)
 
         close(ilog)
         self%initialized = .true.
@@ -228,7 +221,13 @@ contains
         allocate(self%group_adiab_w(self%n_state, self%n_state))
         allocate(self%group_adiab_dw(self%ndof, self%n_state, self%n_state))
         allocate(self%group_adiab_trans(self%n_state, self%n_state))
-        allocate(self%q(self%ndof))
+        allocate(self%q(self%ndof), source=0.0_dop)
+
+        ! Frozen coordinates are fixed at the centre of their basis.
+        allocate(self%gpoint(maxdim), source=0.0_dop)
+        do f = 1, ndof
+            if (basis(f) == 19) self%gpoint(f) = rpbaspar(1, f)
+        end do
 
     end subroutine quantics_initialize
 
@@ -240,7 +239,8 @@ contains
         integer :: izflag, nham
         real(dop) :: time
         integer(long), allocatable :: point(:)
-        complex(dp), allocatable :: cpesdia(:,:)
+        complex(dop), allocatable :: pesdiaz(:, :)
+        real(dop), allocatable :: derdia(:, :, :)
 
         open(ilog,file='quantics.log',status='unknown',position='append')
 
@@ -250,32 +250,29 @@ contains
 
         ! Calculate only diabatic potential and its derivatives.
         nham=1
-        allocate(point(maxdim))
-        allocate(cpesdia(self%n_state, self%n_state))
-        point = 1
-        call calcpes(self%hops, self%diab_w, point,self%q, cpesdia, izflag, nham)
-        call calcpesder(self%hops, self%diab_dw, self%q, nham)
+        allocate(point(maxdim), source=1)
+        allocate(pesdiaz(nddstate, nddstate))
+        allocate(derdia(nddstate, nddstate, maxdim))
+        call calcpes(self%hops, self%diab_w, point, self%gpoint, pesdiaz, izflag, nham)
+        if (izflag /= 0) then
+            write(stderr, *) 'Error in quantics_mod, eval_diab subroutine.'
+            write(stderr, *) '  Complex potentials are not supported.'
+            stop
+        end if
+        call calcpesder(self%hops, derdia, self%gpoint, nham)
 
-        ! ! Convert gradients from Quantics internal coordinates to input geometry coordinates.
-        ! do s = 1, nddstate
-        !     do s1 = 1, nddstate
-        !         tempvec(:, s1, s) = 0.0_dop
-        !         do n = 1, nspfdof(m)
-        !             f = spfdof(n, m)
-        !             tempvec(n, s1, s) = derdia(s1, s, f)
-        !         end do
-
-        !         if (ltshtrans) then
-        !             call mvtxdd1(tshtransb,tempvec(:, s1, s),self%diab_dw(:, s1, s),&
-        !                 maxdim,nspfdof(1),ndoftsh)
-        !         else
-        !             self%diab_dw(:, s1, s) = tempvec(:, s1, s)
-        !         end if
-        !     end do
-        ! end do
+        ! Extract derivatives with respect to the dynamical coordinates.
+        do s = 1, nddstate
+            do s1 = 1, nddstate
+                do n = 1, nspfdof(m)
+                    f = spfdof(n, m)
+                    self%diab_dw(n, s1, s) = derdia(s1, s, f)
+                end do
+            end do
+        end do
 
         close(ilog)
-   end subroutine quantics_eval_diab
+    end subroutine quantics_eval_diab
 
 !#######################################################################
 

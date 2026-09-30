@@ -29,14 +29,22 @@ class ZagHopTest(unittest.TestCase):
         """ Set up directory for running a specific test.
 
         If the test's own subdirectory already exists from a previous run,
-        rename it based on its modification time before creating a fresh one."""
+        rename it based on the modification time of the directory in which
+        zaghop was run before creating a fresh one. (copytree copies the
+        modification time of the source directory, so the rundir itself only
+        gets a new one if zaghop writes to it directly.)"""
         self.name = self.id().split(".")[-1]
         self.rundir = os.path.join(self.logdir, self.name)
         self.inpdir = os.path.join(self.idir, self.name)
         if os.path.isdir(self.rundir):
-            old_time = time.gmtime(os.path.getmtime(self.rundir))
+            old_time = time.gmtime(os.path.getmtime(os.path.join(self.rundir, self.trajdir)))
             old_time = time.strftime("%y.%m.%d.%H.%M.%S", old_time)
-            os.rename(self.rundir, self.rundir + "_" + old_time)
+            backup = self.rundir + "_" + old_time
+            i = 1
+            while os.path.exists(backup):
+                backup = f"{self.rundir}_{old_time}_{i}"
+                i += 1
+            os.rename(self.rundir, backup)
         shutil.copytree(self.inpdir, self.rundir)
         shutil.copytree(self.common, self.rundir, dirs_exist_ok=True)
         if not os.path.isdir(os.path.join(self.inpdir, "Reference")):

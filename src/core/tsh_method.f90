@@ -51,6 +51,7 @@ contains
         real(dp) :: t(self%n_state, self%n_state) !< Orthogonalized overlap matrix.
         real(dp) :: h_t(self%n_state, self%n_state) !< Hamiltonian during substep.
         real(dp) :: h_t2(self%n_state, self%n_state) !< Hamiltonian at time t2.
+        real(dp) :: dh(self%n_state, self%n_state) !< Change of Hamiltonian over the step (LD basis).
         complex(dp) :: w3(self%n_state, self%n_state) !< Work array 3.
         complex(dp) :: w4(self%n_state, self%n_state) !< Work array 4.
         real(dp), allocatable :: u_t2(:, :)
@@ -73,13 +74,13 @@ contains
         t = matmul(transpose(self%u_t1), u_t2) ! T = U(t)^t . U(t+dt)
         call orthog_lowdin(t)
 
-        h_t2 = matmul(matmul(t, h_t2), transpose(t)) ! H(t+dt) = T.H(t+dt).T^t
-        h_t2 = h_t2 - self%h_t1
+        dh = matmul(matmul(t, h_t2), transpose(t)) ! H(t+dt) = T.H(t+dt).T^t
+        dh = dh - self%h_t1
 
         dt = (t2 - self%t) / self%n_substep
 
         do i = 1, self%n_substep
-            h_t = self%h_t1 + h_t2 * real(i - 0.5_dp, dp) / self%n_substep
+            h_t = self%h_t1 + dh * real(i - 0.5_dp, dp) / self%n_substep
             w3 = mat_sy_exp(h_t, cmplx(0.0_dp, -dt, kind=dp))
             c_propagation_dt = matmul(w3, c_propagation_t0)
             c_hopping_dt = matmul(transpose(t), c_propagation_dt)
