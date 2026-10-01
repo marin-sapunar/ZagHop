@@ -31,7 +31,7 @@ program zaghop
     implicit none
 
     logical :: check
-    logical :: abort_flag = .false.
+    integer :: abort_flag = 0
     type(timer) :: mainclock
     type(timer) :: stepclock
     real(dp), allocatable :: hop_grad(:, :)
@@ -70,6 +70,7 @@ program zaghop
             call tr1%open_files(ctrl%print, ctrl%print_units, ctrl%output_dir)
             call tr1%writeheader(ctrl%print, ctrl%print_units)
         end if
+        call write_status(abort_flag)
         ! Run energy/gradient calculation for initial geometry.
         if (ctrl%mm) then
             if (stdp1) write(stdout, '(a)') ' Running initial MM calculation: '
@@ -146,37 +147,38 @@ program zaghop
             tr1%grad(:, tr1%qind) = tr1%pot%get_gradient('adiabatic', tr1%wf%active_state)
         end if
 
-        ! Stop the program after max_time was reached. Add tinydp to time for precision.
+        ! Stop the program after max_time was reached.
         if (tr1%time + tinydp >= ctrl%max_time) then
             if (ctrl%target_state == -2) then
                 if (stdp1) write(stdout, *) '  Target state max_t reached.'
+                abort_flag = 3
             else
                 if (stdp1) write(stdout, *) '  Reached max_time.'
+                abort_flag = 1
             end if
-            abort_flag = .true.
         end if
 
         ! Stop the program if the total energy changed above tolerance levels.
         if (abs(tr1%tote() - tr2%tote()) > ctrl%max_tot_en_change_step) then
             if (stdp1) write(stdout, *) '  Change in total energy too large.'
-            abort_flag = .true.
+            abort_flag = -1
         else if (abs(tr1%tote() - ctrl%t0_tot_en) > ctrl%max_tot_en_change) then
             if (stdp1) write(stdout, *) '  Drift in total energy too large.'
-            abort_flag = .true.
+            abort_flag = -2
         end if
 
         ! Stop the program at S0/S1 conical intersection.
         if (tr1%wf%n_state > 1) then
             if (tr1%pot%get_energy(2) - tr1%pot%get_energy(1) < ctrl%stop_s0s1_ci) then
                 if (stdp1) write(stdout, *) '  Intersection with ground state.'
-                abort_flag = .true.
+                abort_flag = 4
             end if
         end if
 
         ! Stop the program after reaching the target state.
         if (tr1%wf%active_state == ctrl%target_state) then
             if (ctrl%target_state_time == 0.0_dp) then
-                abort_flag = .true.
+                abort_flag = 2
                 if (stdp1) write(stdout, *) '  Target state reached.'
             else
                 if (stdp1) write(stdout, *) '  Target state reached, modifying max_time.'
@@ -194,7 +196,7 @@ program zaghop
         inquire(file='dynamics.stop', exist=check)
         if (check) then
             if (stdp1) write(stdout, *) '  Stop file found in working directory.'
-            abort_flag = .true.
+            abort_flag = -3
             call system('rm dynamics.stop')
         end if
 
@@ -202,15 +204,16 @@ program zaghop
         if ((mod(tr1%step, ctrl%printerval) == 0)) then
             call tr1%writestep(ctrl%print, ctrl%print_units)
         end if
-        if ((mod(tr1%step, ctrl%buinterval) == 0) .or. (abort_flag)) then
+        if ((mod(tr1%step, ctrl%buinterval) == 0) .or. (abort_flag /= 0)) then
             call trajectory_write_backup(ctrl%bufile, trajectory_data)
         end if
 
         call trajectory_next(ctrl%dt)
         if (stdp2) call stepclock%print(stdout, '   Step run time:')
-        if (abort_flag) then
+        if (abort_flag /= 0) then
             if (stdp1) write(stdout, *) '  Ending calculation.'
             if (stdp1) write(stdout, *)
+            call write_status(abort_flag)
             exit main
         end if
 
@@ -224,6 +227,24 @@ program zaghop
         call mainclock%print(stdout, ' Total run time:')
     end if
 
+
+contains
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: write_status
+    !
+    ! DESCRIPTION:
+    !> @brief Write the abort flag to the status file in the results directory.
+    !----------------------------------------------------------------------------------------------
+    subroutine write_status(flag)
+        integer, intent(in) :: flag
+        integer :: sunit
+
+        open(newunit=sunit, file=ctrl%output_dir//'/status', action='write', status='replace')
+        write(sunit, '(i0)') flag
+        close(sunit)
+    end subroutine write_status
 
 
 end program zaghop
