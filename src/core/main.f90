@@ -59,18 +59,19 @@ program zaghop
     if (ctrl%restart) then
         ! Restart old trajectory.
       !  call trajectory_read_backup(ctrl%bufile, trajectory_data)
+        call write_status(abort_flag)
     else
         ! Create output directory.
         if (check_is_dir(ctrl%output_dir)) then
-            write(stderr,*) 'Warning. Results directory already exists.'
-            write(stderr,*) '  New results will be appended.'
-            call tr1%open_files(ctrl%print, ctrl%print_units, ctrl%output_dir)
+            write(stderr,*) 'Error. Results directory already exists.'
+            write(stderr,*) 'Remove or rename the directory and restart the program.'
+            stop
         else
             call system('mkdir -p '//ctrl%output_dir)
             call tr1%open_files(ctrl%print, ctrl%print_units, ctrl%output_dir)
             call tr1%writeheader(ctrl%print, ctrl%print_units)
+            call write_status(abort_flag)
         end if
-        call write_status(abort_flag)
         ! Run energy/gradient calculation for initial geometry.
         if (ctrl%mm) then
             if (stdp1) write(stdout, '(a)') ' Running initial MM calculation: '
@@ -93,6 +94,7 @@ program zaghop
     if (tr1%time > ctrl%max_time) then
         if (stdp1) write(stdout, *) 'No steps to be done, ending calculation.'
         if (stdp1) call mainclock%print(stdout, ' Total run time:')
+        call write_status(1)
         stop
     end if
 
