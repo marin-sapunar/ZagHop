@@ -64,9 +64,13 @@ class ZagHopTest(unittest.TestCase):
 
     def compare_energy(self):
         """ Compare full contents of the energy.dat file. """
-        new = np.loadtxt(os.path.join(self.rundir, self.trajdir, "Results/energy.dat"), comments="#")
-        ref = np.loadtxt(self.rundir + "/Reference/energy.dat", comments="#")
-        self.assertTrue(np.allclose(new, ref), "Difference in energy.dat file.")
+        self.compare_results("energy.dat")
+
+    def compare_results(self, fname):
+        """ Compare full contents of a file in the Results directory. """
+        new = np.loadtxt(os.path.join(self.rundir, self.trajdir, "Results", fname), comments="#")
+        ref = np.loadtxt(os.path.join(self.rundir, "Reference", fname), comments="#")
+        self.assertTrue(np.allclose(new, ref), f"Difference in {fname} file.")
 
     def stdout_contains(self, string):
         """ Assert that a string appears in the nad.stdout file. """

@@ -4,6 +4,7 @@ module evaluator_base_mod
 
     private
     public :: potential_evaluator
+    public :: set_group_nstate
 
     type, abstract :: potential_evaluator
         integer :: n_state = 0

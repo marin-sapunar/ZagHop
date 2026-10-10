@@ -5,6 +5,11 @@
 !> @date June, 2017
 !
 ! Interface from Zagreb SH code to Quantics operator library
+!
+! States of higher multiplicity are ordered differently in Quantics and ZagHop. In Quantics, all
+! components of each state are consecutive (T1(1), T1(2), T1(3), T2(1), ...), while ZagHop places
+! each component in a separate group of states (T1(1), T2(1), ..., T1(2), T2(2), ...). The
+! diabatic potential is reordered to the ZagHop convention after each evaluation.
 !--------------------------------------------------------------------------------------------------
 module quantics_interface_mod
     use evaluator_diabatic_mod
@@ -43,8 +48,10 @@ module quantics_interface_mod
         real(dop), allocatable :: gpoint(:) !< All Quantics DOFs (maxdim), including frozen DOFs.
         logical :: initialized = .false.
         real(dop), allocatable :: hops(:) !< Operator data read from the oper file (hopsdim).
+        integer, allocatable :: state_map(:) !< Quantics index of each ZagHop state (n_state).
     contains
         procedure :: init => quantics_initialize
+        procedure :: set_group_nstate => quantics_set_group_nstate
         procedure :: update_geometry => quantics_update_geometry
         procedure :: eval_diab => quantics_eval_diab
         !   procedure :: get_oscill => quantics_get_oscill
@@ -92,7 +99,7 @@ contains
         character(len=c5)   :: filename, string
         logical(kind=4) :: check
         logical(kind=4) :: lerr
-        integer :: ilbl, ierr, icheck, f
+        integer :: ilbl, ierr, icheck, f, i
         integer :: chkdvr, chkgrd
         !, string
         !integer :: ilbl, jlbl, ierr, chkdvr, chkgrd, chkpsi, chkprp
@@ -222,6 +229,8 @@ contains
         allocate(self%group_adiab_dw(self%ndof, self%n_state, self%n_state))
         allocate(self%group_adiab_trans(self%n_state, self%n_state))
         allocate(self%q(self%ndof), source=0.0_dop)
+        ! Identity mapping until the spin multiplicities are given in set_group_nstate.
+        self%state_map = [(i, i = 1, self%n_state)]
 
         ! Frozen coordinates are fixed at the centre of their basis.
         allocate(self%gpoint(maxdim), source=0.0_dop)
@@ -232,13 +241,53 @@ contains
     end subroutine quantics_initialize
 
 
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: quantics_set_group_nstate
+    !> @brief Set state groups and the mapping from ZagHop to Quantics state ordering.
+    !> @details
+    !! The oper file contains no information on the multiplicities of the states, so they are
+    !! taken from the input. The states in each spin block are assumed to be ordered as in Quantics,
+    !! with all components of each state consecutive.
+    !----------------------------------------------------------------------------------------------
+    subroutine quantics_set_group_nstate(self, nstate, multiplicity)
+        use evaluator_base_mod, only : base_set_group_nstate => set_group_nstate
+        class(quantics_interface), intent(inout) :: self
+        integer, intent(in) :: nstate(:) !< Number of states of each multiplicity.
+        integer, intent(in) :: multiplicity(:) !< Multiplicity of each block of states.
+        integer :: i, j, k, ci, offset
+
+        if (sum(nstate * multiplicity) /= self%n_state) then
+            write(stderr, *) 'Error in quantics_mod, set_group_nstate subroutine.'
+            write(stderr, '(3x,a,i0,a)') 'Input nstate and multiplicity give ', &
+            &                            sum(nstate * multiplicity), ' states.'
+            write(stderr, '(3x,a,i0,a)') 'Quantics operator has ', self%n_state, ' states.'
+            stop
+        end if
+
+        call base_set_group_nstate(self, nstate, multiplicity)
+
+        ci = 1
+        offset = 0
+        do i = 1, size(nstate)
+            do j = 1, multiplicity(i)
+                do k = 1, nstate(i)
+                    self%state_map(ci) = offset + (k - 1) * multiplicity(i) + j
+                    ci = ci + 1
+                end do
+            end do
+            offset = offset + nstate(i) * multiplicity(i)
+        end do
+    end subroutine quantics_set_group_nstate
+
+
     subroutine quantics_eval_diab(self)
         class(quantics_interface), intent(inout) :: self
-        integer :: n, f, s, s1
+        integer :: n, f
         integer, parameter :: m = 1
         integer :: izflag, nham
         real(dop) :: time
         integer(long), allocatable :: point(:)
+        real(dop), allocatable :: pesdia(:, :)
         complex(dop), allocatable :: pesdiaz(:, :)
         real(dop), allocatable :: derdia(:, :, :)
 
@@ -251,9 +300,10 @@ contains
         ! Calculate only diabatic potential and its derivatives.
         nham=1
         allocate(point(maxdim), source=1)
+        allocate(pesdia(nddstate, nddstate))
         allocate(pesdiaz(nddstate, nddstate))
         allocate(derdia(nddstate, nddstate, maxdim))
-        call calcpes(self%hops, self%diab_w, point, self%gpoint, pesdiaz, izflag, nham)
+        call calcpes(self%hops, pesdia, point, self%gpoint, pesdiaz, izflag, nham)
         if (izflag /= 0) then
             write(stderr, *) 'Error in quantics_mod, eval_diab subroutine.'
             write(stderr, *) '  Complex potentials are not supported.'
@@ -261,14 +311,12 @@ contains
         end if
         call calcpesder(self%hops, derdia, self%gpoint, nham)
 
-        ! Extract derivatives with respect to the dynamical coordinates.
-        do s = 1, nddstate
-            do s1 = 1, nddstate
-                do n = 1, nspfdof(m)
-                    f = spfdof(n, m)
-                    self%diab_dw(n, s1, s) = derdia(s1, s, f)
-                end do
-            end do
+        ! Reorder states to ZagHop convention and extract derivatives with respect to the
+        ! dynamical coordinates.
+        self%diab_w = pesdia(self%state_map, self%state_map)
+        do n = 1, nspfdof(m)
+            f = spfdof(n, m)
+            self%diab_dw(n, :, :) = derdia(self%state_map, self%state_map, f)
         end do
 
         close(ilog)
