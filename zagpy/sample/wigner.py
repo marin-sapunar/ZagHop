@@ -72,12 +72,14 @@ def add_subparser(subparsers):
                 will ignore first and third normal mode.""")
     parser.add_argument(
         "--coord",
-        choices=["cartesian", "normal_mode"],
+        choices=["cartesian", "normal_mode", "mw_normal_mode"],
         type=str,
         default="cartesian",
         help="""Coordinate system for output. 'cartesian' writes Cartesian
                 coordinates (default). 'normal_mode' writes dimensionless
-                (mass and frequency scaled) normal mode coordinates.""")
+                (mass and frequency scaled) normal mode coordinates.
+                'mw_normal_mode' writes mass-weighted normal mode
+                coordinates (unit mass).""")
     parser.set_defaults(func=run)
 
 
@@ -104,10 +106,16 @@ def run(args):
     for i in range(args.npoint):
         os.mkdir("point" + str(i + 1).zfill(len(str(args.npoint))))
         os.chdir(os.path.join(cwd, "point" + str(i + 1).zfill(len(str(args.npoint)))))
-        if args.coord == "normal_mode":
+        if args.coord in ("normal_mode", "mw_normal_mode"):
             q = refined_modes(sample[0][i].copy(), args.ignore_modes)
             v = refined_modes(sample[1][i].copy(), args.ignore_modes)
-            write_geom_nm("geom", q, nm.freq)
+            if args.coord == "mw_normal_mode":
+                q = q / np.sqrt(nm.freq)
+                v = v / np.sqrt(nm.freq)
+                mass = np.ones_like(nm.freq)
+            else:
+                mass = 1 / nm.freq
+            write_geom_nm("geom", q, mass / dalton)
             write_veloc("veloc", v)
         else:
             write_veloc("veloc", nm.to_xyz(refined_modes(sample[1][i], args.ignore_modes),
@@ -161,14 +169,15 @@ def write_coord(fname, geom, atoms):
         ofile.write('$end\n')
 
 
-def write_geom_nm(fname, displacements, frequencies):
-    """ Write geometry in dimensionless normal mode coordinates. """
+def write_geom_nm(fname, displacements, masses):
+    """ Write geometry in normal mode coordinates. Takes output file name,
+        array of normal mode displacements and array of effective masses
+        (in Daltons) associated with each mode. """
     nmode = len(displacements)
     gformat = '{} {} {:.13f} q\n'
     with open(fname, 'w') as ofile:
         for i in range(nmode):
-            m_eff = 1 / frequencies[i] / dalton
-            ofile.write(gformat.format('v' + str(i + 1), m_eff, displacements[i]))
+            ofile.write(gformat.format('v' + str(i + 1), masses[i], displacements[i]))
 
 
 def write_veloc(fname, veloc):
