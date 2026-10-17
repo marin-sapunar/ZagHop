@@ -66,10 +66,17 @@ class ZagHopTest(unittest.TestCase):
         """ Compare full contents of the energy.dat file. """
         self.compare_results("energy.dat")
 
-    def compare_results(self, fname):
-        """ Compare full contents of a file in the Results directory. """
+    def compare_results(self, fname, reference=None):
+        """ Compare full contents of a file in the Results directory.
+
+        By default, the file is compared with the Reference directory of the current test. If
+        reference is given, it is compared with the Reference directory of that test instead."""
         new = np.loadtxt(os.path.join(self.rundir, self.trajdir, "Results", fname), comments="#")
-        ref = np.loadtxt(os.path.join(self.rundir, "Reference", fname), comments="#")
+        if reference is None:
+            refdir = os.path.join(self.rundir, "Reference")
+        else:
+            refdir = os.path.join(self.idir, reference, "Reference")
+        ref = np.loadtxt(os.path.join(refdir, fname), comments="#")
         self.assertTrue(np.allclose(new, ref), f"Difference in {fname} file.")
 
     def stdout_contains(self, string):

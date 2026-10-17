@@ -21,6 +21,12 @@ program util_test
         stop ret
     end if
 
+    ret = rigid_body_test()
+    if (ret /= 0) then
+        write(*,*) "Error in rigid_body_test."
+        stop ret
+    end if
+
     contains
     
     
@@ -106,6 +112,55 @@ program util_test
         if (toupper("Ca") /= "CA") return
         ret = 0
     end function string_test
+
+
+    integer function rigid_body_test() result(ret)
+        use global_defs, only : dp
+        use matrix_mod, only : unit_mat
+        use rigid_body_mod, only : external_modes, kabsch_rotation
+        real(dp) :: mass(4)
+        real(dp) :: geom(3, 4)
+        real(dp) :: moved(3, 4)
+        real(dp) :: lin(3, 3)
+        real(dp) :: axis(3), cross(3, 3), rot(3, 3), u(3, 3)
+        real(dp), allocatable :: ext(:, :)
+        real(dp) :: tiny = 1.0e-12_dp
+
+        mass = [12.0_dp, 1.0_dp, 16.0_dp, 14.0_dp]
+        geom = reshape([0.1_dp, 0.2_dp, -0.3_dp, 2.1_dp, 0.1_dp, 0.4_dp, -0.4_dp, 2.2_dp,        &
+        &               0.3_dp, 0.5_dp, -1.1_dp, 1.9_dp], [3, 4])
+        ! Rotation by 2 rad about the (1, 2, 2) axis.
+        axis = [1.0_dp, 2.0_dp, 2.0_dp] / 3.0_dp
+        cross = reshape([0.0_dp, axis(3), -axis(2), -axis(3), 0.0_dp, axis(1), axis(2),          &
+        &                -axis(1), 0.0_dp], [3, 3])
+        rot = cos(2.0_dp) * unit_mat(3) + sin(2.0_dp) * cross                                    &
+        &   + (1.0_dp - cos(2.0_dp)) * spread(axis, 2, 3) * spread(axis, 1, 3)
+
+        ret = 1
+        ! Orthonormal translation/rotation vectors: 6 for a nonlinear molecule, 3 without
+        ! rotation and 5 for a linear molecule.
+        ext = external_modes(mass, geom, .true.)
+        if (size(ext, 2) /= 6) return
+        if (maxval(abs(matmul(transpose(ext), ext) - unit_mat(6))) > tiny) return
+        ext = external_modes(mass, geom, .false.)
+        if (size(ext, 2) /= 3) return
+        lin = 0.0_dp
+        lin(3, :) = [-2.2_dp, 0.0_dp, 2.2_dp]
+        ext = external_modes(mass(1:3), lin, .true.)
+        if (size(ext, 2) /= 5) return
+        if (maxval(abs(matmul(transpose(ext), ext) - unit_mat(5))) > tiny) return
+
+        ! Kabsch rotation undoes the rotation of a translated geometry.
+        moved = matmul(rot, geom) + spread([1.0_dp, -2.0_dp, 0.5_dp], 2, 4)
+        u = kabsch_rotation(mass, moved, geom)
+        if (maxval(abs(matmul(u, rot) - unit_mat(3))) > tiny) return
+        ! Planar molecule (singular covariance matrix), the result should still be a rotation.
+        geom(1, :) = 0.0_dp
+        moved = matmul(rot, geom)
+        u = kabsch_rotation(mass, moved, geom)
+        if (maxval(abs(matmul(u, rot) - unit_mat(3))) > tiny) return
+        ret = 0
+    end function rigid_body_test
 
     
 end program util_test

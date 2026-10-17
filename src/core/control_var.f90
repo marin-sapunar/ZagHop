@@ -64,10 +64,13 @@ module control_var
         real(dp) :: max_time !< Total time for the simulation.
         real(dp) :: dt !< Time step for classical dynamics.
         real(dp) :: dt_0 !< Initial dt.
-        integer :: orientlvl !< Orientation of the molecule during dynamics:
+        integer :: orientlvl !< Orientation of the molecule during dynamics (Cartesian only):
         !! - 0 - None.
-        !! - 1 - Project translation.
-        !! - 2 - Project translation and rotation.
+        !! - 1 - Keep the centre of mass at the origin and project translation from velocity.
+        !! - 2 - As 1, and also project rotation from velocity.
+        real(dp), allocatable :: orient_ref(:, :) !< Reference geometry of the potential. If
+        !! allocated, orientlvl 2 rotates the initial conditions into the frame of this geometry
+        !! and projects rotations about it (Eckart frame) instead of about the current geometry.
         logical :: constrain_dyn = .false. !< Signal to enable constraints in dynamics. (RATTLE)
         integer :: n_cns = 0 !< Number of constraints.
         type(constraint), allocatable :: cns(:) !< Constraints.

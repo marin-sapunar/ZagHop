@@ -13,8 +13,9 @@ module nuclear_dyn_mod
     private
     public :: dyn_updategeom
     public :: dyn_updatevelo
+    public :: dyn_initial_orientation
     public :: set_geom_center_of_mass
-    public :: project_translation_rotation_from_velocity
+    public :: project_external_velocity
 
 contains
 
@@ -47,9 +48,7 @@ contains
         if (allocated(ctrl%cns)) call rattle_geom(ctrl%cns, dt, geo1, masi, q)
         geo2 = geo1 + dt * q
         select case(ctrl%orientlvl)
-        case(1)
-            call set_geom_center_of_mass(mass, geo2)
-        case(2)
+        case(1, 2)
             call set_geom_center_of_mass(mass, geo2)
         end select
     end subroutine dyn_updategeom
@@ -84,70 +83,113 @@ contains
             call berendsen_thermostat(ctrl%target_t, ctrl%tau_t, dt, mass, vel2)
         end if
         if (allocated(ctrl%cns)) call rattle_velo(ctrl%cns, geom, masi, vel2)
-        select case(ctrl%orientlvl)
-        case(2)
-            call project_translation_rotation_from_velocity(mass, geom, vel2)
-        end select
+        call remove_external_motion(mass, geom, vel2)
     end subroutine dyn_updatevelo
 
 
-    subroutine set_geom_center_of_mass(mass, geom)
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: dyn_initial_orientation
+    !
+    ! DESCRIPTION:
+    !> @brief Remove overall translation and rotation from the initial conditions.
+    !> @details
+    !! The geometry is moved to the centre of mass and translation (orientlvl 1) or translation
+    !! and rotation (orientlvl 2) are projected from the velocity. For orientlvl 2, if the
+    !! potential is defined relative to a reference geometry (ctrl%orient_ref), the geometry and
+    !! velocity are first rotated into the frame of the reference geometry (Eckart frame).
+    !----------------------------------------------------------------------------------------------
+    subroutine dyn_initial_orientation(mass, geom, velo)
+        use control_var
+        use rigid_body_mod, only : kabsch_rotation
         real(dp), intent(in) :: mass(:)
         real(dp), intent(inout) :: geom(:, :)
-        real(dp) :: xyz_cm(size(geom, 1))
-        integer :: i
+        real(dp), intent(inout) :: velo(:, :)
+        real(dp) :: u(3, 3)
+        real(dp) :: angle
 
-        xyz_cm = matmul(geom, mass) / sum(mass)
-        do i = 1, size(mass)
-            geom(:, i) = geom(:, i) - xyz_cm
-        end do
+        if (ctrl%orientlvl == 0) return
+        call set_geom_center_of_mass(mass, geom)
+        if (ctrl%orientlvl == 2 .and. allocated(ctrl%orient_ref)) then
+            u = kabsch_rotation(mass, geom, ctrl%orient_ref)
+            geom = matmul(u, geom)
+            velo = matmul(u, velo)
+            if (stdp2) then
+                angle = acos(max(-1.0_dp, min(1.0_dp, 0.5_dp * (u(1,1) + u(2,2) + u(3,3) - 1))))
+                write(stdout, '(1x,a,f0.4,a)') 'Initial geometry rotated by ', angle * 180 / pi,  &
+                &                              ' degrees into the frame of the reference geometry.'
+            end if
+        end if
+        call remove_external_motion(mass, geom, velo)
+    end subroutine dyn_initial_orientation
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: remove_external_motion
+    !
+    ! DESCRIPTION:
+    !> @brief Project translation (orientlvl 1) or translation and rotation (orientlvl 2) from
+    !! the velocity.
+    !> @details
+    !! If the potential is defined relative to a reference geometry (ctrl%orient_ref), rotations
+    !! are taken about the reference geometry. Such a potential is only invariant to infinitesimal
+    !! rotations about the reference geometry, so these (and not rotations about the current
+    !! geometry) are the motions which do not couple to the rest of the dynamics.
+    !----------------------------------------------------------------------------------------------
+    subroutine remove_external_motion(mass, geom, velo)
+        use control_var
+        real(dp), intent(in) :: mass(:)
+        real(dp), intent(in) :: geom(:, :)
+        real(dp), intent(inout) :: velo(:, :)
+
+        select case(ctrl%orientlvl)
+        case(1)
+            call project_external_velocity(mass, geom, .false., velo)
+        case(2)
+            if (allocated(ctrl%orient_ref)) then
+                call project_external_velocity(mass, ctrl%orient_ref, .true., velo)
+            else
+                call project_external_velocity(mass, geom, .true., velo)
+            end if
+        end select
+    end subroutine remove_external_motion
+
+
+    subroutine set_geom_center_of_mass(mass, geom)
+        use rigid_body_mod, only : center_of_mass
+        real(dp), intent(in) :: mass(:)
+        real(dp), intent(inout) :: geom(:, :)
+
+        geom = geom - spread(center_of_mass(mass, geom), 2, size(geom, 2))
     end subroutine set_geom_center_of_mass
 
 
-    subroutine project_translation_rotation_from_velocity(mass, geo, velo)
-        !< @todo: Complete cleanup required.
-        use matrix_mod, only : mat_inv
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: project_external_velocity
+    !
+    ! DESCRIPTION:
+    !> @brief Remove overall translation and, optionally, rotation from the velocity.
+    !> @details
+    !! The mass-weighted velocity is projected onto the orthogonal complement of the translation
+    !! and rotation vectors, with the rotations taken about the centre of mass of geom. This
+    !! removes the linear and angular momentum with respect to geom while keeping the rest of the
+    !! velocity unchanged.
+    !----------------------------------------------------------------------------------------------
+    subroutine project_external_velocity(mass, geom, rotation, velo)
+        use rigid_body_mod, only : external_modes
         real(dp), intent(in) :: mass(:)
-        real(dp), intent(in) :: geo(:,:)
-        real(dp), intent(inout) :: velo(:,:)
-        integer :: i, natom
-        real(dp) :: vel_cm(3)
-        real(dp) :: ang_mom(3)
-        real(dp) :: omega(3)
-        real(dp) :: inert_mom(3,3)
-        real(dp), allocatable :: velocity(:, :)
-        real(dp), allocatable :: geom(:, :)
+        real(dp), intent(in) :: geom(:, :) !< Geometry defining the rotation vectors.
+        logical, intent(in) :: rotation !< Also project rotation.
+        real(dp), intent(inout) :: velo(:, :)
+        real(dp), allocatable :: ext(:, :)
+        real(dp) :: sqrt_mass(size(velo))
+        real(dp) :: x(size(velo))
 
-        allocate(velocity, source=transpose(velo))
-        allocate(geom, source=transpose(geo))
-        natom = size(mass)
-        vel_cm = matmul(mass, velocity) / sum(mass)
-        ang_mom = 0.0_dp
-        inert_mom = 0.0_dp
-        do i = 1, natom
-            velocity(i,1:3) = velocity(i,1:3)-vel_cm(1:3)
-            ang_mom(1)      = ang_mom(1) + mass(i) * (geom(i,2) * velocity(i,3) - geom(i,3) * velocity(i,2))
-            ang_mom(2)      = ang_mom(2) + mass(i) * (geom(i,3) * velocity(i,1) - geom(i,1) * velocity(i,3))
-            ang_mom(3)      = ang_mom(3) + mass(i) * (geom(i,1) * velocity(i,2) - geom(i,2) * velocity(i,1))
-            inert_mom(1,1)  = inert_mom(1,1) + mass(i) * (geom(i,2)**2 + geom(i,3)**2)
-            inert_mom(2,2)  = inert_mom(2,2) + mass(i) * (geom(i,1)**2 + geom(i,3)**2)
-            inert_mom(3,3)  = inert_mom(3,3) + mass(i) * (geom(i,1)**2 + geom(i,2)**2)
-            inert_mom(1,2)  = inert_mom(1,2) - mass(i) * geom(i,1) * geom(i,2)
-            inert_mom(1,3)  = inert_mom(1,3) - mass(i) * geom(i,1) * geom(i,3)
-            inert_mom(2,3)  = inert_mom(2,3) - mass(i) * geom(i,2) * geom(i,3)
-        end do
-        inert_mom(2,1) = inert_mom(1,2)
-        inert_mom(3,1) = inert_mom(1,3)
-        inert_mom(3,2) = inert_mom(2,3)
-        inert_mom = mat_inv(inert_mom)
-        omega = matmul(inert_mom, ang_mom)
-        do i = 1, natom
-            velocity(i,1) = velocity(i,1) - (omega(2) * geom(i,3) - omega(3) * geom(i,2))
-            velocity(i,2) = velocity(i,2) - (omega(3) * geom(i,1) - omega(1) * geom(i,3))
-            velocity(i,3) = velocity(i,3) - (omega(1) * geom(i,2) - omega(2) * geom(i,1))
-        end do
-        velo = transpose(velocity)
-    end subroutine  project_translation_rotation_from_velocity
+        ext = external_modes(mass, geom, rotation)
+        sqrt_mass = reshape(spread(sqrt(mass), 1, size(velo, 1)), [size(velo)])
+        x = reshape(velo, [size(velo)]) * sqrt_mass
+        x = x - matmul(ext, matmul(x, ext))
+        velo = reshape(x / sqrt_mass, shape(velo))
+    end subroutine project_external_velocity
 
 
     subroutine berendsen_thermostat(target_t, tau_t, dt, mass, vel)

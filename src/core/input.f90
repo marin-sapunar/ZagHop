@@ -262,6 +262,26 @@ contains
                 ctrl%print(7) = .false.
             end if
         end select
+        if (ctrl%orientlvl < 0 .or. ctrl%orientlvl > 2) then
+            write(stderr, *) 'Error in Input module, read_input subroutine.'
+            write(stderr, '(3x,a,i0,a)') 'Unrecognized orient option: ', ctrl%orientlvl, '.'
+            stop
+        end if
+        if (ctrl%orientlvl /= 0) then
+            if (tr1%classical_coordinates /= 'cartesian' .or. tr1%ndim /= 3) then
+                write(stderr, *) 'Error in Input module, read_input subroutine.'
+                write(stderr, *) '  Option orient is only available for Cartesian coordinates.'
+                write(stderr, '(3x,a,a,a,i0,a)') 'Classical coordinates: "',                     &
+                &   tr1%classical_coordinates, '", ndim = ', tr1%ndim, '.'
+                stop
+            end if
+        end if
+        ! The thermostat temperature assumes 3 degrees of freedom per atom.
+        if (ctrl%thermostat /= 0 .and. tr1%ndim /= 3) then
+            write(stderr, *) 'Warning in Input module, read_input subroutine.'
+            write(stderr, *) '  Thermostat is only implemented for ndim = 3. Disabling thermostat.'
+            ctrl%thermostat = 0
+        end if
         if (ctrl%thermostat /= 0) then
             ctrl%max_tot_en_change = huge(ctrl%max_tot_en_change)
             ctrl%max_tot_en_change_step = huge(ctrl%max_tot_en_change_step)
@@ -307,14 +327,19 @@ contains
             end select
         end if
 
-        ! Reorient the molecule based on orientlvl
-        select case(ctrl%orientlvl)
-        case(1)
-            call set_geom_center_of_mass(tr1%mass, tr1%geom)
-        case(2)
-            call set_geom_center_of_mass(tr1%mass, tr1%geom)
-            call project_translation_rotation_from_velocity(tr1%mass, tr1%geom, tr1%velo)
-        end select
+        ! Atoms need to match the reference geometry of the normal modes.
+        if (tr1%classical_coordinates == 'cartesian') then
+            select type(p => tr1%pot)
+            type is (vc_evaluator)
+                call p%model%nm%check_atoms(tr1%sym, tr1%mass / Da_me)
+            end select
+        end if
+
+        ! Remove overall translation/rotation based on orientlvl.
+        if (ctrl%orientlvl == 2) then
+            call tr1%pot%get_reference_geometry(tr1%classical_coordinates, ctrl%orient_ref)
+        end if
+        call dyn_initial_orientation(tr1%mass, tr1%geom, tr1%velo)
 
         ! Read list of partial charges.
         if (ctrl%pcharge) then
@@ -602,12 +627,11 @@ contains
                     end select
                 case('vibronic_coupling')
                     if (readf%narg > 2) ctrl%vc_template = readf%args(3)%s
-                    call vc_data%init(ctrl%vc_template)
-                    call vc_nmode%read_v0(vc_data%v0_file)
+                    call vc_data%init(ctrl%vc_template, vc_nmode)
                     allocate(vc_evaluator :: tr1%pot)
                     select type(p => tr1%pot)
                     type is (vc_evaluator)
-                        call p%initialize(vc_data, vc_nmode)
+                        call p%initialize(vc_data)
                     end select
                 case default
                     write(stderr, *) 'Error in Input module, read_method subroutine.'

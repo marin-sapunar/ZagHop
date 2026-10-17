@@ -23,6 +23,7 @@ module evaluator_base_mod
         procedure(get_gradient), deferred :: get_gradient
         procedure(get_nadv), deferred :: get_nadv
         procedure :: set_group_nstate
+        procedure :: get_reference_geometry
         generic :: get_energy => get_energy_single, get_energy_all
     end type potential_evaluator
 
@@ -139,6 +140,20 @@ contains
             end do
         end do
     end subroutine set_group_nstate
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: get_reference_geometry
+    !> @brief Reference geometry which defines the orientation of the potential.
+    !> @details
+    !! The geometry is not allocated (default) if the potential is invariant to overall rotation
+    !! of the system given in the coordinates.
+    !----------------------------------------------------------------------------------------------
+    subroutine get_reference_geometry(self, coordinates, geom)
+        class(potential_evaluator), intent(in) :: self
+        character(len=*), intent(in) :: coordinates
+        real(dp), allocatable, intent(out) :: geom(:, :)
+    end subroutine get_reference_geometry
 
 
 end module evaluator_base_mod

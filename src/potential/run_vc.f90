@@ -6,8 +6,8 @@ program run_vc
     implicit none
 
     type(vc_evaluator) :: vc
-    type(vc_model) :: model
-    type(normal_modes) :: nm
+    type(vc_model), target :: model
+    type(normal_modes), target :: nm
     character(len=256) :: template_file, geom_file
     real(dp), allocatable :: q(:, :), energies(:)
     integer :: i, nmode, io, iunit
@@ -23,9 +23,8 @@ program run_vc
     call get_command_argument(1, template_file)
     call get_command_argument(2, geom_file)
 
-    call model%init(trim(template_file))
-    call nm%read_v0(model%v0_file)
-    call vc%initialize(model, nm)
+    call model%init(trim(template_file), nm)
+    call vc%initialize(model)
     nmode = vc%model%nmode
 
     allocate(q(1, nmode))

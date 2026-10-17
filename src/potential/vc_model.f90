@@ -11,6 +11,7 @@ module vc_model_mod
     use string_mod
     use vc_block_mod
     use file_mod, only : reader
+    use coord_transform_mod, only : normal_modes
     implicit none
 
     private
@@ -19,18 +20,16 @@ module vc_model_mod
     type vc_model
         character(len=:), allocatable :: template_file
         character(len=:), allocatable :: v0_file
+        type(normal_modes), pointer :: nm => null() !< Frequencies and normal modes from V0 file.
         integer :: nstate(3) = [0, 0, 0]
         integer :: nmode = 0
         integer :: tot_ns = 0
-        integer :: zero_mode = 0
-        real(dp), allocatable :: freq(:)
         type(vc_block) :: w(3)
         type(vc_block) :: soc
         type(vc_block) :: dm(3) 
         type(vc_block), allocatable :: dw(:, :)
     contains
         procedure :: init => vc_init
-        procedure :: read_v0
     end type vc_model
 
 
@@ -42,10 +41,12 @@ contains
     ! DESCRIPTION:
     !> @brief Initialize LVC model from template file.
     !> @details
+    !! The V0 file given in the template is read into nm, which the model keeps a pointer to.
     !----------------------------------------------------------------------------------------------
-    subroutine vc_init(self, template_file)
+    subroutine vc_init(self, template_file, nm)
         class(vc_model) :: self
         character(len=*), intent(in) :: template_file
+        type(normal_modes), intent(inout), target :: nm
         type(reader) :: readf
         integer :: n_val, i, j, k, mult
         integer ::  ist1, ist2, imode1, imode2
@@ -70,7 +71,9 @@ contains
         call readf%next()
         call readf%parseline(' ')
         self%v0_file = template_dir // readf%args(1)%s
-        call self%read_v0(self%v0_file)
+        call nm%read_v0(self%v0_file)
+        self%nm => nm
+        self%nmode = nm%nfreq - nm%zero_mode
 
         call readf%next()
         call readf%parseline(' ')
@@ -90,7 +93,7 @@ contains
             call self%w(i)%allocate(2, self%nmode, self%nstate(i), self%nstate(i))
             do j = 1, self%nstate(i)
                 do k = 1, self%nmode
-                    self%w(i)%quad(k, k, j, j) = 0.5_dp * self%freq(k + self%zero_mode)
+                    self%w(i)%quad(k, k, j, j) = 0.5_dp * self%nm%freq(k + self%nm%zero_mode)
                 end do
             end do
         end do
@@ -125,7 +128,7 @@ contains
                     read(readf%args(1)%s, *) mult
                     read(readf%args(2)%s, *) ist1
                     read(readf%args(3)%s, *) imode1 
-                    imode1 = imode1 - self%zero_mode
+                    imode1 = imode1 - self%nm%zero_mode
                     read(readf%args(4)%s, *) val
                     self%w(mult)%linear(imode1, ist1, ist1) = &
                     &    self%w(mult)%linear(imode1, ist1, ist1) + val
@@ -141,7 +144,7 @@ contains
                     read(readf%args(2)%s, *) ist1
                     read(readf%args(3)%s, *) ist2
                     read(readf%args(4)%s, *) imode1
-                    imode1 = imode1 - self%zero_mode
+                    imode1 = imode1 - self%nm%zero_mode
                     read(readf%args(5)%s, *) val
                     self%w(mult)%linear(imode1, ist1, ist2) = &
                     &    self%w(mult)%linear(imode1, ist1, ist2) + val
@@ -159,9 +162,9 @@ contains
                     read(readf%args(1)%s, *) mult
                     read(readf%args(2)%s, *) ist1
                     read(readf%args(3)%s, *) imode1
-                    imode1 = imode1 - self%zero_mode
+                    imode1 = imode1 - self%nm%zero_mode
                     read(readf%args(4)%s, *) imode2
-                    imode2 = imode2 - self%zero_mode
+                    imode2 = imode2 - self%nm%zero_mode
                     read(readf%args(5)%s, *) val
                     self%w(mult)%quad(imode1, imode2, ist1, ist1) = &
                     &    self%w(mult)%quad(imode1, imode2, ist1, ist1) + val * 0.5_dp
@@ -209,44 +212,6 @@ contains
             end do
         end do
     end subroutine vc_init
-
-
-    !----------------------------------------------------------------------------------------------
-    ! SUBROUTINE: read_v0
-    ! DESCRIPTION:
-    !> @brief Read V0 file.
-    !----------------------------------------------------------------------------------------------
-    subroutine read_v0(self, v0_file)
-        class(vc_model) :: self
-        character(len=*), intent(in) :: v0_file
-        type(reader) :: readf
-
-        call readf%open(v0_file, abort_on_eof=.false.)
-
-        do
-            call readf%next()
-            if (is_iostat_end(readf%iostat)) exit
-            call readf%parseline(' ')
-            select case(readf%args(1)%s)
-            case('Frequencies')
-                call readf%next()
-                call readf%parseline(' ')
-                self%nmode = readf%narg
-                allocate(self%freq(self%nmode))
-                read(readf%line, *) self%freq
-            end select
-        end do
-        call readf%close()
-
-        self%zero_mode = count(abs(self%freq) < 1.0e-12_dp)
-        self%nmode = self%nmode - self%zero_mode
-        if (self%zero_mode == 0) return
-        if (self%zero_mode /= 6) then
-            write(stderr, *) 'Warning in vibronic_mod, read_v0 subroutine.'
-            write(stderr, *) '  Found ', self%zero_mode, ' zero frequencies. Expected none or 6.'
-        end if
-        
-    end subroutine read_v0
 
 
 end module vc_model_mod

@@ -10,6 +10,8 @@
 module coord_transform_mod
     use global_defs
     use file_mod, only : reader
+    use string_mod, only : tolower
+    use rigid_body_mod, only : center_of_mass
     implicit none
 
     private
@@ -26,7 +28,9 @@ module coord_transform_mod
     !> @details
     !! Dimensionless normal mode coordinates are Q = Omega^(1/2) L^T M^(1/2) (R - R0), where L are
     !! the mass-weighted normal modes, Omega the frequencies, M the masses and R0 the reference
-    !! geometry. Modes with zero frequency are excluded from Q.
+    !! geometry. Modes with zero frequency are excluded from Q. Both R and R0 are taken relative
+    !! to their centres of mass, so Q is exactly invariant to translation. Q is only invariant to
+    !! infinitesimal rotation about R0, so R needs to be given in the frame of R0.
     !----------------------------------------------------------------------------------------------
     type normal_modes
         character(len=:), allocatable :: v0_file
@@ -43,6 +47,7 @@ module coord_transform_mod
                                               !! shape (nfreq-zero_mode, 3*natom).
     contains
         procedure :: read_v0
+        procedure :: check_atoms
         procedure :: cart_to_nm
         procedure :: deriv_nm_to_cart
     end type normal_modes
@@ -130,6 +135,17 @@ contains
         end do
         call readf%close()
 
+        if (.not. allocated(self%freq)) then
+            write(stderr, *) 'Error in coord_transform_mod, read_v0 subroutine.'
+            write(stderr, *) '  Frequencies section not found in file: ', v0_file
+            stop
+        end if
+        self%zero_mode = count(abs(self%freq) < 1.0e-12_dp)
+        if (self%zero_mode /= 0 .and. self%zero_mode /= 6) then
+            write(stderr, *) 'Warning in coord_transform_mod, read_v0 subroutine.'
+            write(stderr, *) '  Found ', self%zero_mode, ' zero frequencies. Expected none or 6.'
+        end if
+
         if (.not. allocated(self%ref_geom)) then
             write(stderr, *) 'Warning in coord_transform_mod, read_v0 subroutine.'
             write(stderr, *) '  Geometry section not found in file: ', v0_file
@@ -152,7 +168,6 @@ contains
             stop
         end if
 
-        self%zero_mode = count(abs(self%freq) < 1.0e-12_dp)
         sqrt_mass = reshape(spread(sqrt(self%mass * Da_me), 1, 3), [3 * self%natom])
         allocate(self%c_to_q(self%nfreq - self%zero_mode, 3 * self%natom))
         do i = 1, self%nfreq - self%zero_mode
@@ -160,6 +175,43 @@ contains
             &                   * self%nm(:, self%zero_mode + i) * sqrt_mass
         end do
     end subroutine read_v0
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: check_atoms
+    ! DESCRIPTION:
+    !> @brief Check that a list of atoms matches the atoms of the reference geometry.
+    !> @details
+    !! The Cartesian dynamics are equivalent to propagating Q directly, and Q is invariant to
+    !! translation and infinitesimal rotation, only if the same masses are used in the dynamics
+    !! and in the transformation.
+    !----------------------------------------------------------------------------------------------
+    subroutine check_atoms(self, sym, mass)
+        class(normal_modes), intent(in) :: self
+        character(len=*), intent(in) :: sym(:) !< Atom symbols.
+        real(dp), intent(in) :: mass(:) !< Atom masses (amu).
+        real(dp), parameter :: tol = 1.0e-6_dp !< Relative tolerance for comparing masses.
+        integer :: i
+
+        call check_available(self, 'check_atoms')
+        if (size(sym) /= self%natom) then
+            write(stderr, *) 'Error in coord_transform_mod, check_atoms subroutine.'
+            write(stderr, '(3x,a,i0,a,i0,a)') 'Number of atoms (', size(sym),                     &
+            &   ') does not match the reference geometry (', self%natom, ').'
+            write(stderr, *) '  File: ', self%v0_file
+            stop
+        end if
+        do i = 1, self%natom
+            if (tolower(trim(adjustl(sym(i)))) == tolower(trim(adjustl(self%sym(i)))) .and.       &
+            &   abs(mass(i) - self%mass(i)) <= tol * self%mass(i)) cycle
+            write(stderr, *) 'Error in coord_transform_mod, check_atoms subroutine.'
+            write(stderr, '(3x,a,i0,a)') 'Atom ', i, ' does not match the reference geometry.'
+            write(stderr, '(5x,a,a2,a,f14.8)') 'Geometry:  ', sym(i), ', mass: ', mass(i)
+            write(stderr, '(5x,a,a2,a,f14.8)') 'Reference: ', self%sym(i), ', mass: ', self%mass(i)
+            write(stderr, *) '  File: ', self%v0_file
+            stop
+        end do
+    end subroutine check_atoms
 
 
     !----------------------------------------------------------------------------------------------
@@ -171,6 +223,7 @@ contains
         class(normal_modes), intent(in) :: self
         real(dp), intent(in) :: geom(:, :) !< Cartesian geometry (bohr), shape (3, natom).
         real(dp), allocatable :: q(:)
+        real(dp) :: disp(3, self%natom)
 
         call check_available(self, 'cart_to_nm')
         if (size(geom, 1) /= 3 .or. size(geom, 2) /= self%natom) then
@@ -179,7 +232,9 @@ contains
             stop
         end if
 
-        q = matmul(self%c_to_q, reshape(geom - self%ref_geom, [3 * self%natom]))
+        disp = (geom - spread(center_of_mass(self%mass, geom), 2, self%natom))                   &
+        &    - (self%ref_geom - spread(center_of_mass(self%mass, self%ref_geom), 2, self%natom))
+        q = matmul(self%c_to_q, reshape(disp, [3 * self%natom]))
     end function cart_to_nm
 
 
@@ -189,12 +244,17 @@ contains
     !> @brief Convert derivatives with respect to normal modes to Cartesian derivatives.
     !> @details
     !! Applies to any derivative with respect to the nuclear coordinates (gradients, nonadiabatic
-    !! coupling vectors): dX/dR = M^(1/2) L Omega^(1/2) dX/dQ.
+    !! coupling vectors): dX/dR = M^(1/2) L Omega^(1/2) dX/dQ. Since Q depends on the positions
+    !! relative to the centre of mass (see cart_to_nm), the net derivative (sum over atoms) is
+    !! removed by subtracting it from each atom weighted by m_i / sum(m).
     !----------------------------------------------------------------------------------------------
     function deriv_nm_to_cart(self, dq) result(dr)
         class(normal_modes), intent(in) :: self
         real(dp), intent(in) :: dq(:) !< Derivative with respect to Q.
         real(dp), allocatable :: dr(:) !< Derivative with respect to R, shape (3*natom).
+        real(dp) :: dr3(3, self%natom)
+        real(dp) :: net(3)
+        integer :: i
 
         call check_available(self, 'deriv_nm_to_cart')
         if (size(dq) /= size(self%c_to_q, 1)) then
@@ -204,7 +264,12 @@ contains
             stop
         end if
 
-        dr = matmul(dq, self%c_to_q)
+        dr3 = reshape(matmul(dq, self%c_to_q), [3, self%natom])
+        net = sum(dr3, dim=2)
+        do i = 1, self%natom
+            dr3(:, i) = dr3(:, i) - net * self%mass(i) / sum(self%mass)
+        end do
+        dr = reshape(dr3, [3 * self%natom])
     end function deriv_nm_to_cart
 
 
