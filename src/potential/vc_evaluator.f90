@@ -1,11 +1,16 @@
 module vc_evaluator_mod
-    use evaluator_diabatic_mod
+    use evaluator_diabatic_mod, diabatic_get_gradient => get_gradient, &
+    &                           diabatic_get_nadv => get_nadv
     use vc_model_mod
+    use coord_transform_mod, only : normal_modes
     use rmat_mod, only : rmat
     implicit none
 
     type, extends(diabatic_evaluator) :: vc_evaluator
         type(vc_model), pointer :: model => null()
+        type(normal_modes), pointer :: nm => null()
+        character(len=:), allocatable :: input_coordinates !< Coordinates of the geometry passed
+                                                           !! to update_geometry.
         real(dp), allocatable :: q(:)
         
         type(rmat) :: eigvec_block(3)
@@ -15,17 +20,23 @@ module vc_evaluator_mod
         procedure :: initialize => vc_initialize
         procedure :: update_geometry => vc_update_geometry
         procedure :: eval_diab => vc_eval_diab
+        procedure :: get_gradient => vc_get_gradient
+        procedure :: get_nadv => vc_get_nadv
         procedure :: get_oscill => vc_get_oscill
     end type vc_evaluator
 
 contains
 
-    subroutine vc_initialize(self, model)
+    subroutine vc_initialize(self, model, nm)
         class(vc_evaluator) :: self
         type(vc_model), intent(in), target :: model
+        type(normal_modes), intent(in), target :: nm
         integer :: i, cgroup, ci, j
 
         self%model => model
+        self%nm => nm
+        self%classical_coordinates = 'normal_modes'
+        self%input_coordinates = self%classical_coordinates
         self%n_group = sum([1, 2, 3], mask=(model%nstate > 0))
         allocate(self%group_nstate(self%n_group))
         allocate(self%group_i0(self%n_group))
@@ -53,19 +64,58 @@ contains
     end subroutine vc_initialize
 
 
-    subroutine vc_update_geometry(self, geometry)
+    subroutine vc_update_geometry(self, geometry, coordinates)
         class(vc_evaluator), intent(inout) :: self
         real(dp), intent(in) :: geometry(:, :)
+        character(len=*), intent(in) :: coordinates
 
-        if (size(geometry, 1) /= 1) then
+        if (coordinates == self%classical_coordinates) then
+            if (size(geometry, 1) /= 1) then
+                write(stderr, *) 'Error in vc_evaluator_mod, update_geometry subroutine.'
+                write(stderr, *) '  Geometry should have dimensions (1, nmode).'
+                stop
+            end if
+            self%q = geometry(1, :)
+        else if (coordinates == 'cartesian') then
+            self%q = self%nm%cart_to_nm(geometry)
+        else
             write(stderr, *) 'Error in vc_evaluator_mod, update_geometry subroutine.'
-            write(stderr, *) '  Geometry should have dimensions (1, nmode).'
+            write(stderr, *) '  Unsupported coordinates "'//coordinates//'". Expected "'//      &
+            &                self%classical_coordinates//'" or "cartesian".'
             stop
         end if
+        self%input_coordinates = coordinates
 
-        self%q = geometry(1, :)
         if (allocated(self%adiab_trans)) self%ldiab_trans = self%adiab_trans
     end subroutine vc_update_geometry
+
+
+    !> Gradient in the coordinates of the geometry passed to update_geometry.
+    function vc_get_gradient(self, basis, istate) result(grad)
+        class(vc_evaluator), intent(in) :: self
+        character(len=*), intent(in) :: basis
+        integer, intent(in) :: istate
+        real(dp), allocatable :: grad(:, :)
+
+        grad = diabatic_get_gradient(self, basis, istate)
+        if (self%input_coordinates == 'cartesian') then
+            grad = reshape(self%nm%deriv_nm_to_cart(grad(1, :)), [3, self%nm%natom])
+        end if
+    end function vc_get_gradient
+
+
+    !> Nonadiabatic coupling vector in the coordinates of the geometry passed to update_geometry.
+    function vc_get_nadv(self, basis, istate1, istate2) result(nadv)
+        class(vc_evaluator), intent(in) :: self
+        character(len=*), intent(in) :: basis
+        integer, intent(in) :: istate1, istate2
+        real(dp), allocatable :: nadv(:)
+
+        nadv = diabatic_get_nadv(self, basis, istate1, istate2)
+        if (self%input_coordinates == 'cartesian') then
+            nadv = self%nm%deriv_nm_to_cart(nadv)
+        end if
+    end function vc_get_nadv
 
 
     subroutine vc_eval_diab(self)

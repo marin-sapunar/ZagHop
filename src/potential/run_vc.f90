@@ -2,10 +2,12 @@ program run_vc
     use global_defs
     use vc_evaluator_mod, only : vc_evaluator
     use vc_model_mod, only : vc_model
+    use coord_transform_mod, only : normal_modes
     implicit none
 
     type(vc_evaluator) :: vc
     type(vc_model) :: model
+    type(normal_modes) :: nm
     character(len=256) :: template_file, geom_file
     real(dp), allocatable :: q(:, :), energies(:)
     integer :: i, nmode, io, iunit
@@ -22,7 +24,8 @@ program run_vc
     call get_command_argument(2, geom_file)
 
     call model%init(trim(template_file))
-    call vc%initialize(model)
+    call nm%read_v0(model%v0_file)
+    call vc%initialize(model, nm)
     nmode = vc%model%nmode
 
     allocate(q(1, nmode))
@@ -41,7 +44,7 @@ program run_vc
     end do
     close(iunit)
 
-    call vc%update_geometry(q)
+    call vc%update_geometry(q, vc%classical_coordinates)
     call vc%eval()
 
     allocate(energies(vc%model%tot_ns))

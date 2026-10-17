@@ -42,6 +42,7 @@ contains
         integer :: i
 
         self%name = tolower(args(1)%s)
+        self%classical_coordinates = 'model'
         self%ndof = 1
 
         select case(self%name)
@@ -116,9 +117,17 @@ contains
     end subroutine model_init
 
 
-    subroutine model_update_geometry(self, geometry)
+    subroutine model_update_geometry(self, geometry, coordinates)
         class(tully_model), intent(inout) :: self
         real(dp), intent(in) :: geometry(:, :)
+        character(len=*), intent(in) :: coordinates
+
+        if (coordinates /= self%classical_coordinates) then
+            write(stderr, *) 'Error in tully_mod, update_geometry subroutine.'
+            write(stderr, *) '  Unsupported coordinates "'//coordinates//'". Expected "'//          &
+            &                self%classical_coordinates//'".'
+            stop
+        end if
 
         self%x = geometry(1, 1)
         if (allocated(self%adiab_trans)) self%ldiab_trans = self%adiab_trans

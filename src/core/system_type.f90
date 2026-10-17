@@ -13,12 +13,14 @@ module system_type_mod
     use tsh_method_mod
     use vc_evaluator_mod
     use vc_model_mod
+    use coord_transform_mod, only : normal_modes
     implicit none
 
     private
     public :: system_type
     public :: vc_potential !< TODO move to more appropriate place
     public :: vc_data
+    public :: vc_nmode
     public :: trajectory_data, tr1, tr2
     public :: memory
     public :: data_index_1
@@ -45,6 +47,8 @@ module system_type_mod
 
         ! Full system:
         integer :: ndim = 3 !< Number of dimensions.
+        character(len=:), allocatable :: classical_coordinates !< Coordinates of the classical
+                                                               !! propagation (geom/velo).
         integer :: natom = 0 !< Total number of atoms.
         character(len=2), allocatable :: sym(:) !< List of atom symbols.
         real(dp), allocatable :: chrg(:) !< List of atom partial charges.
@@ -89,6 +93,7 @@ module system_type_mod
     integer :: data_index_2 !< Index of trajectory data for previous time step.
 
     type(vc_model), target :: vc_data !< LVC model for the system.
+    type(normal_modes), target :: vc_nmode !< Normal modes of the LVC model.
     type(vc_evaluator) :: vc_potential !< LVC potential interface for the system.
 
 

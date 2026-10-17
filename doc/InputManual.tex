@@ -81,7 +81,11 @@ velocity		&
 
 ndim \#		&
     \textbf{3} \newline
-    Number of dimensions per atom.  \\	
+    Number of dimensions per atom.  \\
+
+classical\_coordinates		&
+    \textbf{Coordinates of the potential} \newline
+    Coordinate system in which the classical propagation is performed. The geometry and velocity files are given in these coordinates. If they differ from the coordinates in which the potential is evaluated, the potential evaluator transforms the geometry and returns the gradients and nonadiabatic coupling vectors in the coordinates of the classical propagation. Currently only "cartesian" is supported for the vibronic coupling potential ("normal\_modes"), which requires the "Geometry" and "Mass-weighted normal modes" sections in the V0 file. \\
 
 variable\_nstate \#		&
     \textbf{0} \newline

@@ -42,7 +42,7 @@ contains
         logical :: found
 
         if (.not. hop) then
-            call t%pot%update_geometry(t%geom)
+            call t%pot%update_geometry(t%geom, t%classical_coordinates)
             call t%pot%eval()
         end if
         t%grad(:, t%qind) = t%pot%get_gradient('adiabatic', t%wf%active_state)

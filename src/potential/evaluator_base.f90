@@ -11,6 +11,8 @@ module evaluator_base_mod
         integer :: n_group = 0
         integer, allocatable :: group_nstate(:)
         integer, allocatable :: group_i0(:)
+        character(len=:), allocatable :: classical_coordinates !< Coordinates expected by
+                                                               !! update_geometry.
     contains
         procedure(eval), deferred :: eval
         procedure(update_geometry), deferred :: update_geometry
@@ -55,11 +57,14 @@ module evaluator_base_mod
 
 
     abstract interface
-        subroutine update_geometry(self, geometry)
+        !> Coordinates gives the coordinate system of the geometry. Gradients and nonadiabatic
+        !! couplings are returned in the same coordinate system.
+        subroutine update_geometry(self, geometry, coordinates)
             use global_defs, only : dp
             import potential_evaluator
             class(potential_evaluator), intent(inout) :: self
             real(dp), intent(in) :: geometry(:, :)
+            character(len=*), intent(in) :: coordinates
         end subroutine update_geometry
     end interface
 

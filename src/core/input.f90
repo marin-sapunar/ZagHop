@@ -603,10 +603,11 @@ contains
                 case('vibronic_coupling')
                     if (readf%narg > 2) ctrl%vc_template = readf%args(3)%s
                     call vc_data%init(ctrl%vc_template)
+                    call vc_nmode%read_v0(vc_data%v0_file)
                     allocate(vc_evaluator :: tr1%pot)
                     select type(p => tr1%pot)
                     type is (vc_evaluator)
-                        call p%initialize(vc_data)
+                        call p%initialize(vc_data, vc_nmode)
                     end select
                 case default
                     write(stderr, *) 'Error in Input module, read_method subroutine.'
@@ -714,12 +715,19 @@ contains
                 end if
             case('ndim')
                 read(readf%args(2)%s, *) tr1%ndim
+            case('classical_coordinates')
+                tr1%classical_coordinates = tolower(readf%args(2)%s)
             case default
                 write(stderr, *) 'Warning in Input module, read_system subroutine.'
                 write(stderr, *) '  Skipping line with unrecognized keyword:'
                 write(stderr, *) readf%line
             end select
         end do
+
+        ! By default, propagate in the coordinates used by the potential evaluator.
+        if (.not. allocated(tr1%classical_coordinates)) then
+            tr1%classical_coordinates = tr1%pot%classical_coordinates
+        end if
 
         ! Model interfaces determine their own state groups during initialization.
         if (.not. allocated(tr1%pot%group_nstate)) then

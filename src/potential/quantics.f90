@@ -60,10 +60,18 @@ module quantics_interface_mod
 
 contains
 
-    subroutine quantics_update_geometry(self, geometry)
+    subroutine quantics_update_geometry(self, geometry, coordinates)
         class(quantics_interface), intent(inout) :: self
         real(dop), intent(in) :: geometry(:, :)
+        character(len=*), intent(in) :: coordinates
         integer :: i, n, f
+
+        if (coordinates /= self%classical_coordinates) then
+            write(stderr, *) 'Error in quantics_mod, update_geometry subroutine.'
+            write(stderr, *) '  Unsupported coordinates "'//coordinates//'". Expected "'//          &
+            &                self%classical_coordinates//'".'
+            stop
+        end if
 
         if (size(geometry, 1) /= 1 .or. size(geometry, 2) /= self%ndof) then
             write(stderr, *) 'Error in quantics_mod, update_geometry subroutine.'
@@ -108,6 +116,8 @@ contains
         !integer(long) :: check
         !logical(kind=4) :: lcheck, lerr
         real(dop), external :: dlamch
+
+        self%classical_coordinates = 'quantics'
 
         open(ilog,file='quantics.log',status='unknown',position='append')
 
