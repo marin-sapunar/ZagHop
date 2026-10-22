@@ -11,7 +11,7 @@ module coord_transform_mod
     use global_defs
     use file_mod, only : reader
     use string_mod, only : tolower
-    use rigid_body_mod, only : center_of_mass
+    use rigid_body_mod, only : center_of_mass, kabsch_rotation, kabsch_derivative
     implicit none
 
     private
@@ -30,7 +30,9 @@ module coord_transform_mod
     !! the mass-weighted normal modes, Omega the frequencies, M the masses and R0 the reference
     !! geometry. Modes with zero frequency are excluded from Q. Both R and R0 are taken relative
     !! to their centres of mass, so Q is exactly invariant to translation. Q is only invariant to
-    !! infinitesimal rotation about R0, so R needs to be given in the frame of R0.
+    !! infinitesimal rotation about R0, so R needs to be given in the frame of R0. Alternatively,
+    !! R can first be rotated into the Eckart frame of R0 (see eckart_rotation), which makes Q
+    !! invariant to any rotation.
     !----------------------------------------------------------------------------------------------
     type normal_modes
         character(len=:), allocatable :: v0_file
@@ -48,6 +50,7 @@ module coord_transform_mod
     contains
         procedure :: read_v0
         procedure :: check_atoms
+        procedure :: eckart_rotation
         procedure :: cart_to_nm
         procedure :: deriv_nm_to_cart
     end type normal_modes
@@ -215,25 +218,41 @@ contains
 
 
     !----------------------------------------------------------------------------------------------
+    ! FUNCTION: eckart_rotation
+    ! DESCRIPTION:
+    !> @brief Rotation of a Cartesian geometry into the Eckart frame of the reference geometry.
+    !> @details
+    !! The mass-weighted Kabsch rotation, which satisfies the Eckart rotational conditions.
+    !----------------------------------------------------------------------------------------------
+    function eckart_rotation(self, geom) result(rot)
+        class(normal_modes), intent(in) :: self
+        real(dp), intent(in) :: geom(:, :) !< Cartesian geometry (bohr), shape (3, natom).
+        real(dp) :: rot(3, 3)
+
+        call check_geom(self, geom, 'eckart_rotation')
+        rot = kabsch_rotation(self%mass, geom, self%ref_geom)
+    end function eckart_rotation
+
+
+    !----------------------------------------------------------------------------------------------
     ! FUNCTION: cart_to_nm
     ! DESCRIPTION:
     !> @brief Convert Cartesian geometry to dimensionless normal mode coordinates.
+    !> @details
+    !! If rot is given, the geometry is first rotated by rot about its centre of mass.
     !----------------------------------------------------------------------------------------------
-    function cart_to_nm(self, geom) result(q)
+    function cart_to_nm(self, geom, rot) result(q)
         class(normal_modes), intent(in) :: self
         real(dp), intent(in) :: geom(:, :) !< Cartesian geometry (bohr), shape (3, natom).
+        real(dp), intent(in), optional :: rot(3, 3) !< Rotation into the frame of ref_geom.
         real(dp), allocatable :: q(:)
         real(dp) :: disp(3, self%natom)
 
-        call check_available(self, 'cart_to_nm')
-        if (size(geom, 1) /= 3 .or. size(geom, 2) /= self%natom) then
-            write(stderr, *) 'Error in coord_transform_mod, cart_to_nm function.'
-            write(stderr, '(3x,a,i0,a)') 'Geometry should have dimensions (3, ', self%natom, ').'
-            stop
-        end if
-
-        disp = (geom - spread(center_of_mass(self%mass, geom), 2, self%natom))                   &
-        &    - (self%ref_geom - spread(center_of_mass(self%mass, self%ref_geom), 2, self%natom))
+        call check_geom(self, geom, 'cart_to_nm')
+        disp = geom - spread(center_of_mass(self%mass, geom), 2, self%natom)
+        if (present(rot)) disp = matmul(rot, disp)
+        disp = disp - (self%ref_geom - spread(center_of_mass(self%mass, self%ref_geom), 2,       &
+        &                                     self%natom))
         q = matmul(self%c_to_q, reshape(disp, [3 * self%natom]))
     end function cart_to_nm
 
@@ -247,10 +266,15 @@ contains
     !! coupling vectors): dX/dR = M^(1/2) L Omega^(1/2) dX/dQ. Since Q depends on the positions
     !! relative to the centre of mass (see cart_to_nm), the net derivative (sum over atoms) is
     !! removed by subtracting it from each atom weighted by m_i / sum(m).
+    !! If the rotation rot into the Eckart frame (from eckart_rotation) was used in cart_to_nm,
+    !! it needs to be passed together with the geometry, and the dependence of the rotation on
+    !! the geometry is included (see kabsch_derivative).
     !----------------------------------------------------------------------------------------------
-    function deriv_nm_to_cart(self, dq) result(dr)
+    function deriv_nm_to_cart(self, dq, geom, rot) result(dr)
         class(normal_modes), intent(in) :: self
         real(dp), intent(in) :: dq(:) !< Derivative with respect to Q.
+        real(dp), intent(in), optional :: geom(:, :) !< Cartesian geometry, shape (3, natom).
+        real(dp), intent(in), optional :: rot(3, 3) !< Rotation into the Eckart frame of ref_geom.
         real(dp), allocatable :: dr(:) !< Derivative with respect to R, shape (3*natom).
         real(dp) :: dr3(3, self%natom)
         real(dp) :: net(3)
@@ -264,13 +288,37 @@ contains
             stop
         end if
 
+        if (present(geom) .neqv. present(rot)) then
+            write(stderr, *) 'Error in coord_transform_mod, deriv_nm_to_cart function.'
+            write(stderr, *) '  Arguments geom and rot need to be given together.'
+            stop
+        end if
+
         dr3 = reshape(matmul(dq, self%c_to_q), [3, self%natom])
-        net = sum(dr3, dim=2)
-        do i = 1, self%natom
-            dr3(:, i) = dr3(:, i) - net * self%mass(i) / sum(self%mass)
-        end do
+        if (present(rot)) then
+            call check_geom(self, geom, 'deriv_nm_to_cart')
+            dr3 = kabsch_derivative(self%mass, geom, self%ref_geom, rot, dr3)
+        else
+            net = sum(dr3, dim=2)
+            do i = 1, self%natom
+                dr3(:, i) = dr3(:, i) - net * self%mass(i) / sum(self%mass)
+            end do
+        end if
         dr = reshape(dr3, [3 * self%natom])
     end function deriv_nm_to_cart
+
+
+    subroutine check_geom(self, geom, routine)
+        class(normal_modes), intent(in) :: self
+        real(dp), intent(in) :: geom(:, :)
+        character(len=*), intent(in) :: routine
+
+        call check_available(self, routine)
+        if (size(geom, 1) == 3 .and. size(geom, 2) == self%natom) return
+        write(stderr, *) 'Error in coord_transform_mod, '//routine//' function.'
+        write(stderr, '(3x,a,i0,a)') 'Geometry should have dimensions (3, ', self%natom, ').'
+        stop
+    end subroutine check_geom
 
 
     subroutine check_available(self, routine)

@@ -79,6 +79,19 @@ class ZagHopTest(unittest.TestCase):
         ref = np.loadtxt(os.path.join(refdir, fname), comments="#")
         self.assertTrue(np.allclose(new, ref), f"Difference in {fname} file.")
 
+    def angular_momentum(self):
+        """ Angular momentum (atomic units) about the centre of mass at each printed step.
+
+        Requires Cartesian coordinates and the geometry and velocity outputs (print 3,4). The
+        masses are read from the geom file in the run directory."""
+        rdir = os.path.join(self.rundir, self.trajdir)
+        mass = np.loadtxt(os.path.join(rdir, "geom"), usecols=1, ndmin=1) * 1822.88849
+        natom = len(mass)
+        geom = np.loadtxt(os.path.join(rdir, "Results", "geometry")).reshape(-1, natom, 3)
+        velo = np.loadtxt(os.path.join(rdir, "Results", "velocity")).reshape(-1, natom, 3)
+        com = np.einsum("i,tia->ta", mass, geom) / mass.sum()
+        return np.einsum("i,tia->ta", mass, np.cross(geom - com[:, None, :], velo))
+
     def stdout_contains(self, string):
         """ Assert that a string appears in the nad.stdout file. """
         with open(os.path.join(self.rundir, self.trajdir, "nad.stdout")) as f:

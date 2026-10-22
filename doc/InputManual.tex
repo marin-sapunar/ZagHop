@@ -87,6 +87,12 @@ classical\_coordinates		&
     \textbf{Coordinates of the potential} \newline
     Coordinate system in which the classical propagation is performed. The geometry and velocity files are given in these coordinates. If they differ from the coordinates in which the potential is evaluated, the potential evaluator transforms the geometry and returns the gradients and nonadiabatic coupling vectors in the coordinates of the classical propagation. Currently only "cartesian" is supported for the vibronic coupling potential ("normal\_modes"), which requires the "Geometry" and "Mass-weighted normal modes" sections in the V0 file. The atoms (order, symbols and masses) in the geometry file need to match the "Geometry" section. The normal modes are only invariant to infinitesimal rotations about the reference geometry, so the initial geometry should be given in its frame (or use orient = 2). \\
 
+cartesian\_frame		&
+    \textbf{fixed} \newline
+    Frame in which Cartesian geometries are transformed to normal modes, for the vibronic coupling potential with classical\_coordinates = cartesian. \newline
+    \tabitem [fixed] the geometry is used as given, in the frame of the reference geometry. The potential is only invariant to infinitesimal rotations about the reference geometry, and the dynamics are equivalent to propagating the normal modes directly (no rotation-vibration coupling). \newline
+    \tabitem [eckart] the geometry is first rotated into the Eckart frame of the reference geometry (mass-weighted Kabsch alignment). The potential is invariant to any rotation, so the angular momentum is conserved and rotation-vibration coupling is included. Not available for linear molecules. \\
+
 variable\_nstate \#		&
     \textbf{0} \newline
     Option to change number of states included in calculation on-the-fly. \newline
@@ -159,7 +165,7 @@ orient \#		&
 	Select how to handle translation/rotation. Only available for Cartesian coordinates (ndim = 3). \newline
 	\tabitem [0] do nothing. \newline
 	\tabitem [1] keep molecule in center of mass and project translation from the velocity. \newline
-	\tabitem [2] as [1], and also project rotation from the velocity. If the potential is defined relative to a reference geometry (vibronic coupling potential with classical\_coordinates = cartesian), the initial geometry and velocity are first rotated into the frame of the reference geometry (mass-weighted Kabsch alignment, which satisfies the Eckart conditions), and rotations are projected about the reference geometry. Otherwise, rotations are projected about the current geometry. \\
+	\tabitem [2] as [1], and also project rotation from the velocity. If the potential is defined relative to a reference geometry (vibronic coupling potential with classical\_coordinates = cartesian and cartesian\_frame = fixed), the initial geometry and velocity are first rotated into the frame of the reference geometry (mass-weighted Kabsch alignment, which satisfies the Eckart conditions), and rotations are projected about the reference geometry. Otherwise, rotations are projected about the current geometry. \\
 
 end\_state \#		&
 	\textbf{0} \newline

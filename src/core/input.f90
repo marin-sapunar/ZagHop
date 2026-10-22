@@ -671,6 +671,7 @@ contains
         integer :: min_nstate
         integer, allocatable :: nstate(:)
         integer, allocatable :: multiplicity(:)
+        character(len=:), allocatable :: cartesian_frame
 
         n_state_group = 0
         max_nstate = 0
@@ -741,6 +742,8 @@ contains
                 read(readf%args(2)%s, *) tr1%ndim
             case('classical_coordinates')
                 tr1%classical_coordinates = tolower(readf%args(2)%s)
+            case('cartesian_frame')
+                cartesian_frame = tolower(readf%args(2)%s)
             case default
                 write(stderr, *) 'Warning in Input module, read_system subroutine.'
                 write(stderr, *) '  Skipping line with unrecognized keyword:'
@@ -751,6 +754,24 @@ contains
         ! By default, propagate in the coordinates used by the potential evaluator.
         if (.not. allocated(tr1%classical_coordinates)) then
             tr1%classical_coordinates = tr1%pot%classical_coordinates
+        end if
+
+        ! Frame in which Cartesian coordinates are transformed to the coordinates of the potential.
+        if (allocated(cartesian_frame)) then
+            if (tr1%classical_coordinates /= 'cartesian') then
+                write(stderr, *) 'Error in Input module, read_system subroutine.'
+                write(stderr, *) '  Option cartesian_frame requires classical_coordinates = cartesian.'
+                stop
+            end if
+            select type(p => tr1%pot)
+            type is (vc_evaluator)
+                call p%set_cartesian_frame(cartesian_frame)
+            class default
+                write(stderr, *) 'Error in Input module, read_system subroutine.'
+                write(stderr, *) '  Option cartesian_frame is only available for the vibronic ',   &
+                &                'coupling potential.'
+                stop
+            end select
         end if
 
         ! Model interfaces determine their own state groups during initialization.

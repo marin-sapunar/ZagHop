@@ -27,6 +27,12 @@ program util_test
         stop ret
     end if
 
+    ret = kabsch_derivative_test()
+    if (ret /= 0) then
+        write(*,*) "Error in kabsch_derivative_test."
+        stop ret
+    end if
+
     contains
     
     
@@ -161,6 +167,80 @@ program util_test
         if (maxval(abs(matmul(u, rot) - unit_mat(3))) > tiny) return
         ret = 0
     end function rigid_body_test
+
+
+    !> Compare kabsch_derivative with finite differences of f(rho(R)), where rho are the aligned
+    !! positions and f(rho) = sum_i c_i . (rho_i - r0_i) + |rho - r0|^2 / 2.
+    integer function kabsch_derivative_test() result(ret)
+        use global_defs, only : dp
+        use rigid_body_mod, only : center_of_mass, kabsch_rotation, kabsch_derivative
+        real(dp) :: mass(4)
+        real(dp) :: ref(3, 4)
+        real(dp) :: geom(3, 4)
+        real(dp) :: coef(3, 4)
+        real(dp) :: deriv(3, 4), num(3, 4), r(3, 4)
+        real(dp) :: u(3, 3)
+        real(dp) :: torque(3)
+        real(dp), parameter :: step = 1.0e-5_dp
+        real(dp), parameter :: tol = 1.0e-8_dp
+        real(dp), parameter :: tiny = 1.0e-12_dp
+        integer :: i, k
+
+        mass = [12.0_dp, 1.0_dp, 16.0_dp, 14.0_dp]
+        ref = reshape([0.1_dp, 0.2_dp, -0.3_dp, 2.1_dp, 0.1_dp, 0.4_dp, -0.4_dp, 2.2_dp,         &
+        &              0.3_dp, 0.5_dp, -1.1_dp, 1.9_dp], [3, 4])
+        coef = reshape([0.3_dp, -0.2_dp, 0.5_dp, 0.1_dp, 0.4_dp, -0.6_dp, -0.3_dp, 0.2_dp,       &
+        &               0.1_dp, 0.2_dp, -0.1_dp, 0.3_dp], [3, 4])
+        ! Displaced geometry, rotated by 90 degrees about z and translated.
+        geom(1, :) = ref(2, :) + 0.2_dp * coef(1, :) + 1.0_dp
+        geom(2, :) = -ref(1, :) + 0.2_dp * coef(2, :) - 0.5_dp
+        geom(3, :) = ref(3, :) + 0.2_dp * coef(3, :)
+
+        ret = 1
+        u = kabsch_rotation(mass, geom, ref)
+        r = matmul(u, geom - spread(center_of_mass(mass, geom), 2, 4))                           &
+        &   - (ref - spread(center_of_mass(mass, ref), 2, 4))
+        deriv = kabsch_derivative(mass, geom, ref, u, coef + r)
+        do i = 1, 4
+            do k = 1, 3
+                r = geom
+                r(k, i) = r(k, i) + step
+                num(k, i) = aligned_test_function(mass, ref, coef, r)
+                r(k, i) = r(k, i) - 2 * step
+                num(k, i) = num(k, i) - aligned_test_function(mass, ref, coef, r)
+            end do
+        end do
+        num = num / (2 * step)
+        if (maxval(abs(deriv - num)) > tol) return
+        ! No net force or torque.
+        if (maxval(abs(sum(deriv, dim=2))) > tiny) return
+        r = geom - spread(center_of_mass(mass, geom), 2, 4)
+        torque = 0.0_dp
+        do i = 1, 4
+            torque = torque + [r(2, i) * deriv(3, i) - r(3, i) * deriv(2, i),                    &
+            &                  r(3, i) * deriv(1, i) - r(1, i) * deriv(3, i),                    &
+            &                  r(1, i) * deriv(2, i) - r(2, i) * deriv(1, i)]
+        end do
+        if (maxval(abs(torque)) > tiny) return
+        ret = 0
+    end function kabsch_derivative_test
+
+
+    function aligned_test_function(mass, ref, coef, geom) result(val)
+        use global_defs, only : dp
+        use rigid_body_mod, only : center_of_mass, kabsch_rotation
+        real(dp), intent(in) :: mass(:)
+        real(dp), intent(in) :: ref(:, :)
+        real(dp), intent(in) :: coef(:, :)
+        real(dp), intent(in) :: geom(:, :)
+        real(dp) :: val
+        real(dp) :: disp(3, size(mass))
+
+        disp = matmul(kabsch_rotation(mass, geom, ref),                                           &
+        &             geom - spread(center_of_mass(mass, geom), 2, size(mass)))                  &
+        &    - (ref - spread(center_of_mass(mass, ref), 2, size(mass)))
+        val = sum(coef * disp) + 0.5_dp * sum(disp**2)
+    end function aligned_test_function
 
     
 end program util_test

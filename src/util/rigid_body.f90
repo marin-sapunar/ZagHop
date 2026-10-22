@@ -17,6 +17,7 @@ module rigid_body_mod
     public :: center_of_mass
     public :: external_modes
     public :: kabsch_rotation
+    public :: kabsch_derivative
 
 
 contains
@@ -134,6 +135,67 @@ contains
         d(3, 3) = sign(1.0_dp, det3(vt) * det3(w))
         u = matmul(transpose(vt), matmul(d, transpose(w)))
     end function kabsch_rotation
+
+
+    !----------------------------------------------------------------------------------------------
+    ! FUNCTION: kabsch_derivative
+    !> @brief Derivative of a function of the aligned geometry with respect to the unaligned
+    !! geometry.
+    !> @details
+    !! For a function f(rho) of the aligned positions rho_i = U (R_i - R_cm), where U is the
+    !! rotation returned by kabsch_rotation for the reference geometry ref, returns df/dR given
+    !! g_i = df/drho_i. Since U and R_cm depend on R, df/dR is not simply U^T g. Varying R while
+    !! keeping the Eckart conditions sum_i m_i rho_i x r0_i = 0 satisfied gives:
+    !!     df/dR_i = U^T (h_i - m_i / M sum_j h_j),    h_i = g_i - m_i lambda x r0_i,
+    !! where r0_i are the reference positions relative to their centre of mass, M the total
+    !! mass, lambda = B^(-T) tau, tau = sum_i rho_i x g_i and
+    !! B = sum_i m_i [(r0_i . rho_i) 1 - rho_i r0_i^T]. The result has no net force or torque.
+    !----------------------------------------------------------------------------------------------
+    function kabsch_derivative(mass, geom, ref, u, deriv) result(lab)
+        use matrix_mod, only : mat_inv, unit_mat
+        real(dp), intent(in) :: mass(:)
+        real(dp), intent(in) :: geom(:, :) !< Unaligned geometry R, shape (3, natom).
+        real(dp), intent(in) :: ref(:, :) !< Reference geometry, shape (3, natom).
+        real(dp), intent(in) :: u(3, 3) !< Rotation from kabsch_rotation(mass, geom, ref).
+        real(dp), intent(in) :: deriv(:, :) !< Derivative g with respect to rho, shape (3, natom).
+        real(dp) :: lab(3, size(mass))
+        real(dp) :: rho(3, size(mass))
+        real(dp) :: r0(3, size(mass))
+        real(dp) :: h(3, size(mass))
+        real(dp) :: b(3, 3), tau(3), lambda(3), net(3)
+        integer :: i, natom
+
+        natom = size(mass)
+        rho = matmul(u, geom - spread(center_of_mass(mass, geom), 2, natom))
+        r0 = ref - spread(center_of_mass(mass, ref), 2, natom)
+
+        tau = 0.0_dp
+        b = 0.0_dp
+        do i = 1, natom
+            tau = tau + cross(rho(:, i), deriv(:, i))
+            b = b + mass(i) * (dot_product(r0(:, i), rho(:, i)) * unit_mat(3)                    &
+            &                  - spread(rho(:, i), 2, 3) * spread(r0(:, i), 1, 3))
+        end do
+        lambda = matmul(transpose(mat_inv(b)), tau)
+
+        do i = 1, natom
+            h(:, i) = deriv(:, i) - mass(i) * cross(lambda, r0(:, i))
+        end do
+        net = sum(h, dim=2)
+        do i = 1, natom
+            h(:, i) = h(:, i) - net * mass(i) / sum(mass)
+        end do
+        lab = matmul(transpose(u), h)
+    end function kabsch_derivative
+
+
+    pure function cross(a, b) result(c)
+        real(dp), intent(in) :: a(3)
+        real(dp), intent(in) :: b(3)
+        real(dp) :: c(3)
+
+        c = [a(2) * b(3) - a(3) * b(2), a(3) * b(1) - a(1) * b(3), a(1) * b(2) - a(2) * b(1)]
+    end function cross
 
 
     pure function det3(a) result(det)
