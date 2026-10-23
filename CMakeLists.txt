@@ -259,6 +259,19 @@ project(ZagHop LANGUAGES Fortran)
         set_tests_properties("ZagHop:Quantics:SO2::${_test_name}" PROPERTIES
           ENVIRONMENT_MODIFICATION PATH=path_list_append:${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
       endforeach()
+
+      file(STRINGS "${CMAKE_SOURCE_DIR}/tests/integration/test_quantics_butatriene_db.py"
+           _quantics_butatriene_db_test_lines REGEX "^    def (test_[A-Za-z0-9_]+)")
+      foreach(_line ${_quantics_butatriene_db_test_lines})
+        string(REGEX MATCH "def (test_[A-Za-z0-9_]+)" _ "${_line}")
+        set(_test_name "${CMAKE_MATCH_1}")
+        add_test(NAME "ZagHop:Quantics:ButatrieneDB::${_test_name}"
+          COMMAND ${Python_EXECUTABLE} -m unittest -v
+                  "test_quantics_butatriene_db.QuanticsButatrieneDbTest.${_test_name}"
+          WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+        set_tests_properties("ZagHop:Quantics:ButatrieneDB::${_test_name}" PROPERTIES
+          ENVIRONMENT_MODIFICATION PATH=path_list_append:${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
+      endforeach()
     endif()
   else()
      message(STATUS "Python not found.")

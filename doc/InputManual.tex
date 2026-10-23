@@ -50,7 +50,8 @@ overlap &
 qlib &
     \textbf{No default.} \newline
     Use fortran subroutine(s) instead of the standard file-based QM interface. Currently the only option is "quantics" if the code
-    was compiled with the "-DQUANTICS=ON" option. \\
+    was compiled with the "-DQUANTICS=ON" option. For Quantics direct dynamics operators, the potential is interpolated from the
+    Quantics database, whose directory (as given in the Quantics input) is taken relative to the trajectory directory. \\
 
 seed \# &
 	\textbf{-1} \newline

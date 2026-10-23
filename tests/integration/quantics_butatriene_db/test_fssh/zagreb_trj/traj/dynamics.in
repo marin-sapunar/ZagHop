@@ -1,0 +1,18 @@
+$system
+ ndim = 1
+ nstate = 2
+ istate = 2
+$surfhop
+ fssh adiabatic
+ nadvec linear
+ velocity nadvec
+ tdse_steps 10
+$dynamics
+ tstep = 0.1
+ max_time = 8.0
+$output
+ printerval = 5
+$method
+ qlib quantics
+ seed 43
+$end

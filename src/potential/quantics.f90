@@ -10,6 +10,10 @@
 ! components of each state are consecutive (T1(1), T1(2), T1(3), T2(1), ...), while ZagHop places
 ! each component in a separate group of states (T1(1), T2(1), ..., T1(2), T2(2), ...). The
 ! diabatic potential is reordered to the ZagHop convention after each evaluation.
+!
+! For direct dynamics (DD) operators, the potential is interpolated from a Quantics database (DB).
+! The trajectory is treated as a single GWP by the Quantics DD routines. If the DB is not read-only,
+! new quantum chemistry calculations are run and added to the DB as required at each step.
 !--------------------------------------------------------------------------------------------------
 module quantics_interface_mod
     use evaluator_diabatic_mod
@@ -26,8 +30,9 @@ module quantics_interface_mod
     use iorst, only: rstinfo
     use dirdyn, only: dercpdim,ndofddpes,&
         dbnrec,nactdim,natmtsh,ldbsave,&
-        lupdhes,lnactdb,lddrddb,ddtrajnum,num_gp
-    use dirdyn, only: alloc_dirdyn,alloc_dddb,atnam,nsmult,imultmap
+        lupdhes,lnactdb,lddrddb,lddwrdb,ddtrajnum,num_gp,&
+        dddiab,ddupdate,lddsoc
+    use dirdyn, only: alloc_dirdyn,alloc_dddb0,alloc_dddb,atnam,nsmult,imultmap
     use directdyn
     use potevalmod, only: calcdiab,calcdiabder,calcvreps,calcpes,calcpesder
     use psidef, only: qcentdim,gwpdim,zcent,vdimgp,dimgp,ndimgp,zgp,nsgp,totgp,&
@@ -35,7 +40,8 @@ module quantics_interface_mod
     use openmpmod, only: lompqc
     use lalib, only: simtranbd
 
-    use dd_db, only: dddb_gp,getdbnrec,preparedb
+    use dd_db, only: dddb_gp,getdbnrec,preparedb,setdbparams
+    use logintmod, only: logdd
     use dbcootrans
     use channels
     use op2lib, only: subvxxdo1
@@ -86,18 +92,6 @@ contains
             self%gpoint(spfdof(n, 1)) = self%q(n)
         end do
         if (allocated(self%adiab_trans)) self%ldiab_trans = self%adiab_trans
-
-        ! ! Initialise local DBs. Need to be in Cartesians.
-        ! if (ldd .and. ldbsmall) then
-        !     if (lddtrans) then
-        !         call ddq2x(self%gpoint,xgp)
-        !     else
-        !         xgp=self%gpoint
-        !     endif
-
-        !     num_gp = 1
-        !     call dddb_gp(dbnrec,xgp,num_gp)
-        ! endif
     end subroutine quantics_update_geometry
 
 
@@ -155,6 +149,19 @@ contains
         close(irst)
 
         !-----------------------------------------------------------------------
+        ! For DD calculations, DB needs to be read into memory
+        !-----------------------------------------------------------------------
+        if (ldd) then
+            ldbsave = .true.
+            lupdhes = lddrddb
+            ! If not using a DB, do not allocate large memory.
+            if (.not. lddrddb) then
+                dbmemdim = 1
+                ldbsmall = .false.
+            end if
+        end if
+
+        !-----------------------------------------------------------------------
         ! Allocate memory
         !-----------------------------------------------------------------------
         allocmemory=0
@@ -170,8 +177,9 @@ contains
             allocate(zgp(1))
             allocate(nsgp(1))
             allocate(rsbaspar(sbaspar,maxdim,1))
-            call alloc_dirdyn(ilog)
         endif
+        ! Needed for DD and for operators using a DB.
+        call alloc_dirdyn(ilog)
 
         !-----------------------------------------------------------------------
         ! Read system / DVR information
@@ -218,13 +226,29 @@ contains
         close(ioper)
 
         !-----------------------------------------------------------------------
-        ! Read data needed by the operator
+        ! Open DB and find out what it contains before allocating memory
+        !-----------------------------------------------------------------------
+        if (ldddb) then
+            call alloc_dddb0(ilog)
+            if (ldd .or. lddmctdh) then
+                call preparedb(zeroi)
+            else
+                call preparedb(twoi)
+            endif
+            call setdbparams
+            call alloc_dddb(ilog)
+        endif
+
+        !-----------------------------------------------------------------------
+        ! Read data needed by the operator (also loads the DB into memory)
         !-----------------------------------------------------------------------
         operfile=oname(1:olaenge)//'/oper'
         allocate(self%hops(hopsdim))
         chkdvr=2
         chkgrd=1
         call rdoper(self%hops,chkdvr,chkgrd)
+
+        if (ldd) call init_direct_dynamics()
 
         close(ilog)
         self%initialized = .true.
@@ -249,6 +273,74 @@ contains
         end do
 
     end subroutine quantics_initialize
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: init_direct_dynamics
+    !> @brief Set up the Quantics DD routines for a single trajectory.
+    !> @details
+    !! The DD options used during the propagation (DB update and interpolation scheme) are read
+    !! from the restart file. The trajectory is passed to getddpes as a single GWP.
+    !----------------------------------------------------------------------------------------------
+    subroutine init_direct_dynamics()
+        character(len=c5) :: filename
+        logical(kind=4) :: linwf, lerr
+        integer :: ilbl, ierr, chkdvr, chkgrd, chkpsi, chkprp
+
+        filename=rname(1:rlaenge)//'/restart'
+        ilbl=index(filename,' ')-1
+        open(irst,file=filename(1:ilbl),form='unformatted',status='old',iostat=ierr)
+        if (ierr .ne. 0) then
+            routine='SHzagreb_interface'
+            message = 'Cannot open file: '//filename(1:ilbl)
+            call errormsg
+        endif
+        chkdvr=0
+        chkgrd=0
+        chkpsi=0
+        chkprp=1
+        call rstinfo(linwf,lerr,chkdvr,chkgrd,chkpsi,chkprp)
+        close(irst)
+        call logdd
+
+        if (any(gwpm(2:nmode))) then
+            write(stderr, *) 'Error in quantics_mod, init_direct_dynamics subroutine.'
+            write(stderr, *) '  Direct dynamics requires all dynamical coordinates in the first mode.'
+            stop
+        end if
+        if (lsocbas .or. lddsoc) then
+            write(stderr, *) 'Error in quantics_mod, init_direct_dynamics subroutine.'
+            write(stderr, *) '  Spin-orbit coupling is not supported with direct dynamics.'
+            stop
+        end if
+        if (dddiab == 0 .and. nddstate > 1) then
+            write(stderr, *) 'Error in quantics_mod, init_direct_dynamics subroutine.'
+            write(stderr, *) '  Direct dynamics requires a diabatised DB (dddiab /= 0).'
+            stop
+        end if
+        if (ddupdate == 1) then
+            write(stderr, *) 'Error in quantics_mod, init_direct_dynamics subroutine.'
+            write(stderr, *) '  Time controlled DB updates (ddupdate = 1) are not supported.'
+            stop
+        end if
+
+        ! The trajectory is a single GWP in a single configuration.
+        gwpdim(1,1) = 1
+        zcent(1,1) = 1
+        gwpm(1) = .true.
+        qcentdim = nspfdof(1)
+        vdimgp(1,1) = 1
+        dimgp(1,1) = 1
+        ndimgp(1,1) = 1
+        nsgp(1) = 1
+        totgp = 1
+        zgp(1) = 1
+
+        if (nddstate > 1) then
+            lnactdb = .true.
+            nactdim = nddstate*(nddstate-1)/2
+        end if
+    end subroutine init_direct_dynamics
 
 
     !----------------------------------------------------------------------------------------------
@@ -300,12 +392,28 @@ contains
         real(dop), allocatable :: pesdia(:, :)
         complex(dop), allocatable :: pesdiaz(:, :)
         real(dop), allocatable :: derdia(:, :, :)
+        real(dop), allocatable :: xgp(:)
 
         open(ilog,file='quantics.log',status='unknown',position='append')
 
-        ! Perform calculation of QC.
-        time=0.0d0
-        if (ldd) call getddpes(time,self%q,1,1)
+        if (ldd) then
+            ! Set up the local DB around the current geometry. Distances are in DB coordinates.
+            if (ldbsmall) then
+                allocate(xgp(ndofddpes))
+                if (lddtrans) then
+                    call ddq2x(self%gpoint, xgp)
+                else
+                    xgp = self%gpoint(1:ndofddpes)
+                end if
+                num_gp = 1
+                call dddb_gp(dbnrec, xgp, num_gp)
+            end if
+
+            ! Perform new QC calculations if needed and add them to the DB. Time is only used for
+            ! time controlled updates, which are rejected in init_direct_dynamics.
+            time=0.0d0
+            if (lddwrdb .or. .not. lddrddb) call getddpes(time,self%q,1,1)
+        end if
 
         ! Calculate only diabatic potential and its derivatives.
         nham=1
