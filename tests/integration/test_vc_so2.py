@@ -13,11 +13,15 @@ class VcSo2Test(ZagHopTest):
         """ Test diabatic basis FSSH on SO2 model."""
         self.run_traj()
         self.compare_energy()
+        self.compare_results("prob")
+        self.compare_results("cstate_diab")
 
     def test_ldsh_isc_cart(self):
         """ Test diabatic basis FSSH on SO2 model in Cartesian coordinates."""
         self.run_traj()
         self.compare_energy()
+        self.compare_results("prob")
+        self.compare_results("cstate_diab")
 
     def test_ldsh_isc_cart_rot(self):
         """ Test removal of translation/rotation (orient = 2) in Cartesian coordinates.
@@ -28,6 +32,8 @@ class VcSo2Test(ZagHopTest):
         projecting translation/rotation from the velocity reproduces test_ldsh_isc_cart."""
         self.run_traj()
         self.compare_energy()
+        self.compare_results("prob")
+        self.compare_results("cstate_diab")
         self.compare_results("energy.dat", reference="test_ldsh_isc_cart")
 
     def test_ldsh_isc_eckart(self):
@@ -37,6 +43,8 @@ class VcSo2Test(ZagHopTest):
         precision of the printed geometry and velocity), including at hops."""
         self.run_traj()
         self.compare_energy()
+        self.compare_results("prob")
+        self.compare_results("cstate_diab")
         ang = self.angular_momentum()
         self.assertTrue(np.abs(ang - ang[0]).max() < 1e-3, "Angular momentum not conserved.")
 
@@ -48,6 +56,8 @@ class VcSo2Test(ZagHopTest):
         test_ldsh_isc_eckart."""
         self.run_traj()
         self.compare_energy()
+        self.compare_results("prob")
+        self.compare_results("cstate_diab")
         self.compare_results("energy.dat", reference="test_ldsh_isc_eckart")
 
 

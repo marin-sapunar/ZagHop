@@ -5,8 +5,7 @@ $system
  istate file istate
  classical_coordinates = cartesian
  cartesian_frame = eckart
-$surfhop
- fssh  ldiab
+$surfhop ld-fssh
  velocity nadvec
  tdse_steps 1
  prob_formula sharc

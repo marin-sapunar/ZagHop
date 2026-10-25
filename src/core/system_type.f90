@@ -10,7 +10,7 @@ module system_type_mod
     ! Import variables
     use global_defs
     use constants
-    use tsh_method_mod
+    use tsh_method_mod, only : tsh_method
     use vc_evaluator_mod
     use vc_model_mod
     use coord_transform_mod, only : normal_modes
@@ -61,17 +61,13 @@ module system_type_mod
         integer :: qnatom = 0 !< Number of QM atoms.
         integer, allocatable :: qind(:) !< Indexes of the QM atoms in the full system.
         class(potential_evaluator), allocatable :: pot
-        type(tsh_method) :: wf !< Wave function of the system.
+        class(tsh_method), allocatable :: wf !< Surface hopping method and its electronic data.
 
         ! MM system:
         integer :: mnatom = 0 !< Number of MM atoms.
         integer, allocatable :: mind(:) !< Indexes of the MM atoms in the full system.
         real(dp) :: men(2) = 0.0_dp !< MM energies (1 - QM model sys, 2 - MM sys).
 
-        !> @todo Move this to more appropriate place.
-        real(dp), allocatable :: gap_2deriv(:, :) !< Second derivative of the gap between the active
-                                                  !< and other states. Used for LZSH, only when a
-                                                  !< gap minimum is found.
         real(dp) :: pbcbox(1:6) = 0.0_dp
     contains
         procedure :: writestep => traj_writestep
@@ -124,7 +120,7 @@ contains
     pure function traj_pote(t) result(pote)
         class(system_type), intent(in) :: t
         real(dp) :: pote
-        pote = t%pot%get_energy(t%wf%active_state) + t%men(2) - t%men(1)
+        pote = t%pot%get_energy('adiabatic', t%wf%active_state) + t%men(2) - t%men(1)
     end function traj_pote
 
     pure function traj_kine(t) result(kine)
@@ -363,7 +359,7 @@ contains
         if (popt(1)) then
             write(punit(1), 1001, advance='no') time_fs, t%wf%active_state
             write(punit(1), 1002, advance='no') t%tote(), t%pote()
-            write(punit(1), 1002, advance='no') t%pot%get_energy()
+            write(punit(1), 1002, advance='no') t%pot%get_energy('adiabatic')
             write(punit(1), *)
 
             if (t%mnatom > 0) then
@@ -401,7 +397,7 @@ contains
         end if
 
         if (popt(6)) then
-            write(punit(6), 1006) real(t%wf%coeff), aimag(t%wf%coeff)
+            call t%wf%write_coefficients(punit(6))
         end if
 
         if (popt(7)) then

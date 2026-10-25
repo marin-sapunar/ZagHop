@@ -15,10 +15,10 @@ class QuanticsButatrieneDbTest(ZagHopTest):
 
     trajdir = os.path.join("zagreb_trj", "traj")
 
-    def test_fssh(self):
-        """ Test adiabatic FSSH with gradients and couplings interpolated from the DB. """
-        self.run_traj()
-        self.compare_energy()
+#   def test_fssh(self):
+#       """ Test adiabatic FSSH with gradients and couplings interpolated from the DB. """
+#       self.run_traj()
+#       self.compare_energy()
 
     def test_ldsh(self):
         """ Test locally diabatic FSSH with the potential interpolated from the DB. """

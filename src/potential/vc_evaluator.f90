@@ -35,27 +35,34 @@ contains
     subroutine vc_initialize(self, model)
         class(vc_evaluator) :: self
         type(vc_model), intent(in), target :: model
-        integer :: i, cgroup, ci, j
+        integer :: i, i0, i1
 
         self%model => model
         self%classical_coordinates = 'normal_modes'
         self%input_coordinates = self%classical_coordinates
         self%cartesian_frame = 'fixed'
-        self%n_group = sum([1, 2, 3], mask=(model%nstate > 0))
-        allocate(self%group_nstate(self%n_group))
-        allocate(self%group_i0(self%n_group))
-        cgroup = 1
-        ci = 1
-        do i = 1, 3
-            if (model%nstate(i) == 0) cycle
-            do j = 1, i
-                self%group_nstate(cgroup) = model%nstate(i)
-                self%group_i0(cgroup) = ci
-                cgroup = cgroup + 1
-                ci = ci + model%nstate(i)
+        ! Blocks of singlets, doublets and triplets.
+        call self%set_group_nstate(model%nstate, [1, 2, 3])
+
+        ! The group_adiabatic states are only spin-free if the SOC has no elements inside a group.
+        if (model%soc%max_order >= 0) then
+            do i = 1, self%n_group
+                i0 = self%group_i0(i)
+                i1 = i0 + self%group_nstate(i) - 1
+                if (any(model%soc%zero(i0:i1, i0:i1) /= 0.0_dp)) self%soc_in_group = .true.
+                if (model%soc%max_order >= 1) then
+                    if (any(model%soc%linear(:, i0:i1, i0:i1) /= 0.0_dp)) then
+                        self%soc_in_group = .true.
+                    end if
+                end if
+                if (model%soc%max_order >= 2) then
+                    if (any(model%soc%quad(:, :, i0:i1, i0:i1) /= 0.0_dp)) then
+                        self%soc_in_group = .true.
+                    end if
+                end if
             end do
-        end do
-        self%n_state = sum(self%group_nstate)
+        end if
+
         self%ndof = self%model%nmode
         allocate(self%diab_w(self%n_state, self%n_state))
         allocate(self%diab_dw(self%ndof, self%n_state, self%n_state))

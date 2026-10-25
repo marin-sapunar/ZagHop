@@ -102,11 +102,8 @@ contains
             end do
         end select
 
-        ! Initialize diabatic_evaluator arrays for 2 states, 1 group.
-        self%n_state = 2
-        self%n_group = 1
-        allocate(self%group_nstate(1), source=2)
-        allocate(self%group_i0(1), source=1)
+        ! Initialize diabatic_evaluator arrays for 2 states, 1 group of singlets.
+        call self%set_group_nstate([2], [1])
         allocate(self%diab_w(2, 2))
         allocate(self%diab_dw(1, 2, 2))
         allocate(self%adiab_w(2, 2))

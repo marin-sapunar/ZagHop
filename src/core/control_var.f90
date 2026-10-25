@@ -97,22 +97,11 @@ module control_var
         real(dp) :: tau_t = 16536.54983032_dp !< Parameter for Berendsen thermostat
 
         !------------------------------------------------------------------------------------------
-        ! Surface hopping options.
+        ! Surface hopping options. The method and its own options are held in tr1%wf.
         !------------------------------------------------------------------------------------------
-        logical :: hop !< Signal that a hop occured in the current step.
-        integer :: sh !< Type of surface hopping calculation:
-                      !! - 0 - No hopping.
-                      !! - 1 - Landau-Zener formula.
-                      !! - 2 - Fewest switches surface hopping in the adiabatic representation.
-                      !! - 3 - FSSH in the locally diabatic representation.
-                      !! - 4 - FSSH in the adiabatic representation and/or spin-orbit 
         logical :: soc !< Signal to include spin-orbit coupling in the Hamiltonian.
-        logical :: sodegen ! spin-orbit degeneration treatment 
+        logical :: sodegen ! spin-orbit degeneration treatment
         logical :: socbas ! spin-obit basis representation
-
-        integer :: decohlvl !< Method of decoherence correction during dynamics:
-        !!  - 0 - No decoherence correction.
-        !!  - 1 - Energy based decoherence scheme (Granucci, Persico; doi: 10.1063/1.2715585).
 
         character(len=:), allocatable :: tdc_type !< Method for calculating the time-derivative coupling matrix:
         !! - 'hst' - Use wave function overlaps with the Hammes-Schiffer/Tully method.

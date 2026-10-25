@@ -144,20 +144,40 @@ contains
     end function get_gradient
 
 
-    pure function get_energy_single(self, state) result(energy)
+    pure function get_energy_single(self, basis, state) result(energy)
         class(diabatic_evaluator), intent(in) :: self
+        character(len=*), intent(in) :: basis
         integer, intent(in) :: state
         real(dp) :: energy
 
-        energy = self%adiab_w(state, state)
+        select case(basis)
+        case('diabatic')
+            energy = self%diab_w(state, state)
+        case('adiabatic')
+            energy = self%adiab_w(state, state)
+        case('group_adiabatic')
+            energy = self%group_adiab_w(state, state)
+        case default
+            error stop 'Error in evaluator_diabatic_mod, get_energy_single function. Unknown basis.'
+        end select
     end function get_energy_single
 
-    pure function get_energy_all(self) result(energy)
+    pure function get_energy_all(self, basis) result(energy)
         use matrix_mod, only : diag
         class(diabatic_evaluator), intent(in) :: self
+        character(len=*), intent(in) :: basis
         real(dp), allocatable :: energy(:)
 
-        energy = diag(self%adiab_w)
+        select case(basis)
+        case('diabatic')
+            energy = diag(self%diab_w)
+        case('adiabatic')
+            energy = diag(self%adiab_w)
+        case('group_adiabatic')
+            energy = diag(self%group_adiab_w)
+        case default
+            error stop 'Error in evaluator_diabatic_mod, get_energy_all function. Unknown basis.'
+        end select
     end function get_energy_all
 
 

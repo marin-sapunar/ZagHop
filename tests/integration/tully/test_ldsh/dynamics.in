@@ -6,8 +6,7 @@ $system
  ndim = 1
  nstate = 2
  istate = 1
-$surfhop
- fssh ldiab
+$surfhop ld-fssh
  decoherence off
  velocity nadvec
  adt

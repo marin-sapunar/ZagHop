@@ -5,8 +5,7 @@ $method
 $system
  nstate = 4
  istate = 3
-$surfhop
- fssh diabatic
+$surfhop ld-fssh
 $dynamics
  time = 6.0
  tstep = 0.5

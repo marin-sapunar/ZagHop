@@ -20,6 +20,8 @@ module input_mod
     use constants
     use vc_evaluator_mod, only : vc_evaluator
     use evaluator_base_mod, only : potential_evaluator
+    use tsh_method_mod, only : tsh_none
+    use sh_ld_mod, only : tsh_ld
 #ifdef QUANTICS
     use quantics_interface_mod, only : quantics_interface
 #endif
@@ -37,6 +39,7 @@ module input_mod
     character(len=:), allocatable :: pcinp !< Name of partial charges input file.
     real(dp) :: tol_cns
     real(dp) :: mb_temperature = -1.0_dp
+    integer :: istate = 0 !< Initial active state.
 
 contains
 
@@ -129,11 +132,9 @@ contains
         ctrl%orientlvl = 0
         tol_cns = 0.000000000001_dp ! Default rattle tolerance.
         ! Surface hopping options.
-        ctrl%sh = 2
         ctrl%sodegen = .true.
         ctrl%soc = .false.
         ctrl%socbas = .false.
-        ctrl%decohlvl = 1
         ctrl%tdc_type = 'hst'
         ctrl%tdc_interpolate = 2
         ctrl%ene_interpolate = 2
@@ -246,21 +247,13 @@ contains
         call readf%close()
 
         ! Modify options based on type of calculation.
-        if (tr1%wf%n_state == 1) then
-            ctrl%sh = 0
-            ctrl%print(10) = .false.
-        end if
+        if (tr1%pot%n_state == 1) ctrl%print(10) = .false.
         if (ctrl%print(10)) ctrl%oscill = .true.
         if (ctrl%print(8)) ctrl%adt = .true.
-        select case(ctrl%sh)
-        case(0)
+        ! Without hopping there are no coefficients or probabilities to print.
+        select type(wf => tr1%wf)
+        type is (tsh_none)
             ctrl%print(6:9) = .false.
-        case(1)
-            ctrl%print(6:9) = .false.
-        case(2)
-            if (ctrl%tdc_type == 'nadvec') then
-                ctrl%print(7) = .false.
-            end if
         end select
         if (ctrl%orientlvl < 0 .or. ctrl%orientlvl > 2) then
             write(stderr, *) 'Error in Input module, read_input subroutine.'
@@ -285,46 +278,6 @@ contains
         if (ctrl%thermostat /= 0) then
             ctrl%max_tot_en_change = huge(ctrl%max_tot_en_change)
             ctrl%max_tot_en_change_step = huge(ctrl%max_tot_en_change_step)
-        end if
-
-        ! Allocate all arrays of size tr1%wf%n_state.
-        if (.not. ctrl%restart) then
-            ! tr1%wf%need_gradient = .false.
-            ! tr1%wf%need_gradient(tr1%wf%active_state) = .true.
-        !    if (ctrl%oscill) allocate(tr1%qo(tr1%max_nstate - 1))
-            select case(ctrl%sh)
-            case(1)
-                allocate(tr1%gap_2deriv(3, tr1%wf%n_state), source=0.0_dp)
-            case(2, 3, 4)
-                tr1%wf%coeff(tr1%wf%active_state) = cmplx((1.0_dp, 0.0_dp), kind = dp)
-                select case (ctrl%tdc_type)
-                case('hst', 'npi')
-                    ! allocate(tr1%wf%overlap(tr1%wf%n_state, tr1%wf%n_state))
-                case('nadvec')
-                    ! do i = 1, tr1%wf%n_state
-                    !     do j = 1, tr1%wf%n_state
-                    !         if (i == j) cycle
-                    !         if (tr1%wf%qm_state(i)%spin2 /= tr1%wf%qm_state(j)%spin2) cycle
-                    !         if (tr1%wf%qm_state(i)%ms2 /= tr1%wf%qm_state(j)%ms2) cycle
-                    !         tr1%wf%need_nadv(i, j) = .true.
-                    !     end do
-                    ! end do
-                end select
-                if (ctrl%soc) then
-                    ! do i = 1, tr1%wf%n_state
-                    !     allocate(tr1%wf%qm_state(i)%soc(tr1%wf%n_state), source=0.0_dp)
-                    !     do j = 1, tr1%wf%n_state
-                    !         if (i == j) cycle
-                    !         if ((tr1%wf%qm_state(i)%spin2 == tr1%wf%qm_state(j)%spin2) .and. &
-                    !            (tr1%wf%qm_state(i)%ms2 == tr1%wf%qm_state(j)%ms2)) cycle
-                    !         tr1%wf%need_soc(i, j) = .true.
-                    !     end do
-                    ! end do
-                end if
-                ! if (ctrl%print(8) .and. (.not. allocated(tr1%wf%adt))) then
-                !     allocate(tr1%wf%adt(tr1%wf%n_state, tr1%wf%n_state), source=0.0_dp)
-                ! end if
-            end select
         end if
 
         ! Atoms need to match the reference geometry of the normal modes.
@@ -722,10 +675,10 @@ contains
                         &          'istate file keyword requires a file name.')
                     end if
                     open(newunit=i, file=readf%args(3)%s, status='old', action='read')
-                    read(i, *) tr1%wf%active_state
+                    read(i, *) istate
                     close(i)
                 else
-                    read(readf%args(2)%s, *) tr1%wf%active_state
+                    read(readf%args(2)%s, *) istate
                 end if
             case('geometry')
                 geominp = readf%args(2)%s
@@ -778,9 +731,6 @@ contains
         if (.not. allocated(tr1%pot%group_nstate)) then
             call tr1%pot%set_group_nstate(nstate, multiplicity)
         end if
-
-        call tr1%wf%initialize(ctrl%rng, tr1%pot%n_state)
-
     end subroutine read_system
 
 
@@ -930,61 +880,82 @@ contains
     ! SUBROUTINE: read_surfhop
     !
     ! DESCRIPTION:
-    !> @brief Read the $surfhop section of the main input file.
+    !> @brief Read the $surfhop section of the main input file and create the surface hopping
+    !! method.
     !> @details
+    !! The method is given on the section line: "$surfhop off", "$surfhop lz", "$surfhop ld-fssh"
+    !! or "$surfhop a-fssh". Without a method on the section line, or without the section, LD-FSSH
+    !! is used. Options of the method are set directly on the method object, other options are
+    !! stored in ctrl.
     !! See manual for details concerning the input.
     !----------------------------------------------------------------------------------------------
     subroutine read_surfhop(readf)
         type(reader), intent(inout) :: readf
         logical :: check
-        
+        character(len=:), allocatable :: method
+
+        if (istate < 1 .or. istate > tr1%pot%n_state) then
+            write(stderr, *) 'Error in Input module, read_surfhop subroutine.'
+            write(stderr, '(3x,a,i0,a,i0,a)') 'Initial state ', istate, ' is not between 1 and ', &
+            &                                 tr1%pot%n_state, '.'
+            stop
+        end if
+
+        method = 'ld-fssh'
         call readf%rewind()
         call readf%go_to_keyword('$surfhop', found=check)
-        if (.not. check) return
-
-        call readf%parseline(' =')
-        if (readf%narg > 1) then
-            select case(readf%args(2)%s)
-            case('off')
-                ctrl%sh = 0
-                return
-            end select
+        if (check) then
+            call readf%parseline(' =')
+            if (readf%narg > 1) method = readf%args(2)%s
         end if
+        ! Hopping needs at least two states.
+        if (tr1%pot%n_state == 1) method = 'off'
+
+        select case(method)
+        case('off')
+            allocate(tsh_none :: tr1%wf)
+        case('lz')
+            !> @todo Port LZSH to an extension of tsh_method.
+            write(stderr, *) 'Error in Input module, read_surfhop subroutine.'
+            write(stderr, *) '  Landau-Zener surface hopping is not available in this version.'
+            stop
+        case('ld-fssh')
+            allocate(tsh_ld :: tr1%wf)
+        case('a-fssh')
+            !> @todo Port adiabatic FSSH to an extension of tsh_method.
+            write(stderr, *) 'Error in Input module, read_surfhop subroutine.'
+            write(stderr, *) '  Adiabatic FSSH is not available in this version.'
+            stop
+        case default
+            write(stderr, *) 'Error in Input module, read_surfhop subroutine.'
+            write(stderr, *) '  Unrecognized surface hopping method: ', method
+            write(stderr, *) '  Expected off, lz, ld-fssh or a-fssh.'
+            stop
+        end select
+        call tr1%wf%initialize(ctrl%rng, tr1%pot, istate)
+
+        ! The rest of the section is not read without hopping.
+        if ((.not. check) .or. (method == 'off')) return
 
         do
             call readf%next()
             if (index(readf%line, '$') == 1) exit
             call readf%parseline(' =')
             select case(readf%args(1)%s)
-            case('lz')
-                ctrl%sh = 1
-            case('fssh')
-                ctrl%sh = 2
-                if (readf%narg > 1) then
-                    select case(readf%args(2)%s)
-                    case('adiabatic')
-                        ctrl%sh = 2
-                    case('diabatic', 'ldiab', 'diab')
-                        ctrl%sh = 3
-                    case('sosh')
-                        ctrl%sh = 4
-                    end select
-                end if
-            case('tdse_steps')
-                read(readf%args(2)%s, *) tr1%wf%n_substep
-            case('prob_formula')
-                read(readf%args(2)%s, *) tr1%wf%prob_formula
-            case('decoherence')
-                select case(readf%args(2)%s)
-                case('off')
-                    ctrl%decohlvl = 0
-                case('edc')
-                    ctrl%decohlvl = 1
-                case default
-                    write(stderr, *) 'Error in Input module, read_surfhop subroutine.'
-                    write(stderr, '(2x,a)') '  Unrecognized decoherence method: '
-                    write(stderr, '(2x,a)') readf%line
-                    stop
+            case('lz', 'fssh')
+                write(stderr, *) 'Error in Input module, read_surfhop subroutine.'
+                write(stderr, *) '  The surface hopping method is given on the $surfhop line, ',   &
+                &                'for example "$surfhop ld-fssh".'
+                write(stderr, *) '  Line: ', readf%line
+                stop
+            case('tdse_steps', 'prob_formula', 'decoherence')
+                select type(wf => tr1%wf)
+                type is (tsh_ld)
+                    call read_ld_option(readf, wf)
+                class default
+                    write(stderr, *) 'Warning in Input module, read_surfhop subroutine.'
+                    write(stderr, *) '  Skipping LD-FSSH option, not used by method ', method, ':'
+                    write(stderr, *) readf%line
                 end select
             case('hst', 'overlap', 'overlap_hst')
                 ctrl%tdc_type = "hst"
@@ -1054,6 +1025,45 @@ contains
             end select
         end do
     end subroutine read_surfhop
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: read_ld_option
+    !
+    ! DESCRIPTION:
+    !> @brief Set an LD-FSSH option from the current line of the $surfhop section.
+    !----------------------------------------------------------------------------------------------
+    subroutine read_ld_option(readf, wf)
+        type(reader), intent(in) :: readf
+        type(tsh_ld), intent(inout) :: wf
+
+        select case(readf%args(1)%s)
+        case('tdse_steps')
+            read(readf%args(2)%s, *) wf%n_substep
+        case('prob_formula')
+            select case(readf%args(2)%s)
+            case('sharc', 'ld01', 'ld01_l', 'ld19')
+                wf%prob_formula = readf%args(2)%s
+            case default
+                write(stderr, *) 'Error in Input module, read_ld_option subroutine.'
+                write(stderr, '(2x,a)') '  Unrecognized hopping probability formula: '
+                write(stderr, '(2x,a)') readf%line
+                stop
+            end select
+        case('decoherence')
+            select case(readf%args(2)%s)
+            case('off')
+                wf%decohlvl = 0
+            case('edc')
+                wf%decohlvl = 1
+            case default
+                write(stderr, *) 'Error in Input module, read_ld_option subroutine.'
+                write(stderr, '(2x,a)') '  Unrecognized decoherence method: '
+                write(stderr, '(2x,a)') readf%line
+                stop
+            end select
+        end select
+    end subroutine read_ld_option
 
     !----------------------------------------------------------------------------------------------
     ! SUBROUTINE: read_mm

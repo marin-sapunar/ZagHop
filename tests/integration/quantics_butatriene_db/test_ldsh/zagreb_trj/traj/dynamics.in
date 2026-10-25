@@ -2,8 +2,7 @@ $system
  ndim = 1
  nstate = 2
  istate = 2
-$surfhop
- fssh ldiab
+$surfhop ld-fssh
  velocity nadvec
  tdse_steps 1
 $dynamics

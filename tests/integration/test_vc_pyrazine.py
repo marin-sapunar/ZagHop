@@ -29,6 +29,7 @@ class VcPyrazineTest(ZagHopTest):
         """ Test diabatic basis FSSH on pyrazine model."""
         self.run_traj()
         self.compare_energy()
+        self.compare_results("cwf.dat")
 
 
 if __name__ == '__main__':

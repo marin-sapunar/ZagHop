@@ -1,0 +1,15 @@
+$method
+ seed 50
+ qlib model tully-i
+$system
+ geometry geom
+ ndim = 1
+ nstate = 2
+ istate = 1
+$surfhop off
+$dynamics
+ time = 80.0
+ tstep = 0.25
+$output
+  noprint 2,4-11
+$end

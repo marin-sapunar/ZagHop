@@ -23,6 +23,7 @@ class QuanticsSo2Test(ZagHopTest):
         self.run_traj()
         self.compare_energy()
         self.compare_results("cstate_diab")
+        self.compare_results("prob")
 
 
 if __name__ == '__main__':

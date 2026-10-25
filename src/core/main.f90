@@ -26,7 +26,6 @@ program zaghop
     use input_mod, only : read_input, command_line_interface, set_defaults
     use interface_mod
     use file_mod, only : check_is_dir
-    use hopping_mod
     use nuclear_dyn_mod
     implicit none
 
@@ -82,8 +81,7 @@ program zaghop
         if (stdp1) write(stdout, '(a)') ' Running initial QM calculation: '
         if (stdp1) call stepclock%start()
         call run_qm(tr1, .false.)
-        tr1%wf%h_t1 = tr1%pot%get_Hamiltonian('adiabatic')
-        tr1%wf%u_t1 = tr1%pot%get_transformation('diabatic', 'adiabatic')
+        call tr1%wf%start(tr1%time, tr1%pot)
         if (stdp1) call stepclock%print(stdout, '  QM run time:')
         call tr1%writestep(ctrl%print, ctrl%print_units)
         call trajectory_next(ctrl%dt)
@@ -134,9 +132,10 @@ program zaghop
         call dyn_updatevelo(ctrl%dt, tr1%mass, tr1%geom, tr2%grad, tr1%grad, tr2%velo,        &
         &                   tr1%velo)
 
-        ! Integrate TDSE.
-        call hopping()
-        if (ctrl%hop) then
+        ! Apply the decoherence correction and propagate the surface hopping method.
+        call tr1%wf%decohere(tr1%qkine(), ctrl%dt, tr1%pot)
+        call tr1%wf%propagate(tr1%time, tr1%pot)
+        if (tr1%wf%active_state /= tr2%wf%active_state) then
             if (stdp2) then
                 write(stdout, '(3x,a)') 'Change of state: '
                 write(stdout, '(5x,a,i0)') 'Previous state: ', tr2%wf%active_state
@@ -144,8 +143,8 @@ program zaghop
                 write(stdout, '(5x,a)') 'Running QM gradient calculation for new state.'
             end if
             call run_qm(tr1, .true.)
-            call sh_rescalevelo(ctrl%vrescale, ctrl%fhop, tr1%qind, tr2%wf%active_state, tr1%pot, &
-            &                   tr1%mass, tr1%velo, tr1%wf%active_state)
+            call tr1%wf%rescale_velocity(ctrl%vrescale, ctrl%fhop, tr1%qind, tr2%wf%active_state, &
+            &                            tr1%pot, tr1%mass, tr1%velo)
             tr1%grad(:, tr1%qind) = tr1%pot%get_gradient('adiabatic', tr1%wf%active_state)
         end if
 
@@ -171,7 +170,8 @@ program zaghop
 
         ! Stop the program at S0/S1 conical intersection.
         if (tr1%wf%n_state > 1) then
-            if (tr1%pot%get_energy(2) - tr1%pot%get_energy(1) < ctrl%stop_s0s1_ci) then
+            if (tr1%pot%get_energy('adiabatic', 2) - tr1%pot%get_energy('adiabatic', 1)          &
+            &   < ctrl%stop_s0s1_ci) then
                 if (stdp1) write(stdout, *) '  Intersection with ground state.'
                 abort_flag = 4
             end if

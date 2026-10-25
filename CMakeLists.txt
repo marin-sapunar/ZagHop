@@ -182,6 +182,10 @@ project(ZagHop LANGUAGES Fortran)
   target_link_libraries(linalg_test zagutil ${LINALG_LIBS})
   add_test(NAME linalg_unit_test COMMAND linalg_test)
 
+  add_executable(pot_test tests/unit/pot_test.f90)
+  target_link_libraries(pot_test zagpot zagutil ${LINALG_LIBS})
+  add_test(NAME pot_unit_test COMMAND pot_test)
+
   find_package(Python)
   if(Python_FOUND)
     message(STATUS "Python executable: ${Python_EXECUTABLE}")

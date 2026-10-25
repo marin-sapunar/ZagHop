@@ -201,28 +201,27 @@ b \#1 \#2 \#3 \#4		&
 
 %Surfhop section
 \paragraph{surfhop}
-Section \$surfhop contains options for the surface hopping procedure and the propagation of the electronic wave function. If the "\$surfhop off" option is given, the rest of the section is not read and dynamics are performed on the initial adiabatic state without hopping. \newline
-\$surfhop (off)
+Section \$surfhop selects the surface hopping method and contains options for the surface hopping procedure and the propagation of the electronic wave function. The method is given on the section line. Without a method, or without the section, LD-FSSH is used. \newline
+\$surfhop (method) \newline
+Possible methods: \newline
+	\tabitem [off] No surface hopping. The rest of the section is not read and dynamics are performed on the initial adiabatic state. \newline
+	\tabitem [lz] Landau-Zener surface hopping. (Not available in this version.) \newline
+	\tabitem [ld-fssh] Fewest switches surface hopping with the electronic wave function propagated in the locally diabatic basis. (Default.) \newline
+	\tabitem [a-fssh] Fewest switches surface hopping in the adiabatic basis. (Not available in this version.)
 
 
 \begin{tabularx}{\textwidth}{ m{2.5cm} X }
-lz				&
-	\textbf{off}	\newline
-	Instead of the fewest-switches surface hopping algorithm, use Landau-Zener formula to determine hops between surfaces. Most of the other options in the section are ignored.\\
-	
-fssh			&
-	\textbf{adiabatic}	\newline
-	Use fewest-switches surface hopping algorithm. Possible options: \newline
-	\tabitem [adiabatic] Propagate electronic wave function coefficients in the adiabatic basis.
-	\tabitem [diabatic] Propagate electronic wave function coefficients in the diabatic basis using local diabatization.\\
-
 tdse\_steps \#	&
-	\textbf{10000}	\newline
-	Number of substeps for electronic wave function propagation between the nuclear time step at $t$ and at $t + \Delta t$. Energies and couplings are interpolated during the propagation based on the overlap/nadvec and energy options. A hop can occur in any substep of the propagation. Probabilities printed in the main output file are sums of probabilities from each substep. \\
+	\textbf{1}	\newline
+	LD-FSSH only. Number of substeps for electronic wave function propagation between the nuclear time step at $t$ and at $t + \Delta t$. The Hamiltonian is interpolated linearly during the propagation. Probabilities printed in the prob file are sums of probabilities from each substep. \\
+
+prob\_formula	&
+	\textbf{sharc}	\newline
+	LD-FSSH only. Formula for the hopping probabilities. Possible options: sharc, ld01, ld01\_l, ld19. \\
 
 decoherence		&
-	\textbf{ebd}	\newline
-	Method used for applying a decoherence correction to the electronic wave function. Possible options: \newline				
+	\textbf{edc}	\newline
+	LD-FSSH only. Method used for applying a decoherence correction to the electronic wave function. Possible options: \newline
 	\tabitem [off] No decoherence correction. \newline
 	\tabitem [edc] Energy based decoherence scheme. \\
 

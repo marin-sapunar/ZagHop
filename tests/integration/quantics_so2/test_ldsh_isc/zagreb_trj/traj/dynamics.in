@@ -3,8 +3,7 @@ $system
  nstate = 4 3
  multiplicity = 1 3
  istate file istate
-$surfhop
- fssh  ldiab
+$surfhop ld-fssh
  velocity nadvec
  tdse_steps 1
  prob_formula sharc

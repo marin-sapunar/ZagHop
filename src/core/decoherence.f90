@@ -12,31 +12,9 @@ module decoherence_mod
     implicit none
 
     private
-    public :: decoherence
+    public :: edc
 
 contains
-
-
-    !----------------------------------------------------------------------------------------------
-    ! SUBROUTINE: Decoherence
-    !
-    ! DESCRIPTION:
-    !> @brief Apply decoherence correction to electronic wave function.
-    !> @details
-    !! Method of decoherence correction is chosen based on the value of the ctrl%decohlvl variable.
-    !----------------------------------------------------------------------------------------------
-    subroutine decoherence()
-        use system_type_mod
-        use control_var
-
-
-        select case(ctrl%decohlvl)
-        case(0) ! No decoherence correction.
-        case(1) ! Energy based decoherence.
-            if (stdp3) write(stdout, *) ' Dechoerence correction type EDC.'
-            call edc(tr1%wf%active_state, tr1%qkine(), tr1%pot%get_energy(), ctrl%dt, tr1%wf%coeff)
-        end select
-    end subroutine decoherence
 
 
     !----------------------------------------------------------------------------------------------

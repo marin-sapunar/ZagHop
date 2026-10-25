@@ -1,105 +1,127 @@
+!--------------------------------------------------------------------------------------------------
+! MODULE: tsh_method_mod
+!
+! DESCRIPTION:
+!> @brief Base type for surface hopping methods.
+!> @details
+!! A method holds the active state and the electronic data needed to choose it at each new point
+!! of the trajectory. The driver calls start at the initial point and propagate at each new point,
+!! after the energies and couplings at that point have been evaluated.
+!--------------------------------------------------------------------------------------------------
 module tsh_method_mod
-    use global_defs, only : dp
+    use global_defs, only : dp, stdout, stdp1, stdp2
     use evaluator_base_mod, only : potential_evaluator
-    use orthog_mod, only : orthog_lowdin
-    use matrix_mod, only : diag, mat_sy_exp
     use random_mod, only : rng_type
-    use linalg_wrapper_mod, only : gemm
     implicit none
 
-    type :: tsh_method
-        class(rng_type), pointer :: rng
-        character(len=:), allocatable :: representation
-        character(len=:), allocatable :: prob_formula
-        integer :: active_state = 0
+    private
+    public :: tsh_method
+    public :: tsh_none
+    public :: initialize
+
+
+    type, abstract :: tsh_method
+        class(rng_type), pointer :: rng => null()
+        character(len=:), allocatable :: basis !< Basis of active_state and of the nuclear dynamics.
         integer :: n_state = 0
-        integer :: n_substep = 1
-        real(dp) :: t = 0.0_dp
-        complex(dp), allocatable :: coeff(:)
-        real(dp), allocatable :: prob(:)
-        real(dp), allocatable :: u_t1(:, :)
-        real(dp), allocatable :: h_t1(:, :)
+        integer :: active_state = 0
+        real(dp) :: t = 0.0_dp !< Time of the last processed point.
+        real(dp), allocatable :: prob(:) !< Hopping probabilities from the last step (output).
     contains
         procedure :: initialize
-        procedure :: propagate
+        procedure(start_iface), deferred :: start
+        procedure(propagate_iface), deferred :: propagate
+        procedure :: decohere
+        procedure :: write_coefficients
+        procedure :: select_state
+        procedure :: rescale_velocity
     end type tsh_method
+
+
+    !> Surface hopping turned off. The trajectory stays in the initial state.
+    type, extends(tsh_method) :: tsh_none
+    contains
+        procedure :: start => none_start
+        procedure :: propagate => none_propagate
+    end type tsh_none
+
+
+    abstract interface
+        !> Store the data needed from the initial point of the trajectory.
+        subroutine start_iface(self, t, potential)
+            import :: tsh_method, dp, potential_evaluator
+            class(tsh_method), intent(inout) :: self
+            real(dp), intent(in) :: t
+            class(potential_evaluator), intent(in) :: potential
+        end subroutine start_iface
+
+        !> Process a new point of the trajectory at time t2 and choose the active state.
+        subroutine propagate_iface(self, t2, potential)
+            import :: tsh_method, dp, potential_evaluator
+            class(tsh_method), intent(inout) :: self
+            real(dp), intent(in) :: t2
+            class(potential_evaluator), intent(in) :: potential
+        end subroutine propagate_iface
+    end interface
 
 
 contains
 
-    subroutine initialize(self, rng, n_state)
-        use matrix_mod, only : unit_mat
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: initialize
+    !> @brief Common part of the initialization. Extensions override it and call it first.
+    !----------------------------------------------------------------------------------------------
+    subroutine initialize(self, rng, potential, active_state)
         class(tsh_method), intent(inout) :: self
         class(rng_type), pointer, intent(in) :: rng
-        integer, intent(in) :: n_state
+        class(potential_evaluator), intent(in) :: potential
+        integer, intent(in) :: active_state
 
         self%rng => rng
-        self%n_state = n_state
-        allocate(self%coeff(self%n_state), source=cmplx(0.0_dp, 0.0_dp, kind=dp))
+        self%basis = 'adiabatic'
+        self%n_state = potential%n_state
+        self%active_state = active_state
         allocate(self%prob(self%n_state), source=0.0_dp)
-        self%representation = 'locally_diabatic'
-        self%prob_formula = 'sharc'
     end subroutine initialize
 
 
-    subroutine propagate(self, t2, potential)
-        use matrix_mod, only : unitary_transform, unit_mat
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: decohere
+    !> @brief Apply a decoherence correction before propagating to the next point. No-op by
+    !! default.
+    !----------------------------------------------------------------------------------------------
+    subroutine decohere(self, ekin, dt, potential)
         class(tsh_method), intent(inout) :: self
+        real(dp), intent(in) :: ekin !< Kinetic energy.
+        real(dp), intent(in) :: dt !< Time step.
         class(potential_evaluator), intent(in) :: potential
-        real(dp), intent(in) :: t2 !< Time after propagation
-        real(dp) :: dt
-        real(dp) :: t(self%n_state, self%n_state) !< Orthogonalized overlap matrix.
-        real(dp) :: h_t(self%n_state, self%n_state) !< Hamiltonian during substep.
-        real(dp) :: h_t2(self%n_state, self%n_state) !< Hamiltonian at time t2.
-        real(dp) :: dh(self%n_state, self%n_state) !< Change of Hamiltonian over the step (LD basis).
-        complex(dp) :: w3(self%n_state, self%n_state) !< Work array 3.
-        complex(dp) :: w4(self%n_state, self%n_state) !< Work array 4.
-        real(dp), allocatable :: u_t2(:, :)
+    end subroutine decohere
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: write_coefficients
+    !> @brief Write the electronic wave function coefficients to unit. No-op by default.
+    !----------------------------------------------------------------------------------------------
+    subroutine write_coefficients(self, unit)
+        class(tsh_method), intent(in) :: self
+        integer, intent(in) :: unit
+    end subroutine write_coefficients
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: select_state
+    !> @brief Choose the new active state from the hopping probabilities in prob.
+    !> @details
+    !! Exactly one random number is drawn, also when all probabilities are zero.
+    !----------------------------------------------------------------------------------------------
+    subroutine select_state(self)
+        class(tsh_method), intent(inout) :: self
         integer :: i, cstate
         real(dp) :: cprob
         real(dp) :: rnum
-        complex(dp) :: c_propagation_t0(self%n_state) !< Coefficients at start of substep in propagation representation.
-        complex(dp) :: c_propagation_dt(self%n_state) !< Coefficients at end of substep in propagation representation.
-        complex(dp) :: c_hopping_t0(self%n_state) !< Coefficients at start of substep in hopping representation.
-        complex(dp) :: c_hopping_dt(self%n_state) !< Coefficients at end of substep in hopping representation.
 
         cstate = self%active_state
-        c_propagation_t0 = self%coeff
-        c_hopping_t0 = self%coeff
-        self%prob = 0.0_dp
-        u_t2 = potential%get_transformation('diabatic', 'adiabatic')
-        h_t2 = potential%get_Hamiltonian('adiabatic')
-
-        ! Get overlap matrix.
-        t = matmul(transpose(self%u_t1), u_t2) ! T = U(t)^t . U(t+dt)
-        call orthog_lowdin(t)
-
-        dh = matmul(matmul(t, h_t2), transpose(t)) ! H(t+dt) = T.H(t+dt).T^t
-        dh = dh - self%h_t1
-
-        dt = (t2 - self%t) / self%n_substep
-
-        do i = 1, self%n_substep
-            h_t = self%h_t1 + dh * real(i - 0.5_dp, dp) / self%n_substep
-            w3 = mat_sy_exp(h_t, cmplx(0.0_dp, -dt, kind=dp))
-            c_propagation_dt = matmul(w3, c_propagation_t0)
-            c_hopping_dt = matmul(transpose(t), c_propagation_dt)
-            select case(self%prob_formula)
-            case('sharc')
-                w4 = matmul(transpose(t), w3)
-                self%prob = self%prob + prob_sharc(cstate, c_hopping_t0, c_hopping_dt, w4)
-            case('ld01')
-                w4 = matmul(transpose(t), w3)
-                self%prob = self%prob + prob_ld01(cstate, c_hopping_t0, c_hopping_dt, w4)
-            case('ld01_l')
-                self%prob = self%prob + prob_ld01_l(cstate, c_hopping_t0, c_hopping_dt, t)
-            case('ld19')
-                self%prob = self%prob + prob_ld19(cstate, c_hopping_t0, c_hopping_dt, t)
-            end select
-            c_propagation_t0 = c_propagation_dt
-            c_hopping_t0 = c_hopping_dt
-        end do
-        
         cprob = 0.0_dp
         call self%rng%uniform(rnum)
         do i = 1, self%n_state
@@ -110,90 +132,118 @@ contains
                 exit
             end if
         end do
+    end subroutine select_state
 
-        self%coeff = c_hopping_dt
-        self%u_t1 = u_t2
-        self%h_t1 = h_t2
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: rescale_velocity
+    !> @brief Handle momentum correction after a hop from state pst to the active state.
+    !> @details
+    !! The behaviour of the subroutine is determined by two options, opt_mc and opt_fh.
+    !! The first, opt_mc, determines the direction along which momentum should be rescaled:
+    !! - 0 - No velocity rescaling (shouldn't be selected)
+    !! - 1 - Rescale along the velocity vector (shouldn't be selected)
+    !! - 2 - Rescale along the component along the gradient difference vector
+    !! - 3 - Rescale along the component along the nonadiabatic coupling vector.
+    !!
+    !! The second option, opt_fh, determines what should be done for "frustrated hops" when there
+    !! is not enough kinetic energy along the chosen direction to conserve the total energy after
+    !! a hop:
+    !! - 1 - Return to previous state without changing velocity.
+    !! - 2 - Return to previous state, but also invert the velocity along the rescale direction.
+    !!       (this option only makes sense with opt_mc=2 or 3)
+    !----------------------------------------------------------------------------------------------
+    subroutine rescale_velocity(self, opt_mc, opt_fh, amask, pst, potential, mass, velo)
+        class(tsh_method), intent(inout) :: self
+        integer, intent(in) :: opt_mc !< Type of momentum correction.
+        integer, intent(in) :: opt_fh !< Behaviour at frustrated hop.
+        integer, intent(in) :: amask(:) !< Atoms considered when rescaling.
+        integer, intent(in) :: pst !< Previous state.
+        class(potential_evaluator), intent(in) :: potential
+        real(dp), intent(in) :: mass(:) !< Masses.
+        real(dp), intent(inout) :: velo(:, :) !< Velocities.
+        real(dp) :: mvel(size(velo, 1), size(amask)) !< Mass weighted velocity.
+        real(dp) :: pgrd(size(velo, 1), size(amask)) !< Gradient of the previous state.
+        real(dp) :: cgrd(size(velo, 1), size(amask)) !< Gradient of the current state.
+        real(dp) :: m(size(velo, 1), size(amask)) !< Temporary mass array.
+        real(dp) :: rescale_dir(size(velo, 1), size(amask)) !< Direction along which to rescale.
+        real(dp) :: nadv(size(velo, 1)*size(amask)) !< Nonadiabatic coupling vector between the two states.
+        real(dp) :: mvel_dir !< Component of mass weighted velocity along rescale direction.
+        real(dp) :: delta_e !< Required change in kinetic energy.
+
+        if (stdp2) write(stdout, '(5x,a)') 'Ensuring energy conservation.'
+
+        pgrd = potential%get_gradient('adiabatic', pst)
+        cgrd = potential%get_gradient('adiabatic', self%active_state)
+        if (opt_mc == 3) then
+            nadv = potential%get_nadv('adiabatic', pst, self%active_state)
+        end if
+
+        ! Work with temporary arrays and use mass-weighted coordinates.
+        m = spread(mass(amask), 1, size(velo, 1))
+        mvel = velo(:, amask) * sqrt(m)
+
+        select case(opt_mc)
+        case(0) ! No rescaling.
+            return
+        case(1) ! Rescale along velocity vector.
+            rescale_dir = mvel
+        case(2) ! Rescale along gradient difference vector.
+            rescale_dir = (pgrd - cgrd) / sqrt(m)
+        case(3) ! Rescale along nonadiabatic coupling vector.
+            rescale_dir = reshape(nadv, shape(mvel)) / sqrt(m)
+        end select
+
+        ! Rescale velocity
+        delta_e = potential%get_energy('adiabatic', self%active_state)                            &
+        &       - potential%get_energy('adiabatic', pst)
+        rescale_dir = rescale_dir / sqrt(sum(rescale_dir**2))
+        mvel_dir = sum(rescale_dir * mvel)
+        if (mvel_dir**2 > 2 * delta_e) then
+            ! The sign here is based on the work of Herman (see chapter 6 of 10.1007/0-306-46949-9
+            ! and references within). Choosing the other direction would also work, but this one
+            ! ensures that the change in momentum is as small as possible (but also means that the
+            ! direction of the change doesn't depend on the sign of the vector along which rescaling
+            ! is performed).
+            mvel = mvel + rescale_dir * (sign(sqrt(mvel_dir**2 - 2*delta_e), mvel_dir) - mvel_dir)
+        else
+            if (stdp1) then
+                write(stdout, '(7x,a)') 'Insufficient energy for hop.'
+                write(stdout, '(7x,a,e16.8)') 'Energy difference:', delta_e
+                write(stdout, '(7x,a,e16.8)') 'Available energy:', mvel_dir**2 / 2
+            end if
+
+            self%active_state = pst
+
+            select case(opt_fh)
+            case(1) ! Just return to previous state.
+                continue
+            case(2) ! Invert velocity along rescale direction.
+                mvel = mvel - 2 * mvel_dir * rescale_dir
+            end select
+        end if
+
+        ! Save changes to velocity array.
+        velo(:, amask) = mvel / sqrt(m)
+    end subroutine rescale_velocity
+
+
+    subroutine none_start(self, t, potential)
+        class(tsh_none), intent(inout) :: self
+        real(dp), intent(in) :: t
+        class(potential_evaluator), intent(in) :: potential
+
+        self%t = t
+    end subroutine none_start
+
+
+    subroutine none_propagate(self, t2, potential)
+        class(tsh_none), intent(inout) :: self
+        real(dp), intent(in) :: t2
+        class(potential_evaluator), intent(in) :: potential
+
         self%t = t2
-    end subroutine propagate
-
-
-    pure function prob_sharc(b, c_t, c_dt, p) result(prob)
-        integer, intent(in) :: b
-        complex(dp), intent(in) :: c_t(:)
-        complex(dp), intent(in) :: c_dt(:)
-        complex(dp), intent(in) :: p(:, :)
-        real(dp) :: prob(size(c_t))
-        real(dp) :: b_diff
-        integer :: a
-        real(dp), parameter :: tiny = 1.0e-10_dp
-
-        prob = 0.0_dp
-        b_diff = 1 - abs(c_dt(b))**2 / abs(c_t(b))**2
-        if (abs(b_diff) <= tiny) return
-        do a = 1, size(c_t)
-            if (a == b) cycle
-            prob(a) = max(b_diff * real(c_dt(a) * conjg(p(a, b)) * conjg(c_t(b))) / &
-            &         (abs(c_t(b))**2 - real(c_dt(b) * conjg(p(b, b)) * conjg(c_t(b)))), 0.0_dp)
-        end do
-    end function prob_sharc
-
-
-    pure function prob_ld01(m, c_t, c_dt, ubar) result(prob)
-        integer, intent(in) :: m
-        complex(dp), intent(in) :: c_t(:)
-        complex(dp), intent(in) :: c_dt(:)
-        complex(dp), intent(in) :: ubar(:, :)
-        real(dp) :: prob(size(c_t))
-        integer :: n
-
-        prob = 0.0_dp
-        do n = 1, size(c_t)
-            if (m == n) cycle
-            prob(n) = -real(ubar(m, n) * c_t(n) * conjg(c_dt(m))) / abs(c_t(m))**2 * &
-                      (abs(c_dt(m))**2 - abs(c_t(m))**2) / &
-                      (abs(c_dt(m))**2 - real(ubar(m, m) * c_t(m) * conjg(c_dt(m))))
-        end do
-    end function prob_ld01
-
-
-    pure function prob_ld01_l(m, c_t, c_dt, u) result(prob)
-        integer, intent(in) :: m
-        complex(dp), intent(in) :: c_t(:)
-        complex(dp), intent(in) :: c_dt(:)
-        real(dp), intent(in) :: u(:, :)
-        real(dp) :: prob(size(c_t))
-        integer :: n
-
-        prob = 0.0_dp
-        do n = 1, size(c_t)
-            if (m == n) cycle
-            prob(n) = max(2.0_dp * real(u(m, n) * c_t(n) * conjg(c_dt(m))) / abs(c_t(m))**2, 0.0_dp)
-        end do
-    end function prob_ld01_l
-
-
-    pure function prob_ld19(m, c_t, c_dt, u) result(prob)
-        integer, intent(in) :: m
-        complex(dp), intent(in) :: c_t(:)
-        complex(dp), intent(in) :: c_dt(:)
-        real(dp), intent(in) :: u(:, :)
-        real(dp) :: prob(size(c_t))
-        integer :: n
-        real(dp) :: w_m
-
-        prob = 0.0_dp
-        w_m = (1 - abs(c_dt(m))**2 / abs(c_t(m))**2)
-        if (w_m <= 0.0_dp) return
-
-        do n = 1, size(c_t)
-            if (m == n) cycle
-            ! Numerator of x_mn
-            prob(n) = sqrt(max(abs(c_dt(n))**2 - abs(c_t(n))**2, 0.0_dp)) * abs(u(m, n))
-        end do
-
-        prob = w_m * prob / sum(prob)
-    end function prob_ld19
+    end subroutine none_propagate
 
 
 end module tsh_method_mod
