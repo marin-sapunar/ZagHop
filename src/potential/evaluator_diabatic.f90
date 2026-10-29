@@ -49,6 +49,9 @@ contains
 
         if (allocated(self%ldiab_trans)) then
             call match_phase(self%ldiab_trans, self%adiab_trans)
+        else
+            ! First point, without states to match the phase to.
+            call fix_sign(self%adiab_trans)
         end if
 
         self%adiab_w = self%diab_w
@@ -270,6 +273,25 @@ contains
             end if
         end do
     end subroutine match_phase
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: fix_sign
+    !> @brief Choose the sign of each vector so that its component with the largest magnitude is
+    !! positive.
+    !> @details
+    !! The signs of the eigenvectors returned by the eigensolver are arbitrary. They can change
+    !! with rounding differences in the matrix, which depend on the compiler options and the
+    !! linear algebra library.
+    !----------------------------------------------------------------------------------------------
+    subroutine fix_sign(vec)
+        real(dp), intent(inout) :: vec(:, :)
+        integer :: i
+
+        do i = 1, size(vec, 2)
+            if (vec(maxloc(abs(vec(:, i)), dim=1), i) < 0.0_dp) vec(:, i) = -vec(:, i)
+        end do
+    end subroutine fix_sign
 
 
     function get_eigvec(mat) result(eigv)
