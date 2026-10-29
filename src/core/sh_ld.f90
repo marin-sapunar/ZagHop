@@ -9,7 +9,7 @@
 !--------------------------------------------------------------------------------------------------
 module sh_ld_mod
     use global_defs
-    use tsh_method_mod, only : tsh_method, base_initialize => initialize
+    use tsh_method_mod, only : tsh_method, tsh_request, base_initialize => initialize
     use evaluator_base_mod, only : potential_evaluator
     use orthog_mod, only : orthog_lowdin
     use matrix_mod, only : mat_sy_exp
@@ -73,6 +73,7 @@ contains
         self%t = t
         self%h_t1 = potential%get_Hamiltonian('adiabatic')
         self%u_t1 = potential%get_transformation('diabatic', 'adiabatic')
+        self%request = tsh_request(t_final=t)
     end subroutine ld_start
 
 
@@ -133,6 +134,9 @@ contains
         end do
 
         call self%select_state()
+        ! The hop happens at the current point, which is final.
+        self%request = tsh_request(hop=(self%active_state /= cstate), previous_state=cstate,     &
+        &                          t_final=t2)
 
         self%coeff = c_hopping_dt
         self%u_t1 = u_t2

@@ -97,6 +97,21 @@ class ZagHopTest(unittest.TestCase):
         with open(os.path.join(self.rundir, self.trajdir, "nad.stdout")) as f:
             self.assertIn(string, f.read(), f"String not found in nad.stdout: {string!r}")
 
+    def stdout_count(self, string):
+        """ Number of times a string appears in the nad.stdout file. """
+        with open(os.path.join(self.rundir, self.trajdir, "nad.stdout")) as f:
+            return f.read().count(string)
+
+    def load_results(self, fname):
+        """ Load a file from the Results directory. """
+        return np.loadtxt(os.path.join(self.rundir, self.trajdir, "Results", fname), comments="#")
+
+    def assert_regular_grid(self, dt):
+        """ Assert that the times in energy.dat are exactly the output grid with step dt (fs). """
+        time = self.load_results("energy.dat")[:, 0]
+        grid = np.round(np.arange(len(time)) * dt, 5)
+        self.assertTrue(np.array_equal(time, grid), "Times in energy.dat are not the output grid.")
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

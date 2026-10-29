@@ -22,6 +22,7 @@ module input_mod
     use evaluator_base_mod, only : potential_evaluator
     use tsh_method_mod, only : tsh_none
     use sh_ld_mod, only : tsh_ld
+    use sh_lz_mod, only : tsh_lz
 #ifdef QUANTICS
     use quantics_interface_mod, only : quantics_interface
 #endif
@@ -126,9 +127,6 @@ contains
         ! Nuclear dynamics options.
         ctrl%max_time = 10.0_dp / aut_fs
         ctrl%dt_0 = 0.5_dp / aut_fs
-        ctrl%dt = ctrl%dt_0
-        ctrl%lz_min_dt = 0.05_dp / aut_fs
-        ctrl%lz_prob_conv = 0.05_dp
         ctrl%orientlvl = 0
         tol_cns = 0.000000000001_dp ! Default rattle tolerance.
         ! Surface hopping options.
@@ -169,6 +167,7 @@ contains
         use nuclear_dyn_mod
         character(len=1000) :: temp
         integer :: i
+        integer :: n_point !< Number of points of the trajectory to keep in memory.
         logical :: check
         logical :: buffer
         type(reader) :: readf
@@ -250,11 +249,18 @@ contains
         if (tr1%pot%n_state == 1) ctrl%print(10) = .false.
         if (ctrl%print(10)) ctrl%oscill = .true.
         if (ctrl%print(8)) ctrl%adt = .true.
-        ! Without hopping there are no coefficients or probabilities to print.
+        ! Without hopping there are no coefficients or probabilities to print. LZSH has no
+        ! coefficients and evaluates probabilities only at gap minima.
+        n_point = memory
         select type(wf => tr1%wf)
         type is (tsh_none)
             ctrl%print(6:9) = .false.
+        type is (tsh_lz)
+            ctrl%print(6:9) = .false.
+            ! LZSH keeps the points of a gap minimum while it inserts points between them.
+            n_point = max(memory, wf%max_points(ctrl%dt_0) + 1)
         end select
+        call allocate_trajectory_data(n_point)
         if (ctrl%orientlvl < 0 .or. ctrl%orientlvl > 2) then
             write(stderr, *) 'Error in Input module, read_input subroutine.'
             write(stderr, '(3x,a,i0,a)') 'Unrecognized orient option: ', ctrl%orientlvl, '.'
@@ -809,9 +815,8 @@ contains
                 read(readf%args(2)%s, *) ctrl%max_time
                 ctrl%max_time = ctrl%max_time / aut_fs
             case('tstep', 'step', 'dt')
-                read(readf%args(2)%s, *) ctrl%dt
-                ctrl%dt = ctrl%dt / aut_fs
-                ctrl%dt_0 = ctrl%dt
+                read(readf%args(2)%s, *) ctrl%dt_0
+                ctrl%dt_0 = ctrl%dt_0 / aut_fs
             case('end_state')
                 read(readf%args(2)%s, *) ctrl%target_state
             case('end_state_time')
@@ -915,10 +920,7 @@ contains
         case('off')
             allocate(tsh_none :: tr1%wf)
         case('lz')
-            !> @todo Port LZSH to an extension of tsh_method.
-            write(stderr, *) 'Error in Input module, read_surfhop subroutine.'
-            write(stderr, *) '  Landau-Zener surface hopping is not available in this version.'
-            stop
+            allocate(tsh_lz :: tr1%wf)
         case('ld-fssh')
             allocate(tsh_ld :: tr1%wf)
         case('a-fssh')
@@ -933,6 +935,10 @@ contains
             stop
         end select
         call tr1%wf%initialize(ctrl%rng, tr1%pot, istate)
+        select type(wf => tr1%wf)
+        type is (tsh_lz)
+            wf%en_err = ctrl%qm_en_err
+        end select
 
         ! The rest of the section is not read without hopping.
         if ((.not. check) .or. (method == 'off')) return
@@ -1010,11 +1016,15 @@ contains
                     write(stderr, '(2x,a)') readf%line
                     stop
                 end select
-            case('lz_prob_conv')
-                read(readf%args(2)%s, *) ctrl%lz_prob_conv
-            case('lz_min_dt')
-                read(readf%args(2)%s, *) ctrl%lz_min_dt
-                ctrl%lz_min_dt = ctrl%lz_min_dt / aut_fs
+            case('lz_prob_conv', 'lz_min_dt')
+                select type(wf => tr1%wf)
+                type is (tsh_lz)
+                    call read_lz_option(readf, wf)
+                class default
+                    write(stderr, *) 'Warning in Input module, read_surfhop subroutine.'
+                    write(stderr, *) '  Skipping LZSH option, not used by method ', method, ':'
+                    write(stderr, *) readf%line
+                end select
             case('stop_s0s1_ci')
                 read(readf%args(2)%s, *) ctrl%stop_s0s1_ci
                 ctrl%stop_s0s1_ci = ctrl%stop_s0s1_ci / eh_eV
@@ -1064,6 +1074,26 @@ contains
             end select
         end select
     end subroutine read_ld_option
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: read_lz_option
+    !
+    ! DESCRIPTION:
+    !> @brief Set an LZSH option from the current line of the $surfhop section.
+    !----------------------------------------------------------------------------------------------
+    subroutine read_lz_option(readf, wf)
+        type(reader), intent(in) :: readf
+        type(tsh_lz), intent(inout) :: wf
+
+        select case(readf%args(1)%s)
+        case('lz_prob_conv')
+            read(readf%args(2)%s, *) wf%prob_conv
+        case('lz_min_dt')
+            read(readf%args(2)%s, *) wf%min_dt
+            wf%min_dt = wf%min_dt / aut_fs
+        end select
+    end subroutine read_lz_option
 
     !----------------------------------------------------------------------------------------------
     ! SUBROUTINE: read_mm

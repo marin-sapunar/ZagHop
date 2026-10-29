@@ -45,7 +45,7 @@ contains
             call t%pot%update_geometry(t%geom, t%classical_coordinates)
             call t%pot%eval()
         end if
-        t%grad(:, t%qind) = t%pot%get_gradient('adiabatic', t%wf%active_state)
+        t%grad(:, t%qind) = t%pot%get_gradient(t%wf%basis, t%wf%active_state)
 
         ! !> @todo Move this allocation check to wf object?
         ! do i = 1, t%wf%n_state

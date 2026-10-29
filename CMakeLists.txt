@@ -36,6 +36,7 @@ project(ZagHop LANGUAGES Fortran)
 ################################################################################
 # Targets:                                                                     #
   file(GLOB CORE_SOURCE "src/core/*f90")
+  list(FILTER CORE_SOURCE EXCLUDE REGEX "main\\.f90$")
   file(GLOB UTIL_SOURCE "src/util/*f90")
   file(GLOB POT_SOURCE "src/potential/*f90")
   list(FILTER POT_SOURCE EXCLUDE REGEX "run_vc\\.f90$")
@@ -48,12 +49,13 @@ project(ZagHop LANGUAGES Fortran)
   add_library(zagpot STATIC ${POT_SOURCE})
   target_link_libraries(zagpot PRIVATE zagutil)
 
-  add_executable(zaghop ${CORE_SOURCE})
-  target_link_libraries(zaghop PRIVATE zagpot)
-  target_link_libraries(zaghop PRIVATE zagutil)
-  target_link_libraries(zaghop PRIVATE jsonfortran)
-  target_include_directories(zaghop PRIVATE
+  add_library(zagcore STATIC ${CORE_SOURCE})
+  target_link_libraries(zagcore PUBLIC zagpot zagutil jsonfortran)
+  target_include_directories(zagcore PRIVATE
                              $<TARGET_PROPERTY:jsonfortran,BINARY_DIR>)
+
+  add_executable(zaghop "src/core/main.f90")
+  target_link_libraries(zaghop PRIVATE zagcore)
 
   add_executable(run_vc "src/potential/run_vc.f90")
   target_link_libraries(run_vc PRIVATE zagpot)
@@ -93,7 +95,7 @@ project(ZagHop LANGUAGES Fortran)
     endif()
     set(QUANTICS_OBJ
        ${QUANTICS_DIR}/object/${QUANTICS_PLATFORM}/${QUANTICS_COMPILER})
-    target_include_directories(zaghop PRIVATE ${QUANTICS_OBJ}/include)
+    target_include_directories(zagcore PRIVATE ${QUANTICS_OBJ}/include)
     target_link_directories(zaghop PRIVATE ${QUANTICS_DIR}/bin/dyn_libs)
     target_link_directories(zaghop PRIVATE ${QUANTICS_OBJ})
     target_link_libraries(zaghop PRIVATE
@@ -153,6 +155,7 @@ project(ZagHop LANGUAGES Fortran)
           )
   endif()
   target_link_libraries(zaghop PRIVATE ${LINALG_LIBS})
+  target_link_libraries(zagcore PUBLIC ${LINALG_LIBS})
   target_link_libraries(zagpot PRIVATE ${LINALG_LIBS})
   target_link_libraries(zagutil ${LINALG_LIBS})
 
@@ -170,7 +173,9 @@ project(ZagHop LANGUAGES Fortran)
     if(CMAKE_Fortran_COMPILER_ID STREQUAL "GNU")
       set(COVERAGE_FLAGS "--coverage -fprofile-arcs -ftest-coverage")
       target_compile_options(zaghop PRIVATE --coverage -fprofile-arcs -ftest-coverage)
+      target_compile_options(zagcore PRIVATE --coverage -fprofile-arcs -ftest-coverage)
       target_link_options(zaghop PRIVATE --coverage)
+      target_link_options(zagcore INTERFACE --coverage)
     endif()
   endif()
 
@@ -185,6 +190,10 @@ project(ZagHop LANGUAGES Fortran)
   add_executable(pot_test tests/unit/pot_test.f90)
   target_link_libraries(pot_test zagpot zagutil ${LINALG_LIBS})
   add_test(NAME pot_unit_test COMMAND pot_test)
+
+  add_executable(sh_test tests/unit/sh_test.f90)
+  target_link_libraries(sh_test zagcore)
+  add_test(NAME sh_unit_test COMMAND sh_test)
 
   find_package(Python)
   if(Python_FOUND)

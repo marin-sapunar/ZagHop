@@ -23,14 +23,12 @@ module system_type_mod
     public :: vc_nmode
     public :: trajectory_data, tr1, tr2
     public :: memory
-    public :: data_index_1
-    public :: data_index_2
     public :: allocate_trajectory_data
-    public :: index_offset
-    public :: trajectory_step_index
-    public :: trajectory_set_current
+    public :: trajectory_n_point
+    public :: trajectory_point
+    public :: trajectory_goto
     public :: trajectory_next
-    public :: trajectory_slide_forward
+    public :: trajectory_write_final
     public :: trajectory_write_backup
     public :: trajectory_read_backup
     public :: ekin
@@ -40,10 +38,11 @@ module system_type_mod
     !> @brief Holds all information about the system at a single time step.
     !----------------------------------------------------------------------------------------------
     type system_type
-        integer :: step = -1 !< Current step.
-        integer :: substep = -1 !< Signal that substeps are currently being performed.
+        integer :: step = -1 !< Index of the last point of the output grid at or before this point.
         real(dp) :: time = -1.0_dp !< Current time.
-        real(dp) :: last_hop = -1.0_dp !< Time at which the last hop occured.
+        real(dp) :: dt = 0.0_dp !< Step from the previous point to this point.
+        logical :: on_grid = .true. !< The point lies on the output grid.
+        logical :: written = .false. !< The point was passed to the output.
 
         ! Full system:
         integer :: ndim = 3 !< Number of dimensions.
@@ -81,12 +80,16 @@ module system_type_mod
     end type system_type
 
 
-    integer, parameter :: memory = 5
+    ! The stored points of the trajectory, in time order, are the slots point_slot(1:n_point) of
+    ! trajectory_data. Usually the current point is the latest one. After a step back to an
+    ! earlier point, the later points are kept only when a new point is inserted between them.
+    integer :: memory = 5 !< Maximum number of stored points.
     type(system_type), allocatable, target :: trajectory_data(:)
     type(system_type), pointer :: tr1 !< Pointer to trajectory data for current time step.
     type(system_type), pointer :: tr2 !< Pointer to trajectory data for previous time step.
-    integer :: data_index_1 !< Index of trajectory data for current time step.
-    integer :: data_index_2 !< Index of trajectory data for previous time step.
+    integer, allocatable :: point_slot(:) !< Slots of the stored points in time order.
+    integer :: n_point = 0 !< Number of stored points.
+    integer :: i_current = 0 !< Position of the current point in point_slot.
 
     type(vc_model), target :: vc_data !< LVC model for the system.
     type(normal_modes), target :: vc_nmode !< Normal modes of the LVC model.
@@ -120,7 +123,7 @@ contains
     pure function traj_pote(t) result(pote)
         class(system_type), intent(in) :: t
         real(dp) :: pote
-        pote = t%pot%get_energy('adiabatic', t%wf%active_state) + t%men(2) - t%men(1)
+        pote = t%pot%get_energy(t%wf%basis, t%wf%active_state) + t%men(2) - t%men(1)
     end function traj_pote
 
     pure function traj_kine(t) result(kine)
@@ -143,125 +146,207 @@ contains
             
 
     !---------------------------------------------------------------------------------------------
-    ! FUNCTION: index_offset
-    !> @brief Return index of data offset from i by step.
-    !> @details
-    !! Ensures that indexing will wrap-around in both directions while going through the
-    !! trajectory_data array.
-    !---------------------------------------------------------------------------------------------
-    function index_offset(i, step) result(j)
-        integer, intent(in) :: i !< Starting index
-        integer, intent(in) :: step !< Offset for new index
-        integer :: j
-
-        j = abs(mod(i+memory+step-1, memory)) + 1
-    end function index_offset
-
-
-    !---------------------------------------------------------------------------------------------
-    ! FUNCTION: trajectory_step_index
-    !> @brief Return index of step in trajectory_data array.
-    !---------------------------------------------------------------------------------------------
-    function trajectory_step_index(step) result(sindex)
-        integer, intent(in) :: step
-        integer :: sindex
-
-        do sindex = 1, memory
-            if (trajectory_data(sindex)%step == step) return
-        end do
-
-        call errstop("trajectory_step_index", "Step not found.", step)
-    end function trajectory_step_index
-
-
-    !---------------------------------------------------------------------------------------------
-    ! SUBROUTINE: trajectory_set_current
-    !> @brief Move pointers of current/previous step to `step`.
-    !> @note Does not change any values stored in trajectory_data.
-    !---------------------------------------------------------------------------------------------
-    subroutine trajectory_set_current(step)
-        integer, intent(in) :: step
-        integer :: cindex
-
-        cindex = trajectory_step_index(step)
-        data_index_1 = cindex
-        data_index_2 = index_offset(cindex, -1)
-        tr1 => trajectory_data(data_index_1)
-        tr2 => trajectory_data(data_index_2)
-    end subroutine trajectory_set_current
-
-
-    !---------------------------------------------------------------------------------------------
     ! SUBROUTINE: allocate_trajectory_data
-    !> @brief Allocate trajectory_data array and associate pointers
+    !> @brief Allocate trajectory_data array and associate pointers.
+    !> @details
+    !! On the first call, the initial point is stored in the first slot. Later calls can increase
+    !! the number of slots, keeping the stored points.
     !---------------------------------------------------------------------------------------------
-    subroutine allocate_trajectory_data()
-        allocate(trajectory_data(memory))
+    subroutine allocate_trajectory_data(n)
+        integer, intent(in), optional :: n !< Number of slots.
+        type(system_type), allocatable, target :: new_data(:)
+        integer :: i
 
-        data_index_1 = 2
-        data_index_2 = 1
-        tr1 => trajectory_data(data_index_1)
-        tr2 => trajectory_data(data_index_2)
+        if (present(n)) memory = n
+        if (.not. allocated(trajectory_data)) then
+            allocate(trajectory_data(memory))
+            allocate(point_slot(memory))
+            n_point = 1
+            i_current = 1
+            point_slot(1) = 1
+        else
+            if (memory <= size(trajectory_data)) then
+                memory = size(trajectory_data)
+                return
+            end if
+            allocate(new_data(memory))
+            do i = 1, n_point
+                new_data(i) = trajectory_data(point_slot(i))
+            end do
+            call move_alloc(new_data, trajectory_data)
+            deallocate(point_slot)
+            allocate(point_slot(memory))
+            point_slot(1:n_point) = [(i, i = 1, n_point)]
+        end if
+        call set_pointers()
     end subroutine allocate_trajectory_data
 
 
     !---------------------------------------------------------------------------------------------
-    ! SUBROUTINE: trajectory_next
-    !> @brief Prepare for next step by moving pointers.
+    ! SUBROUTINE: set_pointers
+    !> @brief Point tr1 to the current point and tr2 to the point before it.
+    !> @details
+    !! Without an earlier point, tr2 points to the current point.
     !---------------------------------------------------------------------------------------------
-    subroutine trajectory_next(dt)
-        real(dp), intent(in) :: dt
+    subroutine set_pointers()
+        tr1 => trajectory_data(point_slot(i_current))
+        tr2 => trajectory_data(point_slot(max(i_current - 1, 1)))
+    end subroutine set_pointers
 
-        data_index_2 = data_index_1
-        data_index_1 = index_offset(data_index_1, 1)
-        trajectory_data(data_index_1) = trajectory_data(data_index_2)
-        tr1 => trajectory_data(data_index_1)
-        tr2 => trajectory_data(data_index_2)
-        tr1%step = tr1%step + 1
-        tr1%time = tr1%time + dt
+
+    !---------------------------------------------------------------------------------------------
+    ! FUNCTION: trajectory_n_point
+    !> @brief Number of stored points.
+    !---------------------------------------------------------------------------------------------
+    integer function trajectory_n_point() result(n)
+        n = n_point
+    end function trajectory_n_point
+
+
+    !---------------------------------------------------------------------------------------------
+    ! FUNCTION: trajectory_point
+    !> @brief Pointer to the i-th stored point, in time order.
+    !---------------------------------------------------------------------------------------------
+    function trajectory_point(i) result(t)
+        integer, intent(in) :: i
+        type(system_type), pointer :: t
+
+        if (i < 1 .or. i > n_point) call errstop('trajectory_point', 'Point not stored.', i)
+        t => trajectory_data(point_slot(i))
+    end function trajectory_point
+
+
+    !---------------------------------------------------------------------------------------------
+    ! SUBROUTINE: trajectory_goto
+    !> @brief Make the stored point at time current.
+    !> @details
+    !! Later points are discarded, unless keep_later is true. They are then kept for the next call
+    !! of trajectory_next, which inserts a new point before them.
+    !---------------------------------------------------------------------------------------------
+    subroutine trajectory_goto(time, keep_later)
+        real(dp), intent(in) :: time
+        logical, intent(in) :: keep_later
+        integer :: i
+
+        do i = 1, n_point
+            if (trajectory_data(point_slot(i))%time == time) exit
+        end do
+        if (i > n_point) then
+            write(stderr, '(1x,a)') 'Error in trajectory_goto. No stored point at the requested time.'
+            write(stderr, '(3x,a,e24.16)') 'Requested time: ', time
+            write(stderr, '(3x,a,1000e24.16)') 'Stored times: ',                                   &
+            &   (trajectory_data(point_slot(i))%time, i = 1, n_point)
+            call errstop('trajectory_goto')
+        end if
+        i_current = i
+        if (.not. keep_later) n_point = i
+        call set_pointers()
+    end subroutine trajectory_goto
+
+
+    !---------------------------------------------------------------------------------------------
+    ! SUBROUTINE: trajectory_next
+    !> @brief Add a new point after the current one, as a copy of it, and make it current.
+    !> @details
+    !! Without dt, the new point is the next point of the output grid with spacing dt_0. If the
+    !! current point is on the grid, the step is dt_0. Otherwise, the step ends at the time of the
+    !! last grid point before the current point plus dt_0. The current point must then be the
+    !! latest stored point.
+    !!
+    !! With dt, the new point lies off the output grid, dt after the current point. Stored points
+    !! after the current point are kept after the new point.
+    !!
+    !! If all slots are used, the oldest point is overwritten. This is an error if that point was
+    !! not yet passed to the output, or if it is the current point or the one before it.
+    !---------------------------------------------------------------------------------------------
+    subroutine trajectory_next(dt_0, dt)
+        real(dp), intent(in) :: dt_0 !< Time step of the output grid.
+        real(dp), intent(in), optional :: dt !< Step to a new point off the output grid.
+        real(dp) :: time, new_dt
+        integer :: step, slot, i
+        logical :: on_grid
+
+        if (present(dt)) then
+            time = tr1%time + dt
+            new_dt = dt
+            step = tr1%step
+            on_grid = .false.
+        else
+            if (i_current /= n_point) then
+                call errstop('trajectory_next', 'Stored points after the current point.')
+            end if
+            if (tr1%on_grid) then
+                time = tr1%time + dt_0
+                new_dt = dt_0
+            else
+                do i = i_current - 1, 1, -1
+                    if (trajectory_data(point_slot(i))%on_grid) exit
+                end do
+                if (i < 1) call errstop('trajectory_next', 'Last point of output grid not stored.')
+                time = trajectory_data(point_slot(i))%time + dt_0
+                new_dt = time - tr1%time
+            end if
+            step = tr1%step + 1
+            on_grid = .true.
+        end if
+
+        ! Find a free slot.
+        if (n_point < memory) then
+            do slot = 1, memory
+                if (all(point_slot(1:n_point) /= slot)) exit
+            end do
+        else
+            associate(oldest => trajectory_data(point_slot(1)))
+                if (i_current <= 2 .or. (oldest%on_grid .and. .not. oldest%written)) then
+                    write(stderr, '(1x,a)') 'Error in trajectory_next. All stored points are needed.'
+                    write(stderr, '(3x,a,i0,a)') 'Increase the number of stored points (', memory, ').'
+                    call errstop('trajectory_next')
+                end if
+            end associate
+            slot = point_slot(1)
+            point_slot(1:n_point - 1) = point_slot(2:n_point)
+            n_point = n_point - 1
+            i_current = i_current - 1
+        end if
+
+        trajectory_data(slot) = trajectory_data(point_slot(i_current))
+        point_slot(i_current + 2:n_point + 1) = point_slot(i_current + 1:n_point)
+        point_slot(i_current + 1) = slot
+        n_point = n_point + 1
+        i_current = i_current + 1
+        call set_pointers()
+        tr1%time = time
+        tr1%dt = new_dt
+        tr1%step = step
+        tr1%on_grid = on_grid
+        tr1%written = .false.
     end subroutine trajectory_next
 
 
     !---------------------------------------------------------------------------------------------
-    ! SUBROUTINE: trajectory_slide_forward
-    !> @brief Move array of trajectory values forward by one or more steps.
+    ! SUBROUTINE: trajectory_write_final
+    !> @brief Write the stored points of the output grid up to time t_final, which were not yet
+    !! written, in time order.
+    !> @details
+    !! Only every printerval-th point of the grid is written to the output files.
     !---------------------------------------------------------------------------------------------
-    subroutine trajectory_slide_forward(step, nbump, set_current)
-        integer, intent(in) :: step
-        integer, intent(in) :: nbump
-        logical, intent(in) :: set_current
-        integer :: cind, i, new_j, old_j
+    subroutine trajectory_write_final(t_final, popt, punit, printerval)
+        real(dp), intent(in) :: t_final !< Points up to this time are final.
+        logical, intent(in) :: popt(:) !< Print options.
+        integer, intent(in) :: punit(:) !< Units for output files.
+        integer, intent(in) :: printerval !< Number of grid steps between written points.
+        integer :: i
 
-        cind = trajectory_step_index(step)
-
-        do i = nbump, 1, -1
-            old_j = index_offset(cind, i)
-            new_j = index_offset(cind, i+1)
-            trajectory_data(new_j) = trajectory_data(old_j)
+        do i = 1, n_point
+            associate(t => trajectory_data(point_slot(i)))
+                if (t%time > t_final) exit
+                if (t%on_grid .and. .not. t%written) then
+                    if (mod(t%step, printerval) == 0) call t%writestep(popt, punit)
+                    t%written = .true.
+                end if
+            end associate
         end do
-
-        if (set_current) then
-            call trajectory_set_current(step)
-        end if
-    end subroutine trajectory_slide_forward
-
-
-
-    !----------------------------------------------------------------------------------------------
-    ! SUBROUTINE: trajectory_rewind
-    !> @brief Move pointers to current/previous step backwards by one step.
-    !----------------------------------------------------------------------------------------------
-    subroutine trajectory_rewind(increment_step)
-        logical :: increment_step !< Increment step instead of copying value.
-        integer :: step
-
-        step = tr1%step
-        data_index_1 = data_index_2
-        data_index_2 = index_offset(data_index_1, -1)
-        tr1 => trajectory_data(data_index_1)
-        tr2 => trajectory_data(data_index_2)
-        if (increment_step) tr1%step = step + 1
-    end subroutine trajectory_rewind
+    end subroutine trajectory_write_final
 
 
     !----------------------------------------------------------------------------------------------
@@ -359,7 +444,7 @@ contains
         if (popt(1)) then
             write(punit(1), 1001, advance='no') time_fs, t%wf%active_state
             write(punit(1), 1002, advance='no') t%tote(), t%pote()
-            write(punit(1), 1002, advance='no') t%pot%get_energy('adiabatic')
+            write(punit(1), 1002, advance='no') t%pot%get_energy(t%wf%basis)
             write(punit(1), *)
 
             if (t%mnatom > 0) then
@@ -429,17 +514,17 @@ contains
         end if
 
         if (popt(30) .and. t%step > 0) then
-            wrk = t%pot%get_transformation('locally_diabatic', 'adiabatic')
+            wrk = t%pot%get_transformation('locally_diabatic', t%wf%basis)
             write(punit(30), 1006) wrk(:, t%wf%active_state)
         end if
 
         if (popt(31)) then
-            wrk = t%pot%get_transformation('diabatic', 'adiabatic')
+            wrk = t%pot%get_transformation('diabatic', t%wf%basis)
             write(punit(31), 1006) wrk(:, t%wf%active_state)
         end if
 
         if (popt(32)) then
-            wrk = t%pot%get_transformation('adiabatic', 'adiabatic')
+            wrk = t%pot%get_transformation('adiabatic', t%wf%basis)
             write(punit(32), 1006) wrk(:, t%wf%active_state)
         end if
         

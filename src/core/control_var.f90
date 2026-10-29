@@ -62,8 +62,8 @@ module control_var
         ! Nuclear dynamics options.
         !------------------------------------------------------------------------------------------
         real(dp) :: max_time !< Total time for the simulation.
-        real(dp) :: dt !< Time step for classical dynamics.
-        real(dp) :: dt_0 !< Initial dt.
+        real(dp) :: dt_0 !< Time step for classical dynamics and spacing of the output grid. A
+        !! surface hopping method can request shorter steps between grid points.
         integer :: orientlvl !< Orientation of the molecule during dynamics (Cartesian only):
         !! - 0 - None.
         !! - 1 - Keep the centre of mass at the origin and project translation from velocity.
@@ -134,8 +134,6 @@ module control_var
         !! - 1 - Match phase of adiabatic states.
         !! - 2 - Match phase of diabatic states (using assignment problem solution).
 
-        real(dp) :: lz_prob_conv = 0.05_dp !< Convergence for estimated error in LZ probability.
-        real(dp) :: lz_min_dt = 0.0_dp !< Minimum time step when converging LZ probability.
         real(dp) :: qm_en_err = 1.0e-6 !< Estimated error in calculated energies.
 
         integer :: variable_nstate !< Option for dynamically changing number of states calculated

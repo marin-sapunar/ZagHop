@@ -205,7 +205,7 @@ Section \$surfhop selects the surface hopping method and contains options for th
 \$surfhop (method) \newline
 Possible methods: \newline
 	\tabitem [off] No surface hopping. The rest of the section is not read and dynamics are performed on the initial adiabatic state. \newline
-	\tabitem [lz] Landau-Zener surface hopping. (Not available in this version.) \newline
+	\tabitem [lz] Landau-Zener surface hopping between neighbouring states of the same group, at minima of their gap with the active state. Shorter steps can be inserted around a gap minimum (see lz\_prob\_conv), but output is only written at multiples of tstep. \newline
 	\tabitem [ld-fssh] Fewest switches surface hopping with the electronic wave function propagated in the locally diabatic basis. (Default.) \newline
 	\tabitem [a-fssh] Fewest switches surface hopping in the adiabatic basis. (Not available in this version.)
 
