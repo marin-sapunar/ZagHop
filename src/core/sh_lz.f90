@@ -15,15 +15,23 @@
 !! between the stored points, halving the larger step next to the minimum. After a hop, the method
 !! requests the trajectory to continue from the minimum.
 !!
-!! The dynamics runs in the group_adiabatic basis. For a single group of states this is the
-!! adiabatic basis.
+!! Intersystem crossings (ISC) between states of different multiplicity are considered when the
+!! gap between the active state and the other state changes sign, following Suchan et al., J.
+!! Chem. Theory Comput. 16, 5809 (2020). The hopping probability is given by the diabatic
+!! Landau-Zener formula, with an effective spin-orbit coupling of the two spin-free states and the
+!! slope of the gap over the step. A hop happens at the latest point, without going back to the
+!! crossing.
+!!
+!! The dynamics runs in the spin_free basis, the eigenstates of the spin-free Hamiltonian within
+!! each multiplicity, with one state for each spin-free state. Its spin components are not
+!! distinguished. For a single multiplicity this is the adiabatic basis.
 !--------------------------------------------------------------------------------------------------
 module sh_lz_mod
     use global_defs
     use constants
     use tsh_method_mod, only : tsh_method, tsh_request, base_initialize => initialize,          &
     &                          request_goto, request_insert
-    use evaluator_base_mod, only : potential_evaluator, state_location
+    use evaluator_base_mod, only : potential_evaluator
     use random_mod, only : rng_type
     implicit none
 
@@ -40,7 +48,9 @@ module sh_lz_mod
     !> Point of the trajectory stored by the method.
     type :: lz_point
         real(dp) :: time = 0.0_dp
-        real(dp), allocatable :: h(:, :) !< Hamiltonian in the basis of the dynamics.
+        real(dp), allocatable :: e(:) !< Energies in the basis of the dynamics.
+        real(dp), allocatable :: soc2(:, :) !< Squared spin-orbit couplings between the states of
+                                            !! the dynamics, summed over their components.
     end type lz_point
 
 
@@ -56,7 +66,10 @@ module sh_lz_mod
                                         !! probabilities.
         real(dp) :: min_dt = 0.0_dp !< Minimum time step when converging the probabilities.
         real(dp) :: en_err = 1.0e-6_dp !< Estimated error in the energies.
-        integer, allocatable :: group(:) !< Group of each state.
+        character(len=:), allocatable :: isc_coupling !< Effective spin-orbit coupling for
+                                                      !! intersystem crossings (see check_isc).
+        integer, allocatable :: group(:) !< Spin manifold of each state. Internal conversions are
+                                         !! considered within a manifold.
         type(lz_point), allocatable :: point(:) !< Stored points in time order.
         integer :: i_cur = 0 !< Position of the current point in point.
         real(dp) :: t_window = 0.0_dp !< Time of the first point of the last bisected window.
@@ -64,6 +77,7 @@ module sh_lz_mod
                                                   !! (see sec_deriv_3p_err) at the gap minimum
                                                   !! being evaluated.
         type(lz_event), allocatable :: guard(:) !< Events which are not evaluated again.
+        type(lz_point) :: isc_ref !< Point up to which intersystem crossings were checked.
     contains
         procedure :: initialize => lz_initialize
         procedure :: start => lz_start
@@ -71,6 +85,7 @@ module sh_lz_mod
         procedure :: max_points => lz_max_points
         procedure, private :: check_window
         procedure, private :: evaluate_window
+        procedure, private :: check_isc
     end type tsh_lz
 
 
@@ -79,31 +94,30 @@ contains
 
     !----------------------------------------------------------------------------------------------
     ! SUBROUTINE: lz_initialize
-    !> @brief Set default options and the group of each state.
+    !> @brief Set default options and the spin manifold of each state.
+    !> @details
+    !! The states are the spin-free states of the potential, in the spin_free basis.
     !----------------------------------------------------------------------------------------------
     subroutine lz_initialize(self, rng, potential, active_state)
         class(tsh_lz), intent(inout) :: self
         class(rng_type), pointer, intent(in) :: rng
         class(potential_evaluator), intent(in) :: potential
         integer, intent(in) :: active_state
-        type(state_location) :: loc
-        integer :: i
+        integer :: m, s0, n
 
+        self%basis = 'spin_free'
         call base_initialize(self, rng, potential, active_state)
-        self%basis = 'group_adiabatic'
         self%min_dt = 0.05_dp / aut_fs
+        self%isc_coupling = 'rss'
         allocate(self%group(self%n_state))
-        do i = 1, self%n_state
-            loc = potential%locate_state(i)
-            self%group(i) = loc%group
+        do m = 1, size(potential%manifold)
+            s0 = potential%manifold(m)%sf0
+            n = potential%manifold(m)%n
+            self%group(s0:s0+n-1) = m
         end do
         allocate(self%gap_2deriv(3, self%n_state), source=0.0_dp)
         allocate(self%point(0))
         allocate(self%guard(0))
-        if (potential%n_group > 1) then
-            write(stderr, *) 'Warning in sh_lz_mod, lz_initialize subroutine.'
-            write(stderr, *) '  Only hops between states of the same group are considered.'
-        end if
     end subroutine lz_initialize
 
 
@@ -139,7 +153,9 @@ contains
         class(potential_evaluator), intent(in) :: potential
 
         self%t = t
-        self%point = [lz_point(t, potential%get_Hamiltonian(self%basis))]
+        self%point = [lz_point(t, potential%get_energy(self%basis),                               &
+        &                      potential%get_soc2(self%basis))]
+        self%isc_ref = self%point(1)
         self%i_cur = 1
         self%request = tsh_request(t_final=t)
     end subroutine lz_start
@@ -181,10 +197,13 @@ contains
             end if
         end if
         self%point = [self%point(:self%i_cur),                                                    &
-        &             lz_point(t2, potential%get_Hamiltonian(self%basis)),                        &
+        &             lz_point(t2, potential%get_energy(self%basis),                              &
+        &                      potential%get_soc2(self%basis)),                                   &
         &             self%point(self%i_cur + 1:)]
         self%i_cur = self%i_cur + 1
         if (size(self%point) < 3) then
+            ! Too few points for a gap minimum, but an intersystem crossing is possible.
+            call self%check_isc(potential)
             call finish()
             return
         end if
@@ -202,8 +221,7 @@ contains
                 if (.not. any(check)) then
                     write(stderr, *) 'Warning. Gap minimum not found after adding an extra time step.'
                     do i = iw - 1, iw + 2
-                        write(stderr, '(999(e24.16, 1x))') self%point(i)%time,                     &
-                        &                                  diagonal(self%point(i)%h)
+                        write(stderr, '(999(e24.16, 1x))') self%point(i)%time, self%point(i)%e
                     end do
                 end if
             end if
@@ -254,17 +272,22 @@ contains
             self%request%action = request_goto
             self%request%time = self%point(self%i_cur)%time
             self%request%hop = .true.
-        else if (any(check) .or. inserted) then
-            ! Continue from the latest point.
-            if (stdp1) then
-                write(stdout, '(3x,a,f0.4,a)') 'Resuming trajectory from t=',                      &
-                &                               self%point(size(self%point))%time * aut_fs, '.'
+            ! Intersystem crossings are checked from the point of the hop on.
+            self%isc_ref = self%point(self%i_cur)
+        else
+            if (any(check) .or. inserted) then
+                ! Continue from the latest point.
+                if (stdp1) then
+                    write(stdout, '(3x,a,f0.4,a)') 'Resuming trajectory from t=',                  &
+                    &                               self%point(size(self%point))%time * aut_fs, '.'
+                end if
+                if (self%i_cur < size(self%point)) then
+                    self%i_cur = size(self%point)
+                    self%request%action = request_goto
+                    self%request%time = self%point(self%i_cur)%time
+                end if
             end if
-            if (self%i_cur < size(self%point)) then
-                self%i_cur = size(self%point)
-                self%request%action = request_goto
-                self%request%time = self%point(self%i_cur)%time
-            end if
+            call self%check_isc(potential)
         end if
         self%gap_2deriv = 0.0_dp
         call finish()
@@ -327,8 +350,8 @@ contains
             if (self%guard(i)%pair(1) == cstate) skip(self%guard(i)%pair(2)) = .true.
             if (self%guard(i)%pair(2) == cstate) skip(self%guard(i)%pair(1)) = .true.
         end do
-        check = check_gap(cstate, self%group, diagonal(self%point(iw)%h),                         &
-        &                 diagonal(self%point(iw + 1)%h), diagonal(self%point(iw + 2)%h), skip)
+        check = check_gap(cstate, self%group, self%point(iw)%e, self%point(iw + 1)%e,             &
+        &                 self%point(iw + 2)%e, skip)
     end function check_window
 
 
@@ -350,9 +373,9 @@ contains
         integer :: i, cstate
 
         cstate = self%active_state
-        qe0 = diagonal(self%point(iw)%h)
-        qe1 = diagonal(self%point(iw + 1)%h)
-        qe2 = diagonal(self%point(iw + 2)%h)
+        qe0 = self%point(iw)%e
+        qe1 = self%point(iw + 1)%e
+        qe2 = self%point(iw + 2)%e
         t0 = self%point(iw)%time
         t1 = self%point(iw + 1)%time
         t2 = self%point(iw + 2)%time
@@ -406,15 +429,102 @@ contains
     end subroutine evaluate_window
 
 
-    pure function diagonal(h) result(d)
-        real(dp), intent(in) :: h(:, :)
-        real(dp) :: d(size(h, 1))
-        integer :: i
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: check_isc
+    !> @brief Check for intersystem crossings between the reference point and the latest point,
+    !! and hop at the latest point.
+    !> @details
+    !! For each spin-free state B of another multiplicity, a crossing with the active state A is
+    !! found when the gap E_B - E_A changes sign. The squared spin-orbit coupling s2 of A and B,
+    !! summed over all pairs of their components, is interpolated to the crossing, and the
+    !! probability of a hop to B is
+    !!     P(A -> B) = 1 - exp(-2 pi H2 / |dgap/dt|).
+    !! The effective coupling H2 depends on isc_coupling, with m_A and m_B the multiplicities:
+    !! - rss - H2 = s2, the root-sum-square coupling over the component pairs, squared (ABIN).
+    !! - rms - H2 = s2 / (m_A m_B), the root-mean-square coupling over the component pairs, squared.
+    !! - initial_mean - H2 = s2 / m_A, the sum over the components of B, averaged over those of A.
+    !! Afterwards, the latest point becomes the reference point.
+    !----------------------------------------------------------------------------------------------
+    subroutine check_isc(self, potential)
+        class(tsh_lz), intent(inout) :: self
+        class(potential_evaluator), intent(in) :: potential
+        real(dp) :: prob(self%n_state)
+        real(dp) :: t1, t2, de1, de2, f, slope, s2, h2
+        logical :: found
+        integer :: b, ma, mb, cstate, ilast
 
-        do i = 1, size(h, 1)
-            d(i) = h(i, i)
-        end do
-    end function diagonal
+        cstate = self%active_state
+        ilast = size(self%point)
+        found = .false.
+        ma = potential%manifold(self%group(cstate))%mult
+        associate(p1 => self%isc_ref, p2 => self%point(ilast))
+            t1 = p1%time
+            t2 = p2%time
+            prob = 0.0_dp
+            if (t2 > t1) then
+                do b = 1, self%n_state
+                    if (self%group(b) == self%group(cstate)) cycle
+                    de1 = p1%e(b) - p1%e(cstate)
+                    de2 = p2%e(b) - p2%e(cstate)
+                    if (.not. ((de1 * de2 < 0.0_dp) .or. (de2 == 0.0_dp .and. de1 /= 0.0_dp)))     &
+                    &   cycle
+                    slope = abs(de2 - de1) / (t2 - t1)
+                    ! Fraction of the step up to the crossing.
+                    f = de1 / (de1 - de2)
+                    s2 = (1.0_dp - f) * p1%soc2(cstate, b) + f * p2%soc2(cstate, b)
+                    mb = potential%manifold(self%group(b))%mult
+                    select case(self%isc_coupling)
+                    case('rss')
+                        h2 = s2
+                    case('rms')
+                        h2 = s2 / real(ma * mb, dp)
+                    case('initial_mean')
+                        h2 = s2 / real(ma, dp)
+                    case default
+                        error stop 'Error in sh_lz_mod, check_isc subroutine. Unknown isc_coupling.'
+                    end select
+                    if (stdp3) then
+                        write(stdout, '(3x,a,i0,a,i0,a,f0.4,a)') 'Crossing of state ', cstate,    &
+                        &   ' with state ', b, ' at t=', (t1 + f * (t2 - t1)) * aut_fs, '.'
+                        write(stdout, '(5x,a,e15.7)') 'Gap slope = ', slope
+                        write(stdout, '(5x,a,e15.7)') 'H2 = ', h2
+                    end if
+                    if (h2 <= 0.0_dp) cycle
+                    prob(b) = 1.0_dp - exp(-2.0_dp * pi * h2 / slope)
+                    if (stdp3) write(stdout, '(5x,a,i0,a,e15.7)') 'P(', b, ') = ', prob(b)
+                    found = .true.
+                end do
+            end if
+        end associate
+        self%isc_ref = self%point(ilast)
+        if (.not. found) return
+
+        ! The probabilities of an evaluated internal conversion are replaced.
+        self%prob = prob
+        if (sum(self%prob) > 1.0_dp) then
+            write(stderr, *) ' Warning. Sum of ISC probabilities for all states higher than 1.'
+            write(stderr, *) '   time:', t2
+            write(stderr, *) '   cstate:', cstate
+            write(stderr, *) '   prob:', self%prob
+        end if
+        call self%select_state()
+        if (self%active_state == cstate) then
+            if (stdp2) write(stdout, '(3x,a)') 'ISC probability evaluated, no hop.'
+            return
+        end if
+
+        if (stdp1) then
+            write(stdout, '(3x,a,i0,a,i0,a,f0.4,a)') 'Intersystem crossing from state ', cstate,  &
+            &   ' to state ', self%active_state, ', t=', t2 * aut_fs, '.'
+        end if
+        self%request%hop = .true.
+        self%request%isc = .true.
+        if (self%i_cur /= ilast) then
+            self%i_cur = ilast
+            self%request%action = request_goto
+            self%request%time = self%point(ilast)%time
+        end if
+    end subroutine check_isc
 
 
     !----------------------------------------------------------------------------------------------

@@ -77,8 +77,19 @@ contains
     end subroutine ld_start
 
 
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: ld_propagate
+    !> @brief Propagate the coefficients to t2 and choose the active state.
+    !> @details
+    !! The coefficients are propagated in the locally diabatic basis, the adiabatic basis at the
+    !! start of the step, where the Hamiltonian is interpolated linearly between H(t) and
+    !! T.H(t2).T^t. With n_substep substeps, the Hamiltonian at the middle of each substep is used
+    !! (Granucci et al., doi: 10.1063/1.1376633, eq. B9, for a single substep). The substeps only
+    !! build the propagator of the whole step, P = T^t.W_n...W_1, which takes the coefficients at
+    !! the start of the step to the adiabatic basis at t2. The hopping probabilities are evaluated
+    !! once, from the coefficients at the start and end of the step and P (or T).
+    !----------------------------------------------------------------------------------------------
     subroutine ld_propagate(self, t2, potential)
-        use matrix_mod, only : unitary_transform, unit_mat
         class(tsh_ld), intent(inout) :: self
         class(potential_evaluator), intent(in) :: potential
         real(dp), intent(in) :: t2 !< Time after propagation
@@ -87,19 +98,15 @@ contains
         real(dp) :: h_t(self%n_state, self%n_state) !< Hamiltonian during substep.
         real(dp) :: h_t2(self%n_state, self%n_state) !< Hamiltonian at time t2.
         real(dp) :: dh(self%n_state, self%n_state) !< Change of Hamiltonian over the step (LD basis).
-        complex(dp) :: w3(self%n_state, self%n_state) !< Work array 3.
-        complex(dp) :: w4(self%n_state, self%n_state) !< Work array 4.
+        complex(dp) :: w3(self%n_state, self%n_state) !< Propagator of a substep (LD basis).
+        complex(dp) :: w_step(self%n_state, self%n_state) !< Propagator of the step (LD basis).
+        complex(dp) :: w4(self%n_state, self%n_state) !< Propagator of the step, P = T^t.w_step.
         real(dp), allocatable :: u_t2(:, :)
         integer :: i, cstate
-        complex(dp) :: c_propagation_t0(self%n_state) !< Coefficients at start of substep in propagation representation.
-        complex(dp) :: c_propagation_dt(self%n_state) !< Coefficients at end of substep in propagation representation.
-        complex(dp) :: c_hopping_t0(self%n_state) !< Coefficients at start of substep in hopping representation.
-        complex(dp) :: c_hopping_dt(self%n_state) !< Coefficients at end of substep in hopping representation.
+        complex(dp) :: c_propagation(self%n_state) !< Coefficients in the LD basis.
+        complex(dp) :: c_t2(self%n_state) !< Coefficients at t2 in the adiabatic basis at t2.
 
         cstate = self%active_state
-        c_propagation_t0 = self%coeff
-        c_hopping_t0 = self%coeff
-        self%prob = 0.0_dp
         u_t2 = potential%get_transformation('diabatic', 'adiabatic')
         h_t2 = potential%get_Hamiltonian('adiabatic')
 
@@ -112,33 +119,38 @@ contains
 
         dt = (t2 - self%t) / self%n_substep
 
+        c_propagation = self%coeff
         do i = 1, self%n_substep
             h_t = self%h_t1 + dh * real(i - 0.5_dp, dp) / self%n_substep
             w3 = mat_sy_exp(h_t, cmplx(0.0_dp, -dt, kind=dp))
-            c_propagation_dt = matmul(w3, c_propagation_t0)
-            c_hopping_dt = matmul(transpose(t), c_propagation_dt)
-            select case(self%prob_formula)
-            case('sharc')
-                w4 = matmul(transpose(t), w3)
-                self%prob = self%prob + prob_sharc(cstate, c_hopping_t0, c_hopping_dt, w4)
-            case('ld01')
-                w4 = matmul(transpose(t), w3)
-                self%prob = self%prob + prob_ld01(cstate, c_hopping_t0, c_hopping_dt, w4)
-            case('ld01_l')
-                self%prob = self%prob + prob_ld01_l(cstate, c_hopping_t0, c_hopping_dt, t)
-            case('ld19')
-                self%prob = self%prob + prob_ld19(cstate, c_hopping_t0, c_hopping_dt, t)
-            end select
-            c_propagation_t0 = c_propagation_dt
-            c_hopping_t0 = c_hopping_dt
+            c_propagation = matmul(w3, c_propagation)
+            if (i == 1) then
+                w_step = w3
+            else
+                w_step = matmul(w3, w_step)
+            end if
         end do
+        c_t2 = matmul(transpose(t), c_propagation)
+
+        select case(self%prob_formula)
+        case('sharc')
+            w4 = matmul(transpose(t), w_step)
+            self%prob = prob_sharc(cstate, self%coeff, c_t2, w4)
+        case('ld01')
+            w4 = matmul(transpose(t), w_step)
+            self%prob = prob_ld01(cstate, self%coeff, c_t2, w4)
+        case('ld01_l')
+            self%prob = prob_ld01_l(cstate, self%coeff, c_t2, t)
+        case('ld19')
+            self%prob = prob_ld19(cstate, self%coeff, c_t2, t)
+        end select
 
         call self%select_state()
         ! The hop happens at the current point, which is final.
         self%request = tsh_request(hop=(self%active_state /= cstate), previous_state=cstate,     &
         &                          t_final=t2)
 
-        self%coeff = c_hopping_dt
+        self%coeff = c_t2
         self%u_t1 = u_t2
         self%h_t1 = h_t2
         self%t = t2

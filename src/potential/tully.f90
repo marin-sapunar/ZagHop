@@ -102,15 +102,12 @@ contains
             end do
         end select
 
-        ! Initialize diabatic_evaluator arrays for 2 states, 1 group of singlets.
-        call self%set_group_nstate([2], [1])
+        ! Initialize diabatic_evaluator arrays for 2 singlet states, without spin-orbit coupling.
+        call self%set_spin_manifolds([2], [1], 'components')
         allocate(self%diab_w(2, 2))
         allocate(self%diab_dw(1, 2, 2))
         allocate(self%adiab_w(2, 2))
         allocate(self%adiab_dw(1, 2, 2))
-        allocate(self%group_adiab_w(2, 2))
-        allocate(self%group_adiab_dw(1, 2, 2))
-        allocate(self%group_adiab_trans(2, 2))
     end subroutine model_init
 
 
@@ -128,6 +125,7 @@ contains
 
         self%x = geometry(1, 1)
         if (allocated(self%adiab_trans)) self%ldiab_trans = self%adiab_trans
+        if (allocated(self%sf_trans)) self%lsf_trans = self%sf_trans
     end subroutine model_update_geometry
 
 
@@ -147,16 +145,16 @@ contains
         end select
 
         ! Set diabatic Hamiltonian.
-        self%diab_w(1, 1) = v(1)
-        self%diab_w(2, 2) = v(2)
-        self%diab_w(1, 2) = v(3)
-        self%diab_w(2, 1) = v(3)
+        self%sf_w(1, 1) = v(1)
+        self%sf_w(2, 2) = v(2)
+        self%sf_w(1, 2) = v(3)
+        self%sf_w(2, 1) = v(3)
 
         ! Set diabatic gradient (1 mode).
-        self%diab_dw(1, 1, 1) = dv(1)
-        self%diab_dw(1, 2, 2) = dv(2)
-        self%diab_dw(1, 1, 2) = dv(3)
-        self%diab_dw(1, 2, 1) = dv(3)
+        self%sf_dw(1, 1, 1) = dv(1)
+        self%sf_dw(1, 2, 2) = dv(2)
+        self%sf_dw(1, 1, 2) = dv(3)
+        self%sf_dw(1, 2, 1) = dv(3)
     end subroutine model_eval_diab
 
 

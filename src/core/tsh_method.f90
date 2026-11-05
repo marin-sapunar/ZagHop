@@ -14,7 +14,7 @@
 !! object itself is carried over to the new current point, so it keeps its own history.
 !--------------------------------------------------------------------------------------------------
 module tsh_method_mod
-    use global_defs, only : dp, stdout, stdp1, stdp2
+    use global_defs, only : dp, stdout, stderr, stdp1, stdp2
     use evaluator_base_mod, only : potential_evaluator
     use random_mod, only : rng_type
     implicit none
@@ -42,6 +42,7 @@ module tsh_method_mod
         real(dp) :: time = 0.0_dp !< Time of the stored point for request_goto/request_insert.
         real(dp) :: dt = 0.0_dp !< Step for request_insert.
         logical :: hop = .false. !< The active state changed at the current point after the action.
+        logical :: isc = .false. !< The hop is an intersystem crossing.
         integer :: previous_state = 0 !< Active state before the hop.
         real(dp) :: t_final = -huge(1.0_dp) !< Points up to this time will not change anymore.
     end type tsh_request
@@ -50,7 +51,7 @@ module tsh_method_mod
     type, abstract :: tsh_method
         class(rng_type), pointer :: rng => null()
         character(len=:), allocatable :: basis !< Basis of active_state and of the nuclear dynamics.
-        integer :: n_state = 0
+        integer :: n_state = 0 !< Number of states of the basis.
         integer :: active_state = 0
         real(dp) :: t = 0.0_dp !< Time of the last processed point.
         real(dp), allocatable :: prob(:) !< Hopping probabilities from the last step (output).
@@ -101,6 +102,9 @@ contains
     !----------------------------------------------------------------------------------------------
     ! SUBROUTINE: initialize
     !> @brief Common part of the initialization. Extensions override it and call it first.
+    !> @details
+    !! The basis is 'adiabatic', unless the extension sets another one before the call. The
+    !! active state, the number of states and the probabilities refer to this basis.
     !----------------------------------------------------------------------------------------------
     subroutine initialize(self, rng, potential, active_state)
         class(tsh_method), intent(inout) :: self
@@ -109,8 +113,15 @@ contains
         integer, intent(in) :: active_state
 
         self%rng => rng
-        self%basis = 'adiabatic'
-        self%n_state = potential%n_state
+        if (.not. allocated(self%basis)) self%basis = 'adiabatic'
+        self%n_state = potential%basis_size(self%basis)
+        if (active_state < 1 .or. active_state > self%n_state) then
+            write(stderr, *) 'Error in tsh_method_mod, initialize subroutine.'
+            write(stderr, '(3x,a,i0,a,i0,3a)') 'Initial state ', active_state,                   &
+            &   ' is not between 1 and ', self%n_state, ', the number of states of the ',          &
+            &   self%basis, ' basis.'
+            stop
+        end if
         self%active_state = active_state
         allocate(self%prob(self%n_state), source=0.0_dp)
     end subroutine initialize

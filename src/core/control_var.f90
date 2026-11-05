@@ -125,6 +125,11 @@ module control_var
         !! - 2 - Rescale along gradient difference vector.
         !! - 3 - Rescale along nonadiabatic coupling vector.
 
+        integer :: isc_vrescale !< Method for rescaling velocities after an intersystem crossing.
+        !! - 0 - No velocity rescaling.
+        !! - 1 - Rescale along velocity vector.
+        !! - 2 - Rescale along gradient difference vector.
+
         integer :: fhop !< Method for treating frustrated hops.
         !! - 1 - Return to previous state without changing velocity.
         !! - 2 - Return to previous state and invert the velocity along the relevant direction.

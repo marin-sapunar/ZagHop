@@ -35,32 +35,36 @@ contains
     subroutine vc_initialize(self, model)
         class(vc_evaluator) :: self
         type(vc_model), intent(in), target :: model
-        integer :: i, i0, i1
+        real(dp) :: smax
+        integer :: i, j
 
         self%model => model
         self%classical_coordinates = 'normal_modes'
         self%input_coordinates = self%classical_coordinates
         self%cartesian_frame = 'fixed'
-        ! Blocks of singlets, doublets and triplets.
-        call self%set_group_nstate(model%nstate, [1, 2, 3])
+        ! Manifolds of singlets, doublets and triplets. The template lists every component.
+        call self%set_spin_manifolds(model%nstate, [1, 2, 3], 'components')
 
-        ! The group_adiabatic states are only spin-free if the SOC has no elements inside a group.
-        if (model%soc%max_order >= 0) then
-            do i = 1, self%n_group
-                i0 = self%group_i0(i)
-                i1 = i0 + self%group_nstate(i) - 1
-                if (any(model%soc%zero(i0:i1, i0:i1) /= 0.0_dp)) self%soc_in_group = .true.
-                if (model%soc%max_order >= 1) then
-                    if (any(model%soc%linear(:, i0:i1, i0:i1) /= 0.0_dp)) then
-                        self%soc_in_group = .true.
-                    end if
-                end if
-                if (model%soc%max_order >= 2) then
-                    if (any(model%soc%quad(:, :, i0:i1, i0:i1) /= 0.0_dp)) then
-                        self%soc_in_group = .true.
-                    end if
-                end if
+        ! In a real Hamiltonian, there are no spin-orbit couplings within a group.
+        smax = 0.0_dp
+        if (model%soc%max_order >= 0) smax = self%max_soc_in_groups(model%soc%zero)
+        if (model%soc%max_order >= 1) then
+            do i = 1, model%nmode
+                smax = max(smax, self%max_soc_in_groups(model%soc%linear(i, :, :)))
             end do
+        end if
+        if (model%soc%max_order >= 2) then
+            do i = 1, model%nmode
+                do j = 1, model%nmode
+                    smax = max(smax, self%max_soc_in_groups(model%soc%quad(i, j, :, :)))
+                end do
+            end do
+        end if
+        if (smax > soc_group_tol) then
+            write(stderr, *) 'Warning in vc_evaluator_mod, vc_initialize subroutine.'
+            write(stderr, '(3x,a,e10.3,a)') 'Spin-orbit couplings within a group of states, up to ', &
+            &                               smax, ' Eh.'
+            write(stderr, *) '  These are zero for a real Hamiltonian. Check the order of the states.'
         end if
 
         self%ndof = self%model%nmode
@@ -68,9 +72,6 @@ contains
         allocate(self%diab_dw(self%ndof, self%n_state, self%n_state))
         allocate(self%adiab_w(self%n_state, self%n_state))
         allocate(self%adiab_dw(self%ndof, self%n_state, self%n_state))
-        allocate(self%group_adiab_w(self%n_state, self%n_state))
-        allocate(self%group_adiab_dw(self%ndof, self%n_state, self%n_state))
-        allocate(self%group_adiab_trans(self%n_state, self%n_state))
         allocate(self%q(self%ndof))
     end subroutine vc_initialize
 
@@ -138,6 +139,7 @@ contains
         self%input_coordinates = coordinates
 
         if (allocated(self%adiab_trans)) self%ldiab_trans = self%adiab_trans
+        if (allocated(self%sf_trans)) self%lsf_trans = self%sf_trans
     end subroutine vc_update_geometry
 
 
@@ -209,14 +211,16 @@ contains
             stop
         end if
 
+        ! The spin-free blocks are given once for each multiplicity.
         do i = 1, 3
             if (self%model%nstate(i) == 0) cycle
             w_block(i)%c = self%model%w(i)%eval(self%q)
         end do
-        self%diab_w = block_diagonal_mat(w_block, [1, 2, 3])
+        self%sf_w = block_diagonal_mat(w_block)
 
+        ! The template only gives constant spin-orbit couplings, so soc_dw stays zero.
         if (self%model%soc%max_order >= 0) then
-            self%diab_w = self%diab_w + self%model%soc%eval(self%q)
+            self%soc_w = self%model%soc%eval(self%q)
         end if
 
         do imode = 1, self%model%nmode
@@ -224,7 +228,7 @@ contains
                 if (self%model%nstate(i) == 0) cycle
                 w_block(i)%c = self%model%dw(imode, i)%eval(self%q)
             end do
-            self%diab_dw(imode, :, :) = block_diagonal_mat(w_block, [1, 2, 3])
+            self%sf_dw(imode, :, :) = block_diagonal_mat(w_block)
         end do
 
         if (self%model%dm(1)%max_order >= 0) then
@@ -259,10 +263,6 @@ contains
         case('adiabatic')
             do jstate = 1, self%model%tot_ns
                 edif(jstate) = self%adiab_w(jstate, jstate) - self%adiab_w(istate, istate)
-            end do
-        case('group_adiabatic')
-            do jstate = 1, self%model%tot_ns
-                edif(jstate) = self%group_adiab_w(jstate, jstate) - self%group_adiab_w(istate, istate)
             end do
         case default
             write(stderr, *) 'Error in vc_evaluator_mod, vc_get_oscill function.'

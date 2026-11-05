@@ -2,6 +2,7 @@ $system
  ndim = 1
  nstate = 4 3
  multiplicity = 1 3
+ spin_states components
  istate file istate
 $surfhop ld-fssh
  velocity nadvec

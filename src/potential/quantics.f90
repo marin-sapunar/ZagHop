@@ -55,9 +55,10 @@ module quantics_interface_mod
         logical :: initialized = .false.
         real(dop), allocatable :: hops(:) !< Operator data read from the oper file (hopsdim).
         integer, allocatable :: state_map(:) !< Quantics index of each ZagHop state (n_state).
+        logical :: soc_checked = .false. !< Spin-orbit couplings within groups were checked.
     contains
         procedure :: init => quantics_initialize
-        procedure :: set_group_nstate => quantics_set_group_nstate
+        procedure :: set_spin_manifolds => quantics_set_spin_manifolds
         procedure :: update_geometry => quantics_update_geometry
         procedure :: eval_diab => quantics_eval_diab
         !   procedure :: get_oscill => quantics_get_oscill
@@ -92,6 +93,7 @@ contains
             self%gpoint(spfdof(n, 1)) = self%q(n)
         end do
         if (allocated(self%adiab_trans)) self%ldiab_trans = self%adiab_trans
+        if (allocated(self%sf_trans)) self%lsf_trans = self%sf_trans
     end subroutine quantics_update_geometry
 
 
@@ -259,11 +261,8 @@ contains
         allocate(self%diab_dw(self%ndof, self%n_state, self%n_state))
         allocate(self%adiab_w(self%n_state, self%n_state))
         allocate(self%adiab_dw(self%ndof, self%n_state, self%n_state))
-        allocate(self%group_adiab_w(self%n_state, self%n_state))
-        allocate(self%group_adiab_dw(self%ndof, self%n_state, self%n_state))
-        allocate(self%group_adiab_trans(self%n_state, self%n_state))
         allocate(self%q(self%ndof), source=0.0_dop)
-        ! Identity mapping until the spin multiplicities are given in set_group_nstate.
+        ! Identity mapping until the spin multiplicities are given in set_spin_manifolds.
         self%state_map = [(i, i = 1, self%n_state)]
 
         ! Frozen coordinates are fixed at the centre of their basis.
@@ -344,30 +343,38 @@ contains
 
 
     !----------------------------------------------------------------------------------------------
-    ! SUBROUTINE: quantics_set_group_nstate
-    !> @brief Set state groups and the mapping from ZagHop to Quantics state ordering.
+    ! SUBROUTINE: quantics_set_spin_manifolds
+    !> @brief Set the spin manifolds and the mapping from ZagHop to Quantics state ordering.
     !> @details
     !! The oper file contains no information on the multiplicities of the states, so they are
-    !! taken from the input. The states in each spin block are assumed to be ordered as in Quantics,
-    !! with all components of each state consecutive.
+    !! taken from the input. With components, the states in each manifold are assumed to be
+    !! ordered as in Quantics, with all components of each state consecutive. With effective
+    !! states, the order is the same in Quantics and ZagHop.
     !----------------------------------------------------------------------------------------------
-    subroutine quantics_set_group_nstate(self, nstate, multiplicity)
-        use evaluator_base_mod, only : base_set_group_nstate => set_group_nstate
+    subroutine quantics_set_spin_manifolds(self, nstate, multiplicity, spin_states)
+        use evaluator_base_mod, only : base_set_spin_manifolds => set_spin_manifolds
         class(quantics_interface), intent(inout) :: self
         integer, intent(in) :: nstate(:) !< Number of states of each multiplicity.
         integer, intent(in) :: multiplicity(:) !< Multiplicity of each block of states.
-        integer :: i, j, k, ci, offset
+        character(len=*), intent(in) :: spin_states
+        integer :: i, j, k, ci, offset, n_expected
 
-        if (sum(nstate * multiplicity) /= self%n_state) then
-            write(stderr, *) 'Error in quantics_mod, set_group_nstate subroutine.'
-            write(stderr, '(3x,a,i0,a)') 'Input nstate and multiplicity give ', &
-            &                            sum(nstate * multiplicity), ' states.'
+        if (spin_states == 'components') then
+            n_expected = sum(nstate * multiplicity)
+        else
+            n_expected = sum(nstate)
+        end if
+        if (n_expected /= self%n_state) then
+            write(stderr, *) 'Error in quantics_mod, set_spin_manifolds subroutine.'
+            write(stderr, '(3x,a,i0,a)') 'Input nstate, multiplicity and spin_states give ',     &
+            &                            n_expected, ' states.'
             write(stderr, '(3x,a,i0,a)') 'Quantics operator has ', self%n_state, ' states.'
             stop
         end if
 
-        call base_set_group_nstate(self, nstate, multiplicity)
+        call base_set_spin_manifolds(self, nstate, multiplicity, spin_states)
 
+        if (self%spin_states /= 'components') return
         ci = 1
         offset = 0
         do i = 1, size(nstate)
@@ -379,7 +386,7 @@ contains
             end do
             offset = offset + nstate(i) * multiplicity(i)
         end do
-    end subroutine quantics_set_group_nstate
+    end subroutine quantics_set_spin_manifolds
 
 
     subroutine quantics_eval_diab(self)
@@ -393,6 +400,9 @@ contains
         complex(dop), allocatable :: pesdiaz(:, :)
         real(dop), allocatable :: derdia(:, :, :)
         real(dop), allocatable :: xgp(:)
+        real(dop), allocatable :: w(:, :)
+        real(dop), allocatable :: dw(:, :, :)
+        real(dop) :: smax
 
         open(ilog,file='quantics.log',status='unknown',position='append')
 
@@ -431,11 +441,27 @@ contains
 
         ! Reorder states to ZagHop convention and extract derivatives with respect to the
         ! dynamical coordinates.
-        self%diab_w = pesdia(self%state_map, self%state_map)
+        allocate(w(self%n_state, self%n_state))
+        allocate(dw(self%ndof, self%n_state, self%n_state))
+        w = pesdia(self%state_map, self%state_map)
         do n = 1, nspfdof(m)
             f = spfdof(n, m)
-            self%diab_dw(n, :, :) = derdia(self%state_map, self%state_map, f)
+            dw(n, :, :) = derdia(self%state_map, self%state_map, f)
         end do
+        call self%split_hamiltonian(w, dw)
+
+        ! In a real Hamiltonian, there are no spin-orbit couplings within a group.
+        if (.not. self%soc_checked) then
+            smax = self%max_soc_in_groups(self%soc_w)
+            if (smax > soc_group_tol) then
+                write(stderr, *) 'Warning in quantics_mod, eval_diab subroutine.'
+                write(stderr, '(3x,a,e10.3,a)') 'Spin-orbit couplings within a group of states, ', &
+                &                               'up to ', smax, ' Eh.'
+                write(stderr, *) '  These are zero for a real Hamiltonian. Check the order of ',  &
+                &                'the states and spin_states.'
+            end if
+            self%soc_checked = .true.
+        end if
 
         close(ilog)
     end subroutine quantics_eval_diab

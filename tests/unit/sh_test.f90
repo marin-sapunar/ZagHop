@@ -3,30 +3,33 @@ module sh_test_mod
     use evaluator_diabatic_mod, only : diabatic_evaluator
     implicit none
 
-    !> Evaluator with energies set directly by the test. The diabatic matrix is diagonal, so the
-    !! energies must be given in ascending order within each group.
+    !> Evaluator with energies and spin-orbit couplings set directly by the test. The spin-free
+    !! matrix is diagonal, so the energies of the spin-free states must be given in ascending order
+    !! within each manifold.
     type, extends(diabatic_evaluator) :: scripted_evaluator
     contains
         procedure :: setup => scripted_setup
         procedure :: set_energies => scripted_set_energies
+        procedure :: set_soc => scripted_set_soc
         procedure :: update_geometry => scripted_update_geometry
         procedure :: eval_diab => scripted_eval_diab
     end type scripted_evaluator
 
 contains
 
-    subroutine scripted_setup(self, nstate, multiplicity)
+    subroutine scripted_setup(self, nstate, multiplicity, spin_states)
         class(scripted_evaluator), intent(inout) :: self
         integer, intent(in) :: nstate(:)
         integer, intent(in) :: multiplicity(:)
-        integer :: n
+        character(len=*), intent(in), optional :: spin_states
 
-        call self%set_group_nstate(nstate, multiplicity)
-        n = self%n_state
+        if (present(spin_states)) then
+            call self%set_spin_manifolds(nstate, multiplicity, spin_states)
+        else
+            call self%set_spin_manifolds(nstate, multiplicity, 'components')
+        end if
         self%ndof = 1
-        allocate(self%diab_w(n, n), source=0.0_dp)
-        allocate(self%diab_dw(1, n, n), source=0.0_dp)
-        allocate(self%group_adiab_trans(n, n))
+        call self%allocate_hamiltonian()
     end subroutine scripted_setup
 
     subroutine scripted_set_energies(self, energy)
@@ -34,12 +37,20 @@ contains
         real(dp), intent(in) :: energy(:)
         integer :: i
 
-        self%diab_w = 0.0_dp
-        do i = 1, self%n_state
-            self%diab_w(i, i) = energy(i)
+        self%sf_w = 0.0_dp
+        do i = 1, self%n_sf
+            self%sf_w(i, i) = energy(i)
         end do
         call self%eval()
     end subroutine scripted_set_energies
+
+    !> Spin-orbit couplings between the states, used from the next call of set_energies.
+    subroutine scripted_set_soc(self, soc)
+        class(scripted_evaluator), intent(inout) :: self
+        real(dp), intent(in) :: soc(:, :)
+
+        self%soc_w = soc
+    end subroutine scripted_set_soc
 
     subroutine scripted_update_geometry(self, geometry, coordinates)
         class(scripted_evaluator), intent(inout) :: self
@@ -86,6 +97,12 @@ program sh_test
     ret = lz_guard_test()
     if (ret /= 0) then
         write(*,*) "Error in lz_guard_test."
+        stop ret
+    end if
+
+    ret = lz_isc_test()
+    if (ret /= 0) then
+        write(*,*) "Error in lz_isc_test."
         stop ret
     end if
 
@@ -356,6 +373,110 @@ program sh_test
         if (lz%request%action /= request_none .or. lz%request%t_final /= 100.0_dp) return
         ret = 0
     end function lz_guard_test
+
+
+    !> Intersystem crossing between a singlet and a triplet, from either state, given as
+    !! components and as an effective state. The squared coupling summed over the components is
+    !! s2 = |h|**2 at t = 0 and 4 |h|**2 at t = 100, and the crossing is at t = 25, so the
+    !! interpolated s2 is 1.75 |h|**2. The gap slope is 0.04 / 100.
+    integer function lz_isc_test() result(ret)
+        use global_defs, only : dp
+        use sh_lz_mod, only : tsh_lz
+        use tsh_method_mod, only : request_none
+        type(tsh_lz) :: lz
+        real(dp), parameter :: h(3) = [1.0e-4_dp, -2.0e-4_dp, 0.5e-4_dp]
+        real(dp), parameter :: tiny = 1.0e-12_dp
+        real(dp) :: s2
+
+        s2 = 1.75_dp * sum(h**2)
+
+        ! S -> T. The singlet has a single component, so initial_mean is the same as rss.
+        ret = 1
+        if (abs(isc_prob(lz, 'components', 'rss', 1, h) - p_isc(s2)) > tiny) return
+        if (lz%n_state /= 2 .or. size(lz%prob) /= 2) return
+        if (abs(isc_prob(lz, 'components', 'rms', 1, h) - p_isc(s2 / 3)) > tiny) return
+        if (abs(isc_prob(lz, 'components', 'initial_mean', 1, h) - p_isc(s2)) > tiny) return
+
+        ! T -> S.
+        ret = 2
+        if (abs(isc_prob(lz, 'components', 'rss', 2, h) - p_isc(s2)) > tiny) return
+        if (abs(isc_prob(lz, 'components', 'rms', 2, h) - p_isc(s2 / 3)) > tiny) return
+        if (abs(isc_prob(lz, 'components', 'initial_mean', 2, h) - p_isc(s2 / 3)) > tiny) return
+
+        ! The effective state with the root-sum-square coupling gives the same probabilities.
+        ret = 3
+        if (abs(isc_prob(lz, 'effective_rss', 'rss', 1, h) - p_isc(s2)) > tiny) return
+        if (abs(isc_prob(lz, 'effective_rss', 'rms', 2, h) - p_isc(s2 / 3)) > tiny) return
+        if (abs(isc_prob(lz, 'effective_rss', 'initial_mean', 2, h) - p_isc(s2 / 3)) > tiny)    &
+        &   return
+
+        ! A strong coupling gives a hop at the latest point.
+        ret = 4
+        if (.not. isc_prob(lz, 'components', 'rss', 1, 100 * h) > 0.999_dp) return
+        if (lz%active_state /= 2 .or. .not. lz%request%hop .or. .not. lz%request%isc) return
+        if (lz%request%previous_state /= 1 .or. lz%request%action /= request_none) return
+        ret = 0
+    end function lz_isc_test
+
+
+    !> Probability of an intersystem crossing with squared coupling s2 in lz_isc_test.
+    real(dp) function p_isc(s2) result(prob)
+        use global_defs, only : dp, pi
+        real(dp), intent(in) :: s2
+
+        prob = 1.0_dp - exp(-2.0_dp * pi * s2 / (0.04_dp / 100.0_dp))
+    end function p_isc
+
+
+    !> Run the crossing of lz_isc_test from spin-free state active (1 singlet, 2 triplet) and
+    !! return the probability of the hop to the other state.
+    real(dp) function isc_prob(lz, spin_states, coupling, active, h) result(prob)
+        use global_defs, only : dp
+        use sh_test_mod, only : scripted_evaluator
+        use sh_lz_mod, only : tsh_lz
+        use random_mod, only : rng_type
+        use random_pcg_mod, only : rng_pcg_xsh_rr
+        type(tsh_lz), intent(out) :: lz
+        character(len=*), intent(in) :: spin_states
+        character(len=*), intent(in) :: coupling
+        integer, intent(in) :: active
+        real(dp), intent(in) :: h(3) !< Couplings of the singlet and the triplet components at t = 0.
+        type(scripted_evaluator) :: pot
+        class(rng_type), pointer :: rng
+
+        allocate(rng_pcg_xsh_rr :: rng)
+        call rng%init(1)
+        call pot%setup([1, 1], [1, 3], spin_states)
+        call lz%initialize(rng, pot, active)
+        lz%isc_coupling = coupling
+        lz%en_err = 1.0e-13_dp
+
+        call pot%set_soc(st_soc(pot%n_state, h))
+        call pot%set_energies([0.0_dp, 0.01_dp])
+        call lz%start(0.0_dp, pot)
+        call pot%set_soc(st_soc(pot%n_state, 2 * h))
+        call pot%set_energies([0.0_dp, -0.03_dp])
+        call lz%propagate(100.0_dp, pot)
+        prob = lz%prob(3 - active)
+    end function isc_prob
+
+
+    !> Spin-orbit couplings of a singlet and a triplet, with n_state = 4 for components and 2 for
+    !! an effective triplet with the root-sum-square coupling.
+    function st_soc(n_state, h) result(soc)
+        use global_defs, only : dp
+        integer, intent(in) :: n_state
+        real(dp), intent(in) :: h(3) !< Couplings of the singlet and the triplet components.
+        real(dp) :: soc(n_state, n_state)
+
+        soc = 0.0_dp
+        if (n_state == 4) then
+            soc(1, 2:4) = h
+        else
+            soc(1, 2) = norm2(h)
+        end if
+        soc(:, 1) = soc(1, :)
+    end function st_soc
 
 
 end program sh_test

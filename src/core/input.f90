@@ -137,6 +137,7 @@ contains
         ctrl%tdc_interpolate = 2
         ctrl%ene_interpolate = 2
         ctrl%vrescale = 2
+        ctrl%isc_vrescale = 2
         ctrl%fhop = 1
         ctrl%phaselvl = 1
         ctrl%oscill = .false.
@@ -257,6 +258,8 @@ contains
             ctrl%print(6:9) = .false.
         type is (tsh_lz)
             ctrl%print(6:9) = .false.
+            ctrl%print(30) = .false.
+            ctrl%print(32) = .false.
             ! LZSH keeps the points of a gap minimum while it inserts points between them.
             n_point = max(memory, wf%max_points(ctrl%dt_0) + 1)
         end select
@@ -631,6 +634,7 @@ contains
         integer, allocatable :: nstate(:)
         integer, allocatable :: multiplicity(:)
         character(len=:), allocatable :: cartesian_frame
+        character(len=:), allocatable :: spin_states
 
         n_state_group = 0
         max_nstate = 0
@@ -703,6 +707,8 @@ contains
                 tr1%classical_coordinates = tolower(readf%args(2)%s)
             case('cartesian_frame')
                 cartesian_frame = tolower(readf%args(2)%s)
+            case('spin_states')
+                spin_states = tolower(readf%args(2)%s)
             case default
                 write(stderr, *) 'Warning in Input module, read_system subroutine.'
                 write(stderr, *) '  Skipping line with unrecognized keyword:'
@@ -733,9 +739,35 @@ contains
             end select
         end if
 
-        ! Model interfaces determine their own state groups during initialization.
-        if (.not. allocated(tr1%pot%group_nstate)) then
-            call tr1%pot%set_group_nstate(nstate, multiplicity)
+        ! Model interfaces determine their own spin manifolds during initialization.
+        if (allocated(tr1%pot%manifold)) then
+            if (allocated(spin_states)) then
+                select type(p => tr1%pot)
+                type is (vc_evaluator)
+                    if (spin_states /= 'components') then
+                        write(stderr, *) 'Error in Input module, read_system subroutine.'
+                        write(stderr, *) '  The vibronic coupling potential gives every spin ',   &
+                        &                'component, so only spin_states = components is possible.'
+                        stop
+                    end if
+                end select
+            end if
+        else
+            if (.not. allocated(spin_states)) then
+                if (any(multiplicity > 1 .and. nstate > 0)) then
+                    write(stderr, *) 'Error in Input module, read_system subroutine.'
+                    write(stderr, *) '  States of multiplicity above 1 require the spin_states ',  &
+                    &                'keyword, with one of the values:'
+                    write(stderr, *) '    components     - Each spin component is a separate state.'
+                    write(stderr, *) '    effective_rss  - Each spin-free state is a single state, ', &
+                    &                'with root-sum-square couplings to other multiplicities.'
+                    write(stderr, *) '    effective_mean - As effective_rss, with the squared ',     &
+                    &                'couplings averaged over the component pairs.'
+                    stop
+                end if
+                spin_states = 'components'
+            end if
+            call tr1%pot%set_spin_manifolds(nstate, multiplicity, spin_states)
         end if
     end subroutine read_system
 
@@ -899,13 +931,6 @@ contains
         logical :: check
         character(len=:), allocatable :: method
 
-        if (istate < 1 .or. istate > tr1%pot%n_state) then
-            write(stderr, *) 'Error in Input module, read_surfhop subroutine.'
-            write(stderr, '(3x,a,i0,a,i0,a)') 'Initial state ', istate, ' is not between 1 and ', &
-            &                                 tr1%pot%n_state, '.'
-            stop
-        end if
-
         method = 'ld-fssh'
         call readf%rewind()
         call readf%go_to_keyword('$surfhop', found=check)
@@ -938,6 +963,14 @@ contains
         select type(wf => tr1%wf)
         type is (tsh_lz)
             wf%en_err = ctrl%qm_en_err
+        type is (tsh_ld)
+            if (tr1%pot%spin_states == 'effective' .and. any(tr1%pot%manifold%mult > 1)) then
+                write(stderr, *) 'Warning in Input module, read_surfhop subroutine.'
+                write(stderr, *) '  LD-FSSH with effective spin states. The spin-adiabatic ',     &
+                &                'states are built from the effective couplings, which is only'
+                write(stderr, *) '  exact when each state of higher multiplicity couples to a ',  &
+                &                'single state of lower multiplicity.'
+            end if
         end select
 
         ! The rest of the section is not read without hopping.
@@ -995,6 +1028,20 @@ contains
                 case('nadvec')
                     ctrl%vrescale = 3
                 end select
+            case('isc_velocity')
+                select case(readf%args(2)%s)
+                case('off')
+                    ctrl%isc_vrescale = 0
+                case('vel')
+                    ctrl%isc_vrescale = 1
+                case('gdif')
+                    ctrl%isc_vrescale = 2
+                case default
+                    write(stderr, *) 'Error in Input module, read_surfhop subroutine.'
+                    write(stderr, *) '  Unrecognized isc_velocity option. Expected off, vel or gdif.'
+                    write(stderr, '(2x,a)') readf%line
+                    stop
+                end select
             case('frustrated')
                 select case(readf%args(2)%s)
                 case('continue')
@@ -1016,7 +1063,7 @@ contains
                     write(stderr, '(2x,a)') readf%line
                     stop
                 end select
-            case('lz_prob_conv', 'lz_min_dt')
+            case('lz_prob_conv', 'lz_min_dt', 'lz_isc_coupling')
                 select type(wf => tr1%wf)
                 type is (tsh_lz)
                     call read_lz_option(readf, wf)
@@ -1092,6 +1139,17 @@ contains
         case('lz_min_dt')
             read(readf%args(2)%s, *) wf%min_dt
             wf%min_dt = wf%min_dt / aut_fs
+        case('lz_isc_coupling')
+            select case(tolower(readf%args(2)%s))
+            case('rss', 'rms', 'initial_mean')
+                wf%isc_coupling = tolower(readf%args(2)%s)
+            case default
+                write(stderr, *) 'Error in Input module, read_lz_option subroutine.'
+                write(stderr, *) '  Unrecognized lz_isc_coupling option. Expected rss, rms or ',  &
+                &                'initial_mean.'
+                write(stderr, '(2x,a)') readf%line
+                stop
+            end select
         end select
     end subroutine read_lz_option
 

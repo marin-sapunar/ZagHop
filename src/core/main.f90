@@ -238,9 +238,16 @@ contains
                 write(stdout, '(5x,a)') 'Running QM gradient calculation for new state.'
             end if
             call run_qm(tr1, .true.)
-            call tr1%wf%rescale_velocity(ctrl%vrescale, ctrl%fhop, tr1%qind,                      &
-            &                            request%previous_state, tr1%pot, tr1%mass, tr1%velo,    &
-            &                            frustrated)
+            if (request%isc) then
+                ! Frustrated intersystem crossings are rejected without reversing the velocity.
+                call tr1%wf%rescale_velocity(ctrl%isc_vrescale, 1, tr1%qind,                     &
+                &                            request%previous_state, tr1%pot, tr1%mass,          &
+                &                            tr1%velo, frustrated)
+            else
+                call tr1%wf%rescale_velocity(ctrl%vrescale, ctrl%fhop, tr1%qind,                  &
+                &                            request%previous_state, tr1%pot, tr1%mass,          &
+                &                            tr1%velo, frustrated)
+            end if
             if (frustrated) call tr1%wf%hop_rejected()
             tr1%grad(:, tr1%qind) = tr1%pot%get_gradient(tr1%wf%basis, tr1%wf%active_state)
         end if
