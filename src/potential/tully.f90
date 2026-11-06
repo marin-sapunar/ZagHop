@@ -22,7 +22,7 @@ module tully_mod
         real(dp) :: x = 0.0_dp
     contains
         procedure :: init => model_init
-        procedure :: update_geometry => model_update_geometry
+        procedure :: set_geometry => model_set_geometry
         procedure :: eval_diab => model_eval_diab
     end type tully_model
 
@@ -102,31 +102,25 @@ contains
             end do
         end select
 
-        ! Initialize diabatic_evaluator arrays for 2 singlet states, without spin-orbit coupling.
+        ! Two singlet states, without spin-orbit coupling.
         call self%set_spin_manifolds([2], [1], 'components')
-        allocate(self%diab_w(2, 2))
-        allocate(self%diab_dw(1, 2, 2))
-        allocate(self%adiab_w(2, 2))
-        allocate(self%adiab_dw(1, 2, 2))
     end subroutine model_init
 
 
-    subroutine model_update_geometry(self, geometry, coordinates)
+    subroutine model_set_geometry(self, geometry, coordinates)
         class(tully_model), intent(inout) :: self
         real(dp), intent(in) :: geometry(:, :)
         character(len=*), intent(in) :: coordinates
 
         if (coordinates /= self%classical_coordinates) then
-            write(stderr, *) 'Error in tully_mod, update_geometry subroutine.'
+            write(stderr, *) 'Error in tully_mod, set_geometry subroutine.'
             write(stderr, *) '  Unsupported coordinates "'//coordinates//'". Expected "'//          &
             &                self%classical_coordinates//'".'
             stop
         end if
 
         self%x = geometry(1, 1)
-        if (allocated(self%adiab_trans)) self%ldiab_trans = self%adiab_trans
-        if (allocated(self%sf_trans)) self%lsf_trans = self%sf_trans
-    end subroutine model_update_geometry
+    end subroutine model_set_geometry
 
 
     subroutine model_eval_diab(self)

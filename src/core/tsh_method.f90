@@ -229,8 +229,8 @@ contains
         frustrated = .false.
         if (stdp2) write(stdout, '(5x,a)') 'Ensuring energy conservation.'
 
-        pgrd = potential%get_gradient(self%basis, pst)
-        cgrd = potential%get_gradient(self%basis, self%active_state)
+        pgrd = reshape(potential%get_gradient(self%basis, pst), shape(pgrd))
+        cgrd = reshape(potential%get_gradient(self%basis, self%active_state), shape(cgrd))
         if (opt_mc == 3) then
             nadv = potential%get_nadv(self%basis, pst, self%active_state)
         end if

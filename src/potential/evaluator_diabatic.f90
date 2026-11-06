@@ -29,11 +29,16 @@ module evaluator_diabatic_mod
                                                    !! basis (n_sf, n_sf).
         real(dp), allocatable :: spin_free_dw(:, :, :) !< Derivatives of spin_free_w.
         real(dp), allocatable :: ldiab_trans(:, :)
+        logical :: soc_checked = .false. !< Spin-orbit couplings within groups were checked.
     contains
         procedure :: eval => eval_all
         procedure(eval_diab), deferred :: eval_diab
+        procedure :: eval_hamiltonian
         procedure :: allocate_hamiltonian
+        procedure :: allocate_bases
         procedure :: split_hamiltonian
+        procedure :: set_full_hamiltonian
+        procedure :: save_previous => diabatic_save_previous
         procedure :: change_basis => change_basis_mat
         procedure :: eval_eigvec => eval_eigvec
         procedure :: get_Hamiltonian => get_Hamiltonian
@@ -47,6 +52,9 @@ module evaluator_diabatic_mod
 
 
     abstract interface
+        !> Evaluate the potential at the current geometry. Fills sf_w and sf_dw, and soc_w and
+        !! soc_dw if the potential has spin-orbit couplings, directly or with
+        !! set_full_hamiltonian.
         subroutine eval_diab(self)
             import diabatic_evaluator
             class(diabatic_evaluator), intent(inout) :: self
@@ -56,14 +64,17 @@ module evaluator_diabatic_mod
 
 contains
 
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: eval_all
+    !> @brief Evaluate the potential and build all bases at the current geometry.
+    !----------------------------------------------------------------------------------------------
     subroutine eval_all(self)
         use matrix_mod, only : unitary_transform
         class(diabatic_evaluator), intent(inout) :: self
         integer :: imode, m, s0, n
         real(dp), allocatable :: w(:, :)
 
-        call self%allocate_hamiltonian()
-        call self%eval_diab()
+        call self%eval_hamiltonian()
 
         ! Full diabatic Hamiltonian.
         self%diab_w = self%expand(self%sf_w) + self%soc_w
@@ -72,6 +83,7 @@ contains
             &                         + self%soc_dw(imode, :, :)
         end do
 
+        call self%allocate_bases()
         call self%eval_eigvec('adiabatic')
         call self%eval_eigvec('spin_free')
 
@@ -102,9 +114,6 @@ contains
         ! The spin-free quantities come from the spin-free Hamiltonian alone.
         self%spin_free_w = self%sf_w
         call unitary_transform(self%sf_trans, self%spin_free_w, trans=.true.)
-        if (.not. allocated(self%spin_free_dw)) then
-            allocate(self%spin_free_dw(self%ndof, self%n_sf, self%n_sf))
-        end if
         do imode = 1, self%ndof
             w = self%sf_dw(imode, :, :)
             call unitary_transform(self%sf_trans, w, trans=.true.)
@@ -139,6 +148,81 @@ contains
         if (.not. allocated(self%diab_w)) allocate(self%diab_w(ns, ns))
         if (.not. allocated(self%diab_dw)) allocate(self%diab_dw(nd, ns, ns))
     end subroutine allocate_hamiltonian
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: allocate_bases
+    !> @brief Allocate the Hamiltonian and its derivatives in the adiabatic and spin-free bases,
+    !! if they are not allocated yet.
+    !----------------------------------------------------------------------------------------------
+    subroutine allocate_bases(self)
+        class(diabatic_evaluator), intent(inout) :: self
+        integer :: ns, nsf, nd
+
+        ns = self%n_state
+        nsf = self%n_sf
+        nd = self%ndof
+        if (.not. allocated(self%adiab_w)) allocate(self%adiab_w(ns, ns))
+        if (.not. allocated(self%adiab_dw)) allocate(self%adiab_dw(nd, ns, ns))
+        if (.not. allocated(self%sf_trans)) allocate(self%sf_trans(nsf, nsf))
+        if (.not. allocated(self%spin_free_w)) allocate(self%spin_free_w(nsf, nsf))
+        if (.not. allocated(self%spin_free_dw)) allocate(self%spin_free_dw(nd, nsf, nsf))
+    end subroutine allocate_bases
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: eval_hamiltonian
+    !> @brief Evaluate the spin-free Hamiltonian and the spin-orbit couplings at the current
+    !! geometry, without building the bases.
+    !> @details
+    !! At the first evaluation, warns about spin-orbit couplings within a group of states. These
+    !! are zero for a real Hamiltonian, so they point to an input error, such as components which
+    !! are not ordered as assumed.
+    !----------------------------------------------------------------------------------------------
+    subroutine eval_hamiltonian(self)
+        class(diabatic_evaluator), intent(inout) :: self
+        real(dp) :: smax
+
+        call self%allocate_hamiltonian()
+        call self%eval_diab()
+
+        if (.not. self%soc_checked) then
+            smax = self%max_soc_in_groups(self%soc_w)
+            if (smax > soc_group_tol) then
+                write(stderr, *) 'Warning in evaluator_diabatic_mod, eval_hamiltonian subroutine.'
+                write(stderr, '(3x,a,e10.3,a)') 'Spin-orbit couplings within a group of states, ', &
+                &                               'up to ', smax, ' Eh.'
+                write(stderr, *) '  These are zero for a real Hamiltonian. Check the order of ',  &
+                &                'the states and spin_states.'
+            end if
+            self%soc_checked = .true.
+        end if
+    end subroutine eval_hamiltonian
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: set_full_hamiltonian
+    !> @brief Set the spin-free Hamiltonian and the spin-orbit couplings from a full Hamiltonian
+    !! given in the order of the source of the potential (component_order).
+    !----------------------------------------------------------------------------------------------
+    subroutine set_full_hamiltonian(self, w, dw)
+        class(diabatic_evaluator), intent(inout) :: self
+        real(dp), intent(in) :: w(:, :) !< Full Hamiltonian, in the order of the source.
+        real(dp), intent(in) :: dw(:, :, :) !< Derivatives of w, (ndof, n_state, n_state).
+
+        call self%split_hamiltonian(w(self%state_map, self%state_map),                           &
+        &                           dw(:, self%state_map, self%state_map))
+    end subroutine set_full_hamiltonian
+
+
+    !> Save the eigenvectors of the current geometry, for phase matching at the next geometry and
+    !! for the locally diabatic basis.
+    subroutine diabatic_save_previous(self)
+        class(diabatic_evaluator), intent(inout) :: self
+
+        if (allocated(self%adiab_trans)) self%ldiab_trans = self%adiab_trans
+        if (allocated(self%sf_trans)) self%lsf_trans = self%sf_trans
+    end subroutine diabatic_save_previous
 
 
     !----------------------------------------------------------------------------------------------
@@ -274,26 +358,31 @@ contains
     end function get_transformation
 
 
+    !----------------------------------------------------------------------------------------------
+    ! FUNCTION: get_gradient
+    !> @brief Gradient of a state, flat, in the coordinates of the last geometry passed to
+    !! update_geometry.
+    !----------------------------------------------------------------------------------------------
     function get_gradient(self, basis, istate) result(grad)
         class(diabatic_evaluator), intent(in) :: self
         character(len=*), intent(in) :: basis
         integer, intent(in) :: istate
-        real(dp), allocatable :: grad(:, :)
-
-        allocate(grad(1, size(self%diab_dw, 1)))
+        real(dp), allocatable :: grad(:)
+        real(dp), allocatable :: d(:)
 
         select case(basis)
         case('diabatic')
-            grad(1, :) = self%diab_dw(:, istate, istate)
+            d = self%diab_dw(:, istate, istate)
         case('adiabatic')
-            grad(1, :) = self%adiab_dw(:, istate, istate)
+            d = self%adiab_dw(:, istate, istate)
         case('spin_free')
-            grad(1, :) = self%spin_free_dw(:, istate, istate)
+            d = self%spin_free_dw(:, istate, istate)
         case default
             write(stderr, *) 'Error in evaluator_diabatic_mod, get_gradient function.'
             write(stderr, *) '  Unknown basis: ', basis
             stop
         end select
+        grad = self%get_derivative_target_coord(d)
     end function get_gradient
 
 
@@ -345,7 +434,6 @@ contains
         case('adiabatic')
             self%adiab_trans = get_eigvec(self%diab_w)
         case('spin_free')
-            if (.not. allocated(self%sf_trans)) allocate(self%sf_trans(self%n_sf, self%n_sf))
             self%sf_trans = 0.0_dp
             do m = 1, size(self%manifold)
                 s0 = self%manifold(m)%sf0
@@ -360,16 +448,22 @@ contains
     end subroutine eval_eigvec
 
 
+    !----------------------------------------------------------------------------------------------
+    ! FUNCTION: get_nadv
+    !> @brief Nonadiabatic coupling vector between two states, flat, in the coordinates of the last
+    !! geometry passed to update_geometry.
+    !----------------------------------------------------------------------------------------------
     function get_nadv(self, basis, istate1, istate2) result(nadv)
         class(diabatic_evaluator), intent(in) :: self
         character(len=*), intent(in) :: basis
         integer, intent(in) :: istate1, istate2
         real(dp), allocatable :: nadv(:)
+        real(dp), allocatable :: d(:)
         integer :: imode
         real(dp) :: edif
         real(dp), parameter :: tiny_hf = 1.0e-8_dp
 
-        allocate(nadv(self%ndof), source=0.0_dp)
+        allocate(d(self%ndof), source=0.0_dp)
         select case(basis)
         case('diabatic')
             continue
@@ -384,7 +478,7 @@ contains
                 edif = sign(tiny_hf, edif)
             end if
             do imode = 1, self%ndof
-                nadv(imode) = self%adiab_dw(imode, istate1, istate2) / edif
+                d(imode) = self%adiab_dw(imode, istate1, istate2) / edif
             end do
         case('spin_free')
              edif = self%spin_free_w(istate2, istate2) - self%spin_free_w(istate1, istate1)
@@ -397,13 +491,14 @@ contains
                 edif = sign(tiny_hf, edif)
             end if
             do imode = 1, self%ndof
-                nadv(imode) = self%spin_free_dw(imode, istate1, istate2) / edif
+                d(imode) = self%spin_free_dw(imode, istate1, istate2) / edif
             end do
         case default
             write(stderr, *) 'Error in evaluator_diabatic_mod, get_nadv function.'
             write(stderr, *) '  Unknown basis: ', basis
             stop
         end select
+        nadv = self%get_derivative_target_coord(d)
     end function get_nadv
 
 

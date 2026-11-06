@@ -258,11 +258,14 @@ contains
             ctrl%print(6:9) = .false.
         type is (tsh_lz)
             ctrl%print(6:9) = .false.
-            ctrl%print(30) = .false.
-            ctrl%print(32) = .false.
             ! LZSH keeps the points of a gap minimum while it inserts points between them.
             n_point = max(memory, wf%max_points(ctrl%dt_0) + 1)
         end select
+        ! The spin_free basis is only given in the diabatic basis.
+        if (tr1%wf%basis == 'spin_free') then
+            ctrl%print(30) = .false.
+            ctrl%print(32) = .false.
+        end if
         call allocate_trajectory_data(n_point)
         if (ctrl%orientlvl < 0 .or. ctrl%orientlvl > 2) then
             write(stderr, *) 'Error in Input module, read_input subroutine.'
@@ -289,12 +292,9 @@ contains
             ctrl%max_tot_en_change_step = huge(ctrl%max_tot_en_change_step)
         end if
 
-        ! Atoms need to match the reference geometry of the normal modes.
+        ! Atoms need to match the potential (for VC, the reference geometry of the normal modes).
         if (tr1%classical_coordinates == 'cartesian') then
-            select type(p => tr1%pot)
-            type is (vc_evaluator)
-                call p%model%nm%check_atoms(tr1%sym, tr1%mass / Da_me)
-            end select
+            call tr1%pot%check_atoms(tr1%sym, tr1%mass / Da_me)
         end if
 
         ! Remove overall translation/rotation based on orientlvl.
@@ -728,29 +728,19 @@ contains
                 write(stderr, *) '  Option cartesian_frame requires classical_coordinates = cartesian.'
                 stop
             end if
-            select type(p => tr1%pot)
-            type is (vc_evaluator)
-                call p%set_cartesian_frame(cartesian_frame)
-            class default
-                write(stderr, *) 'Error in Input module, read_system subroutine.'
-                write(stderr, *) '  Option cartesian_frame is only available for the vibronic ',   &
-                &                'coupling potential.'
-                stop
-            end select
+            call tr1%pot%set_cartesian_frame(cartesian_frame)
         end if
 
-        ! Model interfaces determine their own spin manifolds during initialization.
+        ! Model interfaces determine their own spin manifolds during initialization. A given
+        ! spin_states must then agree with them, unless all states are singlets.
         if (allocated(tr1%pot%manifold)) then
-            if (allocated(spin_states)) then
-                select type(p => tr1%pot)
-                type is (vc_evaluator)
-                    if (spin_states /= 'components') then
-                        write(stderr, *) 'Error in Input module, read_system subroutine.'
-                        write(stderr, *) '  The vibronic coupling potential gives every spin ',   &
-                        &                'component, so only spin_states = components is possible.'
-                        stop
-                    end if
-                end select
+            if (allocated(spin_states) .and. any(tr1%pot%manifold%mult > 1)) then
+                if (spin_states /= tr1%pot%spin_states_keyword()) then
+                    write(stderr, *) 'Error in Input module, read_system subroutine.'
+                    write(stderr, *) '  The potential sets its own spin states. Only ',           &
+                    &                'spin_states = '//tr1%pot%spin_states_keyword()//' is possible.'
+                    stop
+                end if
             end if
         else
             if (.not. allocated(spin_states)) then
@@ -974,7 +964,7 @@ contains
         end select
 
         ! The rest of the section is not read without hopping.
-        if ((.not. check) .or. (method == 'off')) return
+        if (.not. check) return
 
         do
             call readf%next()
@@ -1070,6 +1060,25 @@ contains
                 class default
                     write(stderr, *) 'Warning in Input module, read_surfhop subroutine.'
                     write(stderr, *) '  Skipping LZSH option, not used by method ', method, ':'
+                    write(stderr, *) readf%line
+                end select
+            case('sh_basis')
+                select type(wf => tr1%wf)
+                type is (tsh_none)
+                    select case(tolower(readf%args(2)%s))
+                    case('adiabatic', 'diabatic', 'spin_free')
+                        wf%basis = tolower(readf%args(2)%s)
+                    case default
+                        write(stderr, *) 'Error in Input module, read_surfhop_options subroutine.'
+                        write(stderr, *) '  Unrecognized sh_basis option. Expected adiabatic, ',  &
+                        &                'diabatic or spin_free.'
+                        write(stderr, '(2x,a)') readf%line
+                        stop
+                    end select
+                class default
+                    write(stderr, *) 'Warning in Input module, read_surfhop_options subroutine.'
+                    write(stderr, *) '  Skipping sh_basis option, only used without hopping ',   &
+                    &                '($surfhop off). The basis is set by method ', method, ':'
                     write(stderr, *) readf%line
                 end select
             case('stop_s0s1_ci')

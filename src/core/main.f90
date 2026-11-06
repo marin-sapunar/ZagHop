@@ -249,7 +249,9 @@ contains
                 &                            tr1%velo, frustrated)
             end if
             if (frustrated) call tr1%wf%hop_rejected()
-            tr1%grad(:, tr1%qind) = tr1%pot%get_gradient(tr1%wf%basis, tr1%wf%active_state)
+            tr1%grad(:, tr1%qind) = reshape(                                                     &
+            &   tr1%pot%get_gradient(tr1%wf%basis, tr1%wf%active_state),                         &
+            &   [size(tr1%grad, 1), size(tr1%qind)])
         end if
     end subroutine hopping
 

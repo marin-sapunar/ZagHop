@@ -204,13 +204,20 @@ b \#1 \#2 \#3 \#4		&
 Section \$surfhop selects the surface hopping method and contains options for the surface hopping procedure and the propagation of the electronic wave function. The method is given on the section line. Without a method, or without the section, LD-FSSH is used. \newline
 \$surfhop (method) \newline
 Possible methods: \newline
-	\tabitem [off] No surface hopping. The rest of the section is not read and dynamics are performed on the initial adiabatic state. \newline
+	\tabitem [off] No surface hopping. Dynamics are performed on the initial state of the basis given by sh\_basis (adiabatic by default). \newline
 	\tabitem [lz] Landau-Zener surface hopping between neighbouring states of the same group, at minima of their gap with the active state. Shorter steps can be inserted around a gap minimum (see lz\_prob\_conv), but output is only written at multiples of tstep. \newline
 	\tabitem [ld-fssh] Fewest switches surface hopping with the electronic wave function propagated in the locally diabatic basis. (Default.) \newline
 	\tabitem [a-fssh] Fewest switches surface hopping in the adiabatic basis. (Not available in this version.)
 
 
 \begin{tabularx}{\textwidth}{ m{2.5cm} X }
+sh\_basis	&
+	\textbf{adiabatic}	\newline
+	Off only. Basis of the state on which the dynamics are performed. The initial state (istate) is a state of this basis. Possible options: \newline
+	\tabitem [adiabatic] Eigenstates of the full Hamiltonian. \newline
+	\tabitem [diabatic] Diabatic states of the potential. \newline
+	\tabitem [spin\_free] Eigenstates of the spin-free Hamiltonian within each multiplicity, one state for each spin-free state. \\
+
 tdse\_steps \#	&
 	\textbf{1}	\newline
 	LD-FSSH only. Number of substeps for electronic wave function propagation between the nuclear time step at $t$ and at $t + \Delta t$. The Hamiltonian is interpolated linearly during the propagation. Probabilities printed in the prob file are sums of probabilities from each substep. \\

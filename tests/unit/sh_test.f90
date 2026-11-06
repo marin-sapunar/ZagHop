@@ -11,7 +11,7 @@ module sh_test_mod
         procedure :: setup => scripted_setup
         procedure :: set_energies => scripted_set_energies
         procedure :: set_soc => scripted_set_soc
-        procedure :: update_geometry => scripted_update_geometry
+        procedure :: set_geometry => scripted_set_geometry
         procedure :: eval_diab => scripted_eval_diab
     end type scripted_evaluator
 
@@ -52,11 +52,11 @@ contains
         self%soc_w = soc
     end subroutine scripted_set_soc
 
-    subroutine scripted_update_geometry(self, geometry, coordinates)
+    subroutine scripted_set_geometry(self, geometry, coordinates)
         class(scripted_evaluator), intent(inout) :: self
         real(dp), intent(in) :: geometry(:, :)
         character(len=*), intent(in) :: coordinates
-    end subroutine scripted_update_geometry
+    end subroutine scripted_set_geometry
 
     subroutine scripted_eval_diab(self)
         class(scripted_evaluator), intent(inout) :: self

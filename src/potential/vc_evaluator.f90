@@ -1,6 +1,5 @@
 module vc_evaluator_mod
-    use evaluator_diabatic_mod, diabatic_get_gradient => get_gradient, &
-    &                           diabatic_get_nadv => get_nadv
+    use evaluator_diabatic_mod
     use vc_model_mod
     use rmat_mod, only : rmat
     implicit none
@@ -22,10 +21,10 @@ module vc_evaluator_mod
     contains
         procedure :: initialize => vc_initialize
         procedure :: set_cartesian_frame => vc_set_cartesian_frame
-        procedure :: update_geometry => vc_update_geometry
+        procedure :: check_atoms => vc_check_atoms
+        procedure :: set_geometry => vc_set_geometry
         procedure :: eval_diab => vc_eval_diab
-        procedure :: get_gradient => vc_get_gradient
-        procedure :: get_nadv => vc_get_nadv
+        procedure :: get_derivative_target_coord => vc_get_derivative_target_coord
         procedure :: get_reference_geometry => vc_get_reference_geometry
         procedure :: get_oscill => vc_get_oscill
     end type vc_evaluator
@@ -35,8 +34,6 @@ contains
     subroutine vc_initialize(self, model)
         class(vc_evaluator) :: self
         type(vc_model), intent(in), target :: model
-        real(dp) :: smax
-        integer :: i, j
 
         self%model => model
         self%classical_coordinates = 'normal_modes'
@@ -44,34 +41,7 @@ contains
         self%cartesian_frame = 'fixed'
         ! Manifolds of singlets, doublets and triplets. The template lists every component.
         call self%set_spin_manifolds(model%nstate, [1, 2, 3], 'components')
-
-        ! In a real Hamiltonian, there are no spin-orbit couplings within a group.
-        smax = 0.0_dp
-        if (model%soc%max_order >= 0) smax = self%max_soc_in_groups(model%soc%zero)
-        if (model%soc%max_order >= 1) then
-            do i = 1, model%nmode
-                smax = max(smax, self%max_soc_in_groups(model%soc%linear(i, :, :)))
-            end do
-        end if
-        if (model%soc%max_order >= 2) then
-            do i = 1, model%nmode
-                do j = 1, model%nmode
-                    smax = max(smax, self%max_soc_in_groups(model%soc%quad(i, j, :, :)))
-                end do
-            end do
-        end if
-        if (smax > soc_group_tol) then
-            write(stderr, *) 'Warning in vc_evaluator_mod, vc_initialize subroutine.'
-            write(stderr, '(3x,a,e10.3,a)') 'Spin-orbit couplings within a group of states, up to ', &
-            &                               smax, ' Eh.'
-            write(stderr, *) '  These are zero for a real Hamiltonian. Check the order of the states.'
-        end if
-
         self%ndof = self%model%nmode
-        allocate(self%diab_w(self%n_state, self%n_state))
-        allocate(self%diab_dw(self%ndof, self%n_state, self%n_state))
-        allocate(self%adiab_w(self%n_state, self%n_state))
-        allocate(self%adiab_dw(self%ndof, self%n_state, self%n_state))
         allocate(self%q(self%ndof))
     end subroutine vc_initialize
 
@@ -110,14 +80,27 @@ contains
     end subroutine vc_set_cartesian_frame
 
 
-    subroutine vc_update_geometry(self, geometry, coordinates)
+    !> Check that the atoms of the system match the reference geometry of the normal modes.
+    subroutine vc_check_atoms(self, sym, mass)
+        class(vc_evaluator), intent(in) :: self
+        character(len=*), intent(in) :: sym(:) !< Atom symbols.
+        real(dp), intent(in) :: mass(:) !< Atom masses (amu).
+
+        call self%model%nm%check_atoms(sym, mass)
+    end subroutine vc_check_atoms
+
+
+    !> Normal modes, or a Cartesian geometry that is converted to normal modes. The Cartesian
+    !! geometry and the rotation into the Eckart frame are kept for
+    !! vc_get_derivative_target_coord.
+    subroutine vc_set_geometry(self, geometry, coordinates)
         class(vc_evaluator), intent(inout) :: self
         real(dp), intent(in) :: geometry(:, :)
         character(len=*), intent(in) :: coordinates
 
         if (coordinates == self%classical_coordinates) then
             if (size(geometry, 1) /= 1) then
-                write(stderr, *) 'Error in vc_evaluator_mod, update_geometry subroutine.'
+                write(stderr, *) 'Error in vc_evaluator_mod, set_geometry subroutine.'
                 write(stderr, *) '  Geometry should have dimensions (1, nmode).'
                 stop
             end if
@@ -131,59 +114,30 @@ contains
                 self%q = self%model%nm%cart_to_nm(geometry)
             end if
         else
-            write(stderr, *) 'Error in vc_evaluator_mod, update_geometry subroutine.'
+            write(stderr, *) 'Error in vc_evaluator_mod, set_geometry subroutine.'
             write(stderr, *) '  Unsupported coordinates "'//coordinates//'". Expected "'//      &
             &                self%classical_coordinates//'" or "cartesian".'
             stop
         end if
         self%input_coordinates = coordinates
-
-        if (allocated(self%adiab_trans)) self%ldiab_trans = self%adiab_trans
-        if (allocated(self%sf_trans)) self%lsf_trans = self%sf_trans
-    end subroutine vc_update_geometry
+    end subroutine vc_set_geometry
 
 
-    !> Gradient in the coordinates of the geometry passed to update_geometry.
-    function vc_get_gradient(self, basis, istate) result(grad)
+    !> Convert a derivative with respect to the normal modes to the coordinates of the geometry
+    !! passed to set_geometry: unchanged for normal modes, Cartesian for a Cartesian geometry.
+    function vc_get_derivative_target_coord(self, d) result(dr)
         class(vc_evaluator), intent(in) :: self
-        character(len=*), intent(in) :: basis
-        integer, intent(in) :: istate
-        real(dp), allocatable :: grad(:, :)
-
-        grad = diabatic_get_gradient(self, basis, istate)
-        if (self%input_coordinates == 'cartesian') then
-            grad = reshape(vc_deriv_to_cart(self, grad(1, :)), [3, self%model%nm%natom])
-        end if
-    end function vc_get_gradient
-
-
-    !> Nonadiabatic coupling vector in the coordinates of the geometry passed to update_geometry.
-    function vc_get_nadv(self, basis, istate1, istate2) result(nadv)
-        class(vc_evaluator), intent(in) :: self
-        character(len=*), intent(in) :: basis
-        integer, intent(in) :: istate1, istate2
-        real(dp), allocatable :: nadv(:)
-
-        nadv = diabatic_get_nadv(self, basis, istate1, istate2)
-        if (self%input_coordinates == 'cartesian') then
-            nadv = vc_deriv_to_cart(self, nadv)
-        end if
-    end function vc_get_nadv
-
-
-    !> Convert a derivative with respect to the normal modes to a Cartesian derivative at the
-    !! geometry passed to update_geometry.
-    function vc_deriv_to_cart(self, dq) result(dr)
-        class(vc_evaluator), intent(in) :: self
-        real(dp), intent(in) :: dq(:)
+        real(dp), intent(in) :: d(:)
         real(dp), allocatable :: dr(:)
 
-        if (self%cartesian_frame == 'eckart') then
-            dr = self%model%nm%deriv_nm_to_cart(dq, self%cart_geom, self%frame_rot)
+        if (self%input_coordinates /= 'cartesian') then
+            dr = d
+        else if (self%cartesian_frame == 'eckart') then
+            dr = self%model%nm%deriv_nm_to_cart(d, self%cart_geom, self%frame_rot)
         else
-            dr = self%model%nm%deriv_nm_to_cart(dq)
+            dr = self%model%nm%deriv_nm_to_cart(d)
         end if
-    end function vc_deriv_to_cart
+    end function vc_get_derivative_target_coord
 
 
     !> In Cartesian coordinates in the fixed frame, the normal modes are defined relative to the

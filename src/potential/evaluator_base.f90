@@ -28,6 +28,10 @@ module evaluator_base_mod
     end type spin_manifold
 
 
+    !> Base class of all potentials.
+    !> @details
+    !! Specific evaluators only implement set_geometry and the evaluation of the potential at the
+    !! current geometry, and fill the variables of the base classes. The base classes do the rest.
     type, abstract :: potential_evaluator
         integer :: n_state = 0
         integer :: n_sf = 0 !< Number of spin-free states.
@@ -37,9 +41,21 @@ module evaluator_base_mod
                                             !! are given as the mean over the component pairs.
         character(len=:), allocatable :: classical_coordinates !< Coordinates expected by
                                                                !! update_geometry.
+        integer :: n_source_states = 0 !< Number of states given by the source of the potential,
+                                       !! checked by set_spin_manifolds. 0 if not fixed.
+        character(len=12) :: component_order = 'by_component' !< Order of the spin components in
+        !! a full Hamiltonian given by the source of the potential:
+        !! - by_component - All states of the first component, then of the second, ... (ZagHop).
+        !! - by_state - All components of the first state, then of the second, ... (Quantics).
+        integer, allocatable :: state_map(:) !< Index in the source of each state (n_state).
     contains
         procedure(eval), deferred :: eval
-        procedure(update_geometry), deferred :: update_geometry
+        procedure(set_geometry), deferred :: set_geometry
+        procedure, non_overridable :: update_geometry
+        procedure :: save_previous
+        procedure :: get_derivative_target_coord
+        procedure :: set_cartesian_frame
+        procedure :: check_atoms
         procedure(get_Hamiltonian), deferred :: get_Hamiltonian
         procedure(get_transformation), deferred :: get_transformation
         procedure(get_energy_single), deferred :: get_energy_single
@@ -48,6 +64,7 @@ module evaluator_base_mod
         procedure(get_nadv), deferred :: get_nadv
         procedure(get_soc2), deferred :: get_soc2
         procedure :: set_spin_manifolds
+        procedure :: spin_states_keyword
         procedure :: basis_size
         procedure :: locate_state
         procedure :: expand
@@ -102,15 +119,16 @@ module evaluator_base_mod
 
 
     abstract interface
-        !> Coordinates gives the coordinate system of the geometry. Gradients and nonadiabatic
-        !! couplings are returned in the same coordinate system.
-        subroutine update_geometry(self, geometry, coordinates)
+        !> Set the geometry at which the potential is evaluated next. Coordinates gives the
+        !! coordinate system of the geometry. Anything that get_derivative_target_coord needs to
+        !! convert derivatives to these coordinates must be stored here.
+        subroutine set_geometry(self, geometry, coordinates)
             use global_defs, only : dp
             import potential_evaluator
             class(potential_evaluator), intent(inout) :: self
             real(dp), intent(in) :: geometry(:, :)
             character(len=*), intent(in) :: coordinates
-        end subroutine update_geometry
+        end subroutine set_geometry
     end interface
 
 
@@ -137,18 +155,22 @@ module evaluator_base_mod
 
 
     abstract interface
+        !> Gradient of a state, flat, in the coordinates of the last geometry passed to
+        !! update_geometry. Callers reshape it to the shape of their geometry.
         function get_gradient(self, basis, istate) result(grad)
             use global_defs, only : dp
             import potential_evaluator
             class(potential_evaluator), intent(in) :: self
             character(len=*), intent(in) :: basis
             integer, intent(in) :: istate
-            real(dp), allocatable :: grad(:, :)
+            real(dp), allocatable :: grad(:)
         end function get_gradient
     end interface
 
 
     abstract interface
+        !> Nonadiabatic coupling vector between two states, flat, in the coordinates of the last
+        !! geometry passed to update_geometry.
         function get_nadv(self, basis, istate1, istate2) result(nadv)
             use global_defs, only : dp
             import potential_evaluator
@@ -178,6 +200,70 @@ contains
 
 
     !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: update_geometry
+    !> @brief Move the potential to a new geometry.
+    !> @details
+    !! Saves what the evaluator keeps from the previous geometry (save_previous) and passes the
+    !! geometry to the evaluator (set_geometry). Gradients and nonadiabatic couplings are returned
+    !! in the coordinates of this geometry.
+    !----------------------------------------------------------------------------------------------
+    subroutine update_geometry(self, geometry, coordinates)
+        class(potential_evaluator), intent(inout) :: self
+        real(dp), intent(in) :: geometry(:, :)
+        character(len=*), intent(in) :: coordinates
+
+        call self%save_previous()
+        call self%set_geometry(geometry, coordinates)
+    end subroutine update_geometry
+
+
+    !> Save the quantities of the current geometry that are needed at the next geometry. Nothing
+    !! is saved in the base class.
+    subroutine save_previous(self)
+        class(potential_evaluator), intent(inout) :: self
+    end subroutine save_previous
+
+
+    !----------------------------------------------------------------------------------------------
+    ! FUNCTION: get_derivative_target_coord
+    !> @brief Convert a derivative with respect to the coordinates of the potential to the
+    !! coordinates of the last geometry passed to update_geometry.
+    !> @details
+    !! The result is flat. In the base class the two coordinate systems are the same. An
+    !! evaluator that accepts geometries in other coordinates overrides this function. Everything
+    !! it needs must be stored in set_geometry, not in update_geometry.
+    !----------------------------------------------------------------------------------------------
+    function get_derivative_target_coord(self, d) result(dr)
+        class(potential_evaluator), intent(in) :: self
+        real(dp), intent(in) :: d(:) !< Derivative with respect to the coordinates of the potential.
+        real(dp), allocatable :: dr(:)
+
+        dr = d
+    end function get_derivative_target_coord
+
+
+    !> Set the frame in which Cartesian geometries are transformed to the coordinates of the
+    !! potential. Not available in the base class.
+    subroutine set_cartesian_frame(self, frame)
+        class(potential_evaluator), intent(inout) :: self
+        character(len=*), intent(in) :: frame
+
+        write(stderr, *) 'Error in evaluator_base_mod, set_cartesian_frame subroutine.'
+        write(stderr, *) '  Option cartesian_frame is not available for this potential: ', frame
+        stop
+    end subroutine set_cartesian_frame
+
+
+    !> Check that the atoms of the system match the potential. Nothing is checked in the base
+    !! class.
+    subroutine check_atoms(self, sym, mass)
+        class(potential_evaluator), intent(in) :: self
+        character(len=*), intent(in) :: sym(:) !< Atom symbols.
+        real(dp), intent(in) :: mass(:) !< Atom masses (amu).
+    end subroutine check_atoms
+
+
+    !----------------------------------------------------------------------------------------------
     ! SUBROUTINE: set_spin_manifolds
     !> @brief Set the spin manifolds from the number of states of each multiplicity.
     !> @details
@@ -191,13 +277,16 @@ contains
     !!   the root-sum-square over the component pairs.
     !! - effective_mean - As effective_rss, but the squared couplings between manifolds are the
     !!   mean over the component pairs.
+    !!
+    !! If n_source_states is set, the number of states must match it. state_map is built from
+    !! component_order.
     !----------------------------------------------------------------------------------------------
     subroutine set_spin_manifolds(self, nstate, multiplicity, spin_states)
         class(potential_evaluator), intent(inout) :: self
         integer, intent(in) :: nstate(:) !< Number of spin-free states of each multiplicity.
         integer, intent(in) :: multiplicity(:) !< Multiplicity of each block of states.
         character(len=*), intent(in) :: spin_states
-        integer :: i, m, sf, ci
+        integer :: i, m, sf, ci, c, k
 
         select case(spin_states)
         case('components')
@@ -250,7 +339,54 @@ contains
         end do
         self%n_sf = sf - 1
         self%n_state = ci - 1
+
+        if (self%n_source_states > 0 .and. self%n_state /= self%n_source_states) then
+            write(stderr, *) 'Error in evaluator_base_mod, set_spin_manifolds subroutine.'
+            write(stderr, '(3x,a,i0,a)') 'Input nstate, multiplicity and spin_states give ',     &
+            &                            self%n_state, ' states.'
+            write(stderr, '(3x,a,i0,a)') 'The potential has ', self%n_source_states, ' states.'
+            stop
+        end if
+
+        ! Index in the source of each state. With one component, both orders are the same.
+        if (allocated(self%state_map)) deallocate(self%state_map)
+        allocate(self%state_map(self%n_state))
+        do m = 1, size(self%manifold)
+            associate(mf => self%manifold(m))
+                do c = 1, mf%n_comp
+                    do k = 1, mf%n
+                        ci = mf%i0 + (c - 1) * mf%n + k - 1
+                        select case(self%component_order)
+                        case('by_component')
+                            self%state_map(ci) = ci
+                        case('by_state')
+                            self%state_map(ci) = mf%i0 + (k - 1) * mf%n_comp + c - 1
+                        case default
+                            write(stderr, *) 'Error in evaluator_base_mod, set_spin_manifolds ',  &
+                            &                'subroutine.'
+                            write(stderr, *) '  Unknown component_order: ', trim(self%component_order)
+                            stop
+                        end select
+                    end do
+                end do
+            end associate
+        end do
     end subroutine set_spin_manifolds
+
+
+    !> Value of the spin_states keyword that gives the spin states of the potential.
+    pure function spin_states_keyword(self) result(keyword)
+        class(potential_evaluator), intent(in) :: self
+        character(len=:), allocatable :: keyword
+
+        if (self%spin_states == 'components') then
+            keyword = 'components'
+        else if (self%mean_couplings) then
+            keyword = 'effective_mean'
+        else
+            keyword = 'effective_rss'
+        end if
+    end function spin_states_keyword
 
 
     !----------------------------------------------------------------------------------------------

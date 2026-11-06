@@ -9,7 +9,8 @@
 ! States of higher multiplicity are ordered differently in Quantics and ZagHop. In Quantics, all
 ! components of each state are consecutive (T1(1), T1(2), T1(3), T2(1), ...), while ZagHop places
 ! each component in a separate group of states (T1(1), T2(1), ..., T1(2), T2(2), ...). The
-! diabatic potential is reordered to the ZagHop convention after each evaluation.
+! evaluator declares the Quantics order (component_order = 'by_state'), and the base class
+! reorders the diabatic potential after each evaluation (set_full_hamiltonian).
 !
 ! For direct dynamics (DD) operators, the potential is interpolated from a Quantics database (DB).
 ! The trajectory is treated as a single GWP by the Quantics DD routines. If the DB is not read-only,
@@ -54,12 +55,9 @@ module quantics_interface_mod
         real(dop), allocatable :: gpoint(:) !< All Quantics DOFs (maxdim), including frozen DOFs.
         logical :: initialized = .false.
         real(dop), allocatable :: hops(:) !< Operator data read from the oper file (hopsdim).
-        integer, allocatable :: state_map(:) !< Quantics index of each ZagHop state (n_state).
-        logical :: soc_checked = .false. !< Spin-orbit couplings within groups were checked.
     contains
         procedure :: init => quantics_initialize
-        procedure :: set_spin_manifolds => quantics_set_spin_manifolds
-        procedure :: update_geometry => quantics_update_geometry
+        procedure :: set_geometry => quantics_set_geometry
         procedure :: eval_diab => quantics_eval_diab
         !   procedure :: get_oscill => quantics_get_oscill
     end type quantics_interface
@@ -67,21 +65,21 @@ module quantics_interface_mod
 
 contains
 
-    subroutine quantics_update_geometry(self, geometry, coordinates)
+    subroutine quantics_set_geometry(self, geometry, coordinates)
         class(quantics_interface), intent(inout) :: self
         real(dop), intent(in) :: geometry(:, :)
         character(len=*), intent(in) :: coordinates
-        integer :: i, n, f
+        integer :: n
 
         if (coordinates /= self%classical_coordinates) then
-            write(stderr, *) 'Error in quantics_mod, update_geometry subroutine.'
+            write(stderr, *) 'Error in quantics_mod, set_geometry subroutine.'
             write(stderr, *) '  Unsupported coordinates "'//coordinates//'". Expected "'//          &
             &                self%classical_coordinates//'".'
             stop
         end if
 
         if (size(geometry, 1) /= 1 .or. size(geometry, 2) /= self%ndof) then
-            write(stderr, *) 'Error in quantics_mod, update_geometry subroutine.'
+            write(stderr, *) 'Error in quantics_mod, set_geometry subroutine.'
             write(stderr, *) '  Geometry should have dimensions (1, ndof).'
             stop
         end if
@@ -92,9 +90,7 @@ contains
         do n = 1, self%ndof
             self%gpoint(spfdof(n, 1)) = self%q(n)
         end do
-        if (allocated(self%adiab_trans)) self%ldiab_trans = self%adiab_trans
-        if (allocated(self%sf_trans)) self%lsf_trans = self%sf_trans
-    end subroutine quantics_update_geometry
+    end subroutine quantics_set_geometry
 
 
     subroutine quantics_initialize(self)
@@ -103,7 +99,7 @@ contains
         character(len=c5)   :: filename, string
         logical(kind=4) :: check
         logical(kind=4) :: lerr
-        integer :: ilbl, ierr, icheck, f, i
+        integer :: ilbl, ierr, icheck, f
         integer :: chkdvr, chkgrd
         !, string
         !integer :: ilbl, jlbl, ierr, chkdvr, chkgrd, chkpsi, chkprp
@@ -255,15 +251,12 @@ contains
         close(ilog)
         self%initialized = .true.
 
-        self%n_state = nddstate
+        ! The multiplicities are not in the oper file. They are given to set_spin_manifolds from the
+        ! input, which checks them against the number of states of the operator.
+        self%n_source_states = nddstate
+        self%component_order = 'by_state'
         self%ndof = nspfdof(1)
-        allocate(self%diab_w(self%n_state, self%n_state))
-        allocate(self%diab_dw(self%ndof, self%n_state, self%n_state))
-        allocate(self%adiab_w(self%n_state, self%n_state))
-        allocate(self%adiab_dw(self%ndof, self%n_state, self%n_state))
         allocate(self%q(self%ndof), source=0.0_dop)
-        ! Identity mapping until the spin multiplicities are given in set_spin_manifolds.
-        self%state_map = [(i, i = 1, self%n_state)]
 
         ! Frozen coordinates are fixed at the centre of their basis.
         allocate(self%gpoint(maxdim), source=0.0_dop)
@@ -342,53 +335,6 @@ contains
     end subroutine init_direct_dynamics
 
 
-    !----------------------------------------------------------------------------------------------
-    ! SUBROUTINE: quantics_set_spin_manifolds
-    !> @brief Set the spin manifolds and the mapping from ZagHop to Quantics state ordering.
-    !> @details
-    !! The oper file contains no information on the multiplicities of the states, so they are
-    !! taken from the input. With components, the states in each manifold are assumed to be
-    !! ordered as in Quantics, with all components of each state consecutive. With effective
-    !! states, the order is the same in Quantics and ZagHop.
-    !----------------------------------------------------------------------------------------------
-    subroutine quantics_set_spin_manifolds(self, nstate, multiplicity, spin_states)
-        use evaluator_base_mod, only : base_set_spin_manifolds => set_spin_manifolds
-        class(quantics_interface), intent(inout) :: self
-        integer, intent(in) :: nstate(:) !< Number of states of each multiplicity.
-        integer, intent(in) :: multiplicity(:) !< Multiplicity of each block of states.
-        character(len=*), intent(in) :: spin_states
-        integer :: i, j, k, ci, offset, n_expected
-
-        if (spin_states == 'components') then
-            n_expected = sum(nstate * multiplicity)
-        else
-            n_expected = sum(nstate)
-        end if
-        if (n_expected /= self%n_state) then
-            write(stderr, *) 'Error in quantics_mod, set_spin_manifolds subroutine.'
-            write(stderr, '(3x,a,i0,a)') 'Input nstate, multiplicity and spin_states give ',     &
-            &                            n_expected, ' states.'
-            write(stderr, '(3x,a,i0,a)') 'Quantics operator has ', self%n_state, ' states.'
-            stop
-        end if
-
-        call base_set_spin_manifolds(self, nstate, multiplicity, spin_states)
-
-        if (self%spin_states /= 'components') return
-        ci = 1
-        offset = 0
-        do i = 1, size(nstate)
-            do j = 1, multiplicity(i)
-                do k = 1, nstate(i)
-                    self%state_map(ci) = offset + (k - 1) * multiplicity(i) + j
-                    ci = ci + 1
-                end do
-            end do
-            offset = offset + nstate(i) * multiplicity(i)
-        end do
-    end subroutine quantics_set_spin_manifolds
-
-
     subroutine quantics_eval_diab(self)
         class(quantics_interface), intent(inout) :: self
         integer :: n, f
@@ -400,9 +346,7 @@ contains
         complex(dop), allocatable :: pesdiaz(:, :)
         real(dop), allocatable :: derdia(:, :, :)
         real(dop), allocatable :: xgp(:)
-        real(dop), allocatable :: w(:, :)
         real(dop), allocatable :: dw(:, :, :)
-        real(dop) :: smax
 
         open(ilog,file='quantics.log',status='unknown',position='append')
 
@@ -439,136 +383,18 @@ contains
         end if
         call calcpesder(self%hops, derdia, self%gpoint, nham)
 
-        ! Reorder states to ZagHop convention and extract derivatives with respect to the
-        ! dynamical coordinates.
-        allocate(w(self%n_state, self%n_state))
-        allocate(dw(self%ndof, self%n_state, self%n_state))
-        w = pesdia(self%state_map, self%state_map)
+        ! Derivatives with respect to the dynamical coordinates. The base class reorders the states
+        ! to the ZagHop convention.
+        allocate(dw(self%ndof, nddstate, nddstate))
         do n = 1, nspfdof(m)
             f = spfdof(n, m)
-            dw(n, :, :) = derdia(self%state_map, self%state_map, f)
+            dw(n, :, :) = derdia(:, :, f)
         end do
-        call self%split_hamiltonian(w, dw)
-
-        ! In a real Hamiltonian, there are no spin-orbit couplings within a group.
-        if (.not. self%soc_checked) then
-            smax = self%max_soc_in_groups(self%soc_w)
-            if (smax > soc_group_tol) then
-                write(stderr, *) 'Warning in quantics_mod, eval_diab subroutine.'
-                write(stderr, '(3x,a,e10.3,a)') 'Spin-orbit couplings within a group of states, ', &
-                &                               'up to ', smax, ' Eh.'
-                write(stderr, *) '  These are zero for a real Hamiltonian. Check the order of ',  &
-                &                'the states and spin_states.'
-            end if
-            self%soc_checked = .true.
-        end if
+        call self%set_full_hamiltonian(pesdia, dw)
 
         close(ilog)
     end subroutine quantics_eval_diab
 
-!#######################################################################
-
-    ! subroutine extrsoc(pesspdi,sovec, spinvec)
-    !     implicit none
-
-    !     integer(long)              :: s,s1,f,f1,n,m
-    !     real(dop), dimension(:,:), intent(out) :: sovec
-    !     real(dop), dimension(:,:), intent(in)  :: pesspdi
-    !     integer, dimension(:), intent(in) :: spinvec
-
-    !     if(size(spinvec,1).gt.0)then
-    !         ! Keep only values between different multiplicities
-    !         do s=1,size(spinvec,1)
-    !             do s1=1,size(spinvec,1)
-    !             if (spinvec(s) .ne. spinvec(s1)) then
-    !                 sovec(s1,s) = pesspdi(s1,s)
-    !             endif
-    !             enddo
-    !         enddo
-    !     elseif(allocated(imultmap))then !Ask Graham, cause nddstate is the number of multiplicity blocks, no the multiplicity of all states
-    !         ! Keep only values between different multiplicities
-    !         do s=1,nddstate
-    !             do s1=1,nddstate
-    !             if (imultmap(s) .ne. imultmap(s1)) then
-    !                 sovec(s1,s) = pesspdi(s1,s)
-    !             endif
-    !             enddo
-    !         enddo
-    !     endif
-
-    ! end subroutine extrsoc
-
-
-! !#######################################################################
-
-!     subroutine extrgra(sta,en,gra,nadvec,derad)
-!         integer(long), intent(in)  :: sta
-!         integer(long)              :: s,s1,f,f1,n,m
-!         real(dop), dimension(ndoftsh,nddstate,nddstate), intent(out) :: nadvec
-!         real(dop), dimension(ndof)                                   :: qnadvec
-!         real(dop), dimension(ndoftsh),intent(out)                    :: gra
-!         real(dop), dimension(ndof)                                   :: qgra
-!         real(dop), dimension(nddstate,nddstate,maxdim), intent(in)   :: derad
-!         real(dop), dimension(nddstate), intent(in)                   :: en
-!         real(dop) :: ediff
-
-
-!         ! extract gradient for present state and transform to Cartesian
-!         ! removing frozen coordinates
-!         qgra(:) = 0.0
-!         m = 1  ! only 1 mode in TSH
-!         do n=1,nspfdof(m)
-!             f=spfdof(n,m)
-!             qgra(n) = derad(sta,sta,f)
-!         enddo
-
-!         gra(:) = 0.0
-!         if (ltshtrans) then
-!             call mvtxdd1(tshtransb,qgra,gra,maxdim,nspfdof(1),ndoftsh)
-!         else
-!             do f=1,ndoftsh
-!                 gra(f)=qgra(f)
-!             enddo
-!         endif
-
-!     ! extract nacts and transform to Cartesian
-!     ! set  for frozen coordinates to 0
-!         qnadvec(:) = 0.0_dop
-!         nadvec(:,:,:) = 0.0_dop
-!         m = 1  ! only 1 mode in TSH
-!         do s=1,nddstate
-!             do s1=s+1,nddstate
-!                 if (imultmap(s) .ne. imultmap(s1)) cycle  ! ignore different spins
-
-!                 do n=1,nspfdof(m)
-!                 f=spfdof(n,m)
-!                 qnadvec(n) = derad(s1,s,f)
-!                 enddo
-
-!                 if (ltshtrans) then
-!                 call mvtxdd1(tshtransb,qnadvec,nadvec(1,s1,s),maxdim,&
-!                     nspfdof(1),ndoftsh)
-!                 else
-!                 do f=1,ndoftsh
-!                     nadvec(f,s1,s)=qnadvec(f)
-!                 enddo
-!                 endif
-
-!                 ediff = en(s) - en(s1)
-!                 if (abs(ediff) .lt. 1.0d-6) then
-!                 if (ediff .lt. 0.0) then
-!                     ediff=-1.0d-6
-!                 else
-!                     ediff=1.0d-6
-!                 endif
-!                 endif
-!                 nadvec(:,s1,s) = nadvec(:,s1,s) / ediff
-
-!                 nadvec(:,s,s1) = -nadvec(:,s1,s)
-!             enddo
-!         enddo
-
-!     end subroutine extrgra
 
 end module quantics_interface_mod
 
