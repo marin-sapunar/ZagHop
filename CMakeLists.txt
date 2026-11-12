@@ -47,7 +47,9 @@ project(ZagHop LANGUAGES Fortran)
 
   add_library(zagutil STATIC ${UTIL_SOURCE})
   add_library(zagpot STATIC ${POT_SOURCE})
-  target_link_libraries(zagpot PRIVATE zagutil)
+  target_link_libraries(zagpot PRIVATE zagutil jsonfortran)
+  target_include_directories(zagpot PRIVATE
+                             $<TARGET_PROPERTY:jsonfortran,BINARY_DIR>)
 
   add_library(zagcore STATIC ${CORE_SOURCE})
   target_link_libraries(zagcore PUBLIC zagpot zagutil jsonfortran)
@@ -188,7 +190,9 @@ project(ZagHop LANGUAGES Fortran)
   add_test(NAME linalg_unit_test COMMAND linalg_test)
 
   add_executable(pot_test tests/unit/pot_test.f90)
-  target_link_libraries(pot_test zagpot zagutil ${LINALG_LIBS})
+  target_link_libraries(pot_test zagpot zagutil jsonfortran ${LINALG_LIBS})
+  target_include_directories(pot_test PRIVATE
+                             $<TARGET_PROPERTY:jsonfortran,BINARY_DIR>)
   add_test(NAME pot_unit_test COMMAND pot_test)
 
   add_executable(sh_test tests/unit/sh_test.f90)
@@ -217,6 +221,19 @@ project(ZagHop LANGUAGES Fortran)
                 "test_tully.TullyTest.${_test_name}"
         WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
       set_tests_properties("ZagHop:Tully::${_test_name}" PROPERTIES
+        ENVIRONMENT_MODIFICATION PATH=path_list_append:${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
+    endforeach()
+
+    file(STRINGS "${CMAKE_SOURCE_DIR}/tests/integration/test_granucci.py"
+         _granucci_test_lines REGEX "^    def (test_[A-Za-z0-9_]+)")
+    foreach(_line ${_granucci_test_lines})
+      string(REGEX MATCH "def (test_[A-Za-z0-9_]+)" _ "${_line}")
+      set(_test_name "${CMAKE_MATCH_1}")
+      add_test(NAME "ZagHop:Granucci::${_test_name}"
+        COMMAND ${Python_EXECUTABLE} -m unittest -v
+                "test_granucci.GranucciTest.${_test_name}"
+        WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+      set_tests_properties("ZagHop:Granucci::${_test_name}" PROPERTIES
         ENVIRONMENT_MODIFICATION PATH=path_list_append:${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
     endforeach()
 
