@@ -59,11 +59,21 @@ module quantics_interface_mod
         procedure :: init => quantics_initialize
         procedure :: set_geometry => quantics_set_geometry
         procedure :: eval_diab => quantics_eval_diab
+        procedure :: default_reference => quantics_default_reference
         !   procedure :: get_oscill => quantics_get_oscill
     end type quantics_interface
 
 
 contains
+
+    !> The origin of the dynamical coordinates of the operator, q = 0.
+    subroutine quantics_default_reference(self, geom)
+        class(quantics_interface), intent(in) :: self
+        real(dop), allocatable, intent(out) :: geom(:, :)
+
+        allocate(geom(1, self%ndof), source=0.0_dop)
+    end subroutine quantics_default_reference
+
 
     subroutine quantics_set_geometry(self, geometry, coordinates)
         class(quantics_interface), intent(inout) :: self

@@ -60,6 +60,36 @@ class VcSo2Test(ZagHopTest):
         self.compare_results("cstate_diab")
         self.compare_results("energy.dat", reference="test_ldsh_isc_eckart")
 
+    def test_ldsh_isc_eff_nm(self):
+        """ Test LD-FSSH on effective spin states built from the SO2 model (projection).
+
+        The model has one state for each of the 7 spin-free states, instead of 13 components."""
+        self.run_traj()
+        self.assertEqual(self.load_results("energy.dat").shape[1], 4 + 7, "Not 7 states.")
+        self.stdout_contains("Smallest retained fraction of the singlet-triplet couplings")
+        self.compare_energy()
+        self.compare_results("prob")
+        self.compare_results("cstate_diab")
+
+    def test_ldsh_isc_eff_rss_nm(self):
+        """ Test LD-FSSH on effective spin states built from the SO2 model (rss, signed)."""
+        self.run_traj()
+        self.assertEqual(self.load_results("energy.dat").shape[1], 4 + 7, "Not 7 states.")
+        self.compare_energy()
+        self.compare_results("prob")
+        self.compare_results("cstate_diab")
+
+    def test_lzsh_isc_eff_nm(self):
+        """ Test LZSH on effective spin states built from the SO2 model (projection).
+
+        The combination of the triplet components is computed at a given reference geometry.
+        The spin-orbit couplings of the model are constant, so it is the same as at the default
+        reference."""
+        self.run_traj()
+        self.stdout_contains("Reading reference geometry file ref_geom.")
+        self.stdout_contains("ISC probability evaluated")
+        self.compare_energy()
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

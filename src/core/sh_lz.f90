@@ -66,8 +66,6 @@ module sh_lz_mod
                                         !! probabilities.
         real(dp) :: min_dt = 0.0_dp !< Minimum time step when converging the probabilities.
         real(dp) :: en_err = 1.0e-6_dp !< Estimated error in the energies.
-        character(len=:), allocatable :: isc_coupling !< Effective spin-orbit coupling for
-                                                      !! intersystem crossings (see check_isc).
         integer, allocatable :: group(:) !< Spin manifold of each state. Internal conversions are
                                          !! considered within a manifold.
         type(lz_point), allocatable :: point(:) !< Stored points in time order.
@@ -108,7 +106,6 @@ contains
         self%basis = 'spin_free'
         call base_initialize(self, rng, potential, active_state)
         self%min_dt = 0.05_dp / aut_fs
-        self%isc_coupling = 'rss'
         allocate(self%group(self%n_state))
         do m = 1, size(potential%manifold)
             s0 = potential%manifold(m)%sf0
@@ -203,7 +200,7 @@ contains
         self%i_cur = self%i_cur + 1
         if (size(self%point) < 3) then
             ! Too few points for a gap minimum, but an intersystem crossing is possible.
-            call self%check_isc(potential)
+            call self%check_isc()
             call finish()
             return
         end if
@@ -287,7 +284,7 @@ contains
                     self%request%time = self%point(self%i_cur)%time
                 end if
             end if
-            call self%check_isc(potential)
+            call self%check_isc()
         end if
         self%gap_2deriv = 0.0_dp
         call finish()
@@ -436,27 +433,22 @@ contains
     !> @details
     !! For each spin-free state B of another multiplicity, a crossing with the active state A is
     !! found when the gap E_B - E_A changes sign. The squared spin-orbit coupling s2 of A and B,
-    !! summed over all pairs of their components, is interpolated to the crossing, and the
-    !! probability of a hop to B is
-    !!     P(A -> B) = 1 - exp(-2 pi H2 / |dgap/dt|).
-    !! The effective coupling H2 depends on isc_coupling, with m_A and m_B the multiplicities:
-    !! - rss - H2 = s2, the root-sum-square coupling over the component pairs, squared (ABIN).
-    !! - rms - H2 = s2 / (m_A m_B), the root-mean-square coupling over the component pairs, squared.
-    !! - initial_mean - H2 = s2 / m_A, the sum over the components of B, averaged over those of A.
-    !! Afterwards, the latest point becomes the reference point.
+    !! summed over all pairs of their components is interpolated to the crossing, and the probability
+    !! of a hop to B is  P(A -> B) = 1 - exp(-2 pi s2 / |dgap/dt|).
+    !! The coupling is that of the potential. A model of effective spin states with another
+    !! coupling (for example rms) is built with the effective_spin_states keyword. Afterwards, the
+    !! latest point becomes the reference point.
     !----------------------------------------------------------------------------------------------
-    subroutine check_isc(self, potential)
+    subroutine check_isc(self)
         class(tsh_lz), intent(inout) :: self
-        class(potential_evaluator), intent(in) :: potential
         real(dp) :: prob(self%n_state)
-        real(dp) :: t1, t2, de1, de2, f, slope, s2, h2
+        real(dp) :: t1, t2, de1, de2, f, slope, s2
         logical :: found
-        integer :: b, ma, mb, cstate, ilast
+        integer :: b, cstate, ilast
 
         cstate = self%active_state
         ilast = size(self%point)
         found = .false.
-        ma = potential%manifold(self%group(cstate))%mult
         associate(p1 => self%isc_ref, p2 => self%point(ilast))
             t1 = p1%time
             t2 = p2%time
@@ -472,25 +464,14 @@ contains
                     ! Fraction of the step up to the crossing.
                     f = de1 / (de1 - de2)
                     s2 = (1.0_dp - f) * p1%soc2(cstate, b) + f * p2%soc2(cstate, b)
-                    mb = potential%manifold(self%group(b))%mult
-                    select case(self%isc_coupling)
-                    case('rss')
-                        h2 = s2
-                    case('rms')
-                        h2 = s2 / real(ma * mb, dp)
-                    case('initial_mean')
-                        h2 = s2 / real(ma, dp)
-                    case default
-                        error stop 'Error in sh_lz_mod, check_isc subroutine. Unknown isc_coupling.'
-                    end select
                     if (stdp3) then
                         write(stdout, '(3x,a,i0,a,i0,a,f0.4,a)') 'Crossing of state ', cstate,    &
                         &   ' with state ', b, ' at t=', (t1 + f * (t2 - t1)) * aut_fs, '.'
                         write(stdout, '(5x,a,e15.7)') 'Gap slope = ', slope
-                        write(stdout, '(5x,a,e15.7)') 'H2 = ', h2
+                        write(stdout, '(5x,a,e15.7)') 'H2 = ', s2
                     end if
-                    if (h2 <= 0.0_dp) cycle
-                    prob(b) = 1.0_dp - exp(-2.0_dp * pi * h2 / slope)
+                    if (s2 <= 0.0_dp) cycle
+                    prob(b) = 1.0_dp - exp(-2.0_dp * pi * s2 / slope)
                     if (stdp3) write(stdout, '(5x,a,i0,a,e15.7)') 'P(', b, ') = ', prob(b)
                     found = .true.
                 end do

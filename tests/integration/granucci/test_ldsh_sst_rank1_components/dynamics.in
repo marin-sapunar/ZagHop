@@ -1,0 +1,18 @@
+$method
+ seed 7
+ qlib model granucci-sst phi 0
+$system
+ geometry geom
+ ndim = 1
+ istate = 2
+ effective_spin_states off
+$surfhop ld-fssh
+ velocity vel
+$dynamics
+ time = 150.0
+ tstep = 0.1
+$output
+ printerval = 5
+ noprint 2,4,5,6,8-11
+ print 7
+$end

@@ -7,6 +7,7 @@ module evaluator_base_mod
     public :: spin_manifold
     public :: state_location
     public :: set_spin_manifolds
+    public :: add_state_layout
     public :: soc_group_tol
 
 
@@ -72,6 +73,9 @@ module evaluator_base_mod
         procedure :: to_rss_couplings
         procedure :: max_soc_in_groups
         procedure :: get_reference_geometry
+        procedure :: default_reference
+        procedure :: print_summary
+        procedure :: add_state_layout
         generic :: get_energy => get_energy_single, get_energy_all
     end type potential_evaluator
 
@@ -554,6 +558,67 @@ contains
         character(len=*), intent(in) :: coordinates
         real(dp), allocatable, intent(out) :: geom(:, :)
     end subroutine get_reference_geometry
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: default_reference
+    !> @brief Default reference geometry of the potential, in its classical coordinates.
+    !> @details
+    !! Used when a quantity must be computed at the same geometry for all trajectories, and no
+    !! reference geometry is given in the input. The geometry is not allocated (default) if the
+    !! potential has no natural reference.
+    !----------------------------------------------------------------------------------------------
+    subroutine default_reference(self, geom)
+        class(potential_evaluator), intent(in) :: self
+        real(dp), allocatable, intent(out) :: geom(:, :)
+    end subroutine default_reference
+
+
+    !> Print a summary of the potential at the end of the trajectory. Nothing is printed in the
+    !! base class.
+    subroutine print_summary(self, unit)
+        class(potential_evaluator), intent(in) :: self
+        integer, intent(in) :: unit
+    end subroutine print_summary
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: add_state_layout
+    !> @brief Add the layout of the states of the potential to a JSON object.
+    !> @details
+    !! Adds spin_states, the number of states of each basis (n_state) and the spin manifolds. For
+    !! each manifold: multiplicity, n (spin-free states), n_comp (groups: the spin components, or
+    !! 1 for effective states), first_spin_free and first_state (1-based). State
+    !!     first_state + (c - 1) * n + k - 1
+    !! is component c of spin-free state first_spin_free + k - 1. Evaluators that are built from
+    !! another potential override this to describe it as well.
+    !----------------------------------------------------------------------------------------------
+    subroutine add_state_layout(self, json, obj)
+        use json_module, only : json_core, json_value
+        class(potential_evaluator), intent(in) :: self
+        type(json_core), intent(inout) :: json
+        type(json_value), pointer, intent(in) :: obj !< Object to which the layout is added.
+        type(json_value), pointer :: nst, arr, mf
+        integer :: m
+
+        call json%add(obj, 'spin_states', self%spin_states)
+        call json%create_object(nst, 'n_state')
+        call json%add(nst, 'diabatic', self%basis_size('diabatic'))
+        call json%add(nst, 'adiabatic', self%basis_size('adiabatic'))
+        call json%add(nst, 'spin_free', self%basis_size('spin_free'))
+        call json%add(obj, nst)
+        call json%create_array(arr, 'manifolds')
+        do m = 1, size(self%manifold)
+            call json%create_object(mf, '')
+            call json%add(mf, 'multiplicity', self%manifold(m)%mult)
+            call json%add(mf, 'n', self%manifold(m)%n)
+            call json%add(mf, 'n_comp', self%manifold(m)%n_comp)
+            call json%add(mf, 'first_spin_free', self%manifold(m)%sf0)
+            call json%add(mf, 'first_state', self%manifold(m)%i0)
+            call json%add(arr, mf)
+        end do
+        call json%add(obj, arr)
+    end subroutine add_state_layout
 
 
 end module evaluator_base_mod

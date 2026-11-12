@@ -1,0 +1,60 @@
+{
+  "format_version": 1,
+  "dynamics_basis": "spin_free",
+  "spin_states": "effective",
+  "n_state": {
+    "diabatic": 2,
+    "adiabatic": 2,
+    "spin_free": 2
+  },
+  "manifolds": [
+    {
+      "multiplicity": 1,
+      "n": 1,
+      "n_comp": 1,
+      "first_spin_free": 1,
+      "first_state": 1
+    },
+    {
+      "multiplicity": 3,
+      "n": 1,
+      "n_comp": 1,
+      "first_spin_free": 2,
+      "first_state": 2
+    }
+  ],
+  "effective_spin_states": {
+    "model": "projection",
+    "signed": true,
+    "u": [
+      -0.49999999999999994E+0,
+      0.49999999999999994E+0,
+      0.70710678118654746E+0
+    ],
+    "reference_fraction": 0.1E+1
+  },
+  "source": {
+    "spin_states": "components",
+    "n_state": {
+      "diabatic": 4,
+      "adiabatic": 4,
+      "spin_free": 2
+    },
+    "manifolds": [
+      {
+        "multiplicity": 1,
+        "n": 1,
+        "n_comp": 1,
+        "first_spin_free": 1,
+        "first_state": 1
+      },
+      {
+        "multiplicity": 3,
+        "n": 1,
+        "n_comp": 3,
+        "first_spin_free": 2,
+        "first_state": 2
+      }
+    ]
+  }
+}

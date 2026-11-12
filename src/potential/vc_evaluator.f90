@@ -26,6 +26,7 @@ module vc_evaluator_mod
         procedure :: eval_diab => vc_eval_diab
         procedure :: get_derivative_target_coord => vc_get_derivative_target_coord
         procedure :: get_reference_geometry => vc_get_reference_geometry
+        procedure :: default_reference => vc_default_reference
         procedure :: get_oscill => vc_get_oscill
     end type vc_evaluator
 
@@ -151,6 +152,15 @@ contains
         if (coordinates /= 'cartesian' .or. self%cartesian_frame /= 'fixed') return
         if (allocated(self%model%nm%ref_geom)) geom = self%model%nm%ref_geom
     end subroutine vc_get_reference_geometry
+
+
+    !> The reference of the template, q = 0.
+    subroutine vc_default_reference(self, geom)
+        class(vc_evaluator), intent(in) :: self
+        real(dp), allocatable, intent(out) :: geom(:, :)
+
+        allocate(geom(1, self%ndof), source=0.0_dp)
+    end subroutine vc_default_reference
 
 
     subroutine vc_eval_diab(self)

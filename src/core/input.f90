@@ -19,6 +19,7 @@ module input_mod
     use file_mod, only : reader
     use constants
     use vc_evaluator_mod, only : vc_evaluator
+    use evaluator_effective_spin_mod, only : effective_spin_evaluator
     use evaluator_base_mod, only : potential_evaluator
     use tsh_method_mod, only : tsh_none
     use sh_ld_mod, only : tsh_ld
@@ -38,6 +39,10 @@ module input_mod
     character(len=:), allocatable :: geominp !< Name of geometry input file.
     character(len=:), allocatable :: veloinp !< Name of velocity input file.
     character(len=:), allocatable :: pcinp !< Name of partial charges input file.
+    character(len=:), allocatable :: refinp !< Name of the reference geometry file.
+    character(len=:), allocatable :: effective_model !< Model of the effective spin-orbit
+                                                     !! couplings (effective_spin_states), or off.
+    logical :: effective_signed = .true. !< Signs of the effective couplings by continuity.
     real(dp) :: tol_cns
     real(dp) :: mb_temperature = -1.0_dp
     integer :: istate = 0 !< Initial active state.
@@ -101,6 +106,7 @@ contains
         geominp = 'geom'
         veloinp = 'veloc'
         pcinp = 'pcharge'
+        effective_model = 'off'
         ctrl%output_dir = 'Results'
         ctrl%bufile = 'backup.dat'
         ctrl%printerval = 1
@@ -235,6 +241,10 @@ contains
                 call read_velo()
             end select
         end if
+
+        ! Replace the potential by its effective spin states. This needs the geometry to check
+        ! the reference geometry, and must come before the method is set up in read_surfhop.
+        call set_effective_spin_states()
 
         ! Followed by optional keywords.
         call read_dynamics(readf)
@@ -532,7 +542,7 @@ contains
     !! In this section, programs to run the QM and MM calculations are selected.
     !----------------------------------------------------------------------------------------------
     subroutine read_method(readf)
-        use tully_mod, only : tully_model
+        use model_1d_mod, only : model_1d_evaluator
         type(reader), intent(inout) :: readf
         logical :: qlib
 
@@ -582,9 +592,9 @@ contains
                         &the Quantics interface. Rebuild with QUANTICS=ON.')
 #endif
                 case('model')
-                    allocate(tully_model :: tr1%pot)
+                    allocate(model_1d_evaluator :: tr1%pot)
                     select type(p => tr1%pot)
-                    type is (tully_model)
+                    type is (model_1d_evaluator)
                         call p%init(readf%args(3:))
                     end select
                 case('vibronic_coupling')
@@ -709,6 +719,38 @@ contains
                 cartesian_frame = tolower(readf%args(2)%s)
             case('spin_states')
                 spin_states = tolower(readf%args(2)%s)
+            case('effective_spin_states')
+                if (readf%narg < 2) then
+                    call errstop('read_system', 'effective_spin_states keyword requires a value.')
+                end if
+                effective_model = tolower(readf%args(2)%s)
+                effective_signed = .true.
+                do i = 3, readf%narg
+                    select case(tolower(readf%args(i)%s))
+                    case('unsigned')
+                        effective_signed = .false.
+                    case default
+                        write(stderr, *) 'Error in Input module, read_system subroutine.'
+                        write(stderr, *) '  Unrecognized effective_spin_states option: ',         &
+                        &                readf%args(i)%s
+                        write(stderr, *) '  Expected: effective_spin_states ',                     &
+                        &                'off|projection|rss|rms|sq3 [unsigned]'
+                        stop
+                    end select
+                end do
+                select case(effective_model)
+                case('off', 'projection', 'rss', 'rms', 'sq3')
+                case default
+                    write(stderr, *) 'Error in Input module, read_system subroutine.'
+                    write(stderr, *) '  Unrecognized effective_spin_states value: ', effective_model
+                    write(stderr, *) '  Expected off, projection, rss, rms or sq3.'
+                    stop
+                end select
+            case('reference_geometry')
+                if (readf%narg < 2) then
+                    call errstop('read_system', 'reference_geometry keyword requires a file name.')
+                end if
+                refinp = readf%args(2)%s
             case default
                 write(stderr, *) 'Warning in Input module, read_system subroutine.'
                 write(stderr, *) '  Skipping line with unrecognized keyword:'
@@ -760,6 +802,104 @@ contains
             call tr1%pot%set_spin_manifolds(nstate, multiplicity, spin_states)
         end if
     end subroutine read_system
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: set_effective_spin_states
+    !> @brief Replace the potential by a model of effective spin states built from its spin
+    !! components (effective_spin_states keyword).
+    !> @details
+    !! The effective_spin_evaluator keeps a copy of the potential, and the original is
+    !! deallocated. The combination of the triplet components is computed at the geometry of the
+    !! reference_geometry file, in the classical coordinates of the trajectory, or at the default
+    !! reference of the potential. Without states of higher multiplicity, the keyword is ignored.
+    !----------------------------------------------------------------------------------------------
+    subroutine set_effective_spin_states()
+        type(effective_spin_evaluator), allocatable :: eff
+        real(dp), allocatable :: ref_geom(:, :)
+
+        if (effective_model == 'off') then
+            if (allocated(refinp)) then
+                write(stderr, *) 'Warning in Input module, set_effective_spin_states subroutine.'
+                write(stderr, *) '  reference_geometry is only used with effective_spin_states. ', &
+                &                'Ignoring it.'
+            end if
+            return
+        end if
+        if (all(tr1%pot%manifold%mult == 1)) then
+            write(stderr, *) 'Warning in Input module, set_effective_spin_states subroutine.'
+            write(stderr, *) '  All states are singlets. Ignoring effective_spin_states.'
+            return
+        end if
+
+        allocate(eff)
+        if (allocated(refinp)) then
+            if (stdp2) write(stdout, '(1x,a,a,a)') 'Reading reference geometry file ', refinp, '.'
+            ref_geom = read_reference_geometry(refinp)
+            call eff%init(tr1%pot, effective_model, ref_geom, tr1%classical_coordinates,          &
+            &             signed=effective_signed)
+        else
+            call eff%init(tr1%pot, effective_model, signed=effective_signed)
+        end if
+        deallocate(tr1%pot)
+        call move_alloc(eff, tr1%pot)
+    end subroutine set_effective_spin_states
+
+
+    !----------------------------------------------------------------------------------------------
+    ! FUNCTION: read_reference_geometry
+    !> @brief Read a reference geometry from a file in the format of the geometry file.
+    !> @details
+    !! Only the coordinates are read. The geometry must have the shape of the initial geometry.
+    !----------------------------------------------------------------------------------------------
+    function read_reference_geometry(fname) result(geom)
+        character(len=*), intent(in) :: fname
+        real(dp), allocatable :: geom(:, :)
+        type(reader) :: readf
+        logical :: check
+        integer :: n, i, d
+
+        inquire(file=fname, exist=check)
+        if (.not. check) then
+            write(stderr, *) 'Error in Input module, read_reference_geometry function.'
+            write(stderr, *) '  Reference geometry file (', fname, ') not found.'
+            stop
+        end if
+
+        call readf%open(fname, abort_on_eof=.false., comment='#')
+        n = 0
+        do
+            call readf%next()
+            if (is_iostat_end(readf%iostat)) exit
+            n = n + 1
+        end do
+        call readf%rewind()
+        allocate(geom(tr1%ndim, n))
+        do i = 1, n
+            call readf%next()
+            call readf%parseline(' ,')
+            if (readf%narg < tr1%ndim + 2) then
+                write(stderr, *) 'Error in Input module, read_reference_geometry function.'
+                write(stderr, '(3x,a,i0,2a)') 'Need ', 2 + tr1%ndim, ' arguments per line: ',     &
+                &                            'symbol mass coords'
+                write(stderr, *) '  Line: ', readf%line
+                stop
+            end if
+            do d = 1, tr1%ndim
+                read(readf%args(2+d)%s, *) geom(d, i)
+            end do
+        end do
+        call readf%close()
+
+        if (allocated(tr1%geom)) then
+            if (any(shape(geom) /= shape(tr1%geom))) then
+                write(stderr, *) 'Error in Input module, read_reference_geometry function.'
+                write(stderr, '(3x,a,i0,a,i0,a)') 'The reference geometry has ', n,              &
+                &   ' atoms. The geometry has ', size(tr1%geom, 2), '.'
+                stop
+            end if
+        end if
+    end function read_reference_geometry
 
 
     !----------------------------------------------------------------------------------------------
@@ -954,13 +1094,25 @@ contains
         type is (tsh_lz)
             wf%en_err = ctrl%qm_en_err
         type is (tsh_ld)
-            if (tr1%pot%spin_states == 'effective' .and. any(tr1%pot%manifold%mult > 1)) then
+            select type(pot => tr1%pot)
+            type is (effective_spin_evaluator)
                 write(stderr, *) 'Warning in Input module, read_surfhop subroutine.'
-                write(stderr, *) '  LD-FSSH with effective spin states. The spin-adiabatic ',     &
-                &                'states are built from the effective couplings, which is only'
-                write(stderr, *) '  exact when each state of higher multiplicity couples to a ',  &
-                &                'single state of lower multiplicity.'
-            end if
+                write(stderr, *) '  LD-FSSH with effective_spin_states '//pot%soc_model//'. The ', &
+                &                'spin-adiabatic states are built'
+                write(stderr, *) '  from the effective couplings, which is only exact (for rms ',  &
+                &                'and sq3, up to their scaling)'
+                write(stderr, *) '  for singlet-triplet couplings of rank 1.'
+                write(stderr, '(3x,a,f8.6,a)') 'Retained fraction of the couplings at the '//    &
+                &                              'reference geometry: ', pot%ref_fraction, '.'
+            class default
+                if (pot%spin_states == 'effective' .and. any(pot%manifold%mult > 1)) then
+                    write(stderr, *) 'Warning in Input module, read_surfhop subroutine.'
+                    write(stderr, *) '  LD-FSSH with effective spin states. The spin-adiabatic ', &
+                    &                'states are built from the effective couplings, which is only'
+                    write(stderr, *) '  exact when each state of higher multiplicity couples to ', &
+                    &                'a single state of lower multiplicity.'
+                end if
+            end select
         end select
 
         ! The rest of the section is not read without hopping.
@@ -1148,17 +1300,6 @@ contains
         case('lz_min_dt')
             read(readf%args(2)%s, *) wf%min_dt
             wf%min_dt = wf%min_dt / aut_fs
-        case('lz_isc_coupling')
-            select case(tolower(readf%args(2)%s))
-            case('rss', 'rms', 'initial_mean')
-                wf%isc_coupling = tolower(readf%args(2)%s)
-            case default
-                write(stderr, *) 'Error in Input module, read_lz_option subroutine.'
-                write(stderr, *) '  Unrecognized lz_isc_coupling option. Expected rss, rms or ',  &
-                &                'initial_mean.'
-                write(stderr, '(2x,a)') readf%line
-                stop
-            end select
         end select
     end subroutine read_lz_option
 

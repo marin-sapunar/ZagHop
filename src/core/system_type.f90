@@ -71,6 +71,7 @@ module system_type_mod
     contains
         procedure :: writestep => traj_writestep
         procedure :: writeheader => traj_writeheader
+        procedure :: write_state_layout => traj_write_state_layout
         procedure :: open_files => traj_open_files
         procedure :: tote => traj_tote !< Total energy of the system.
         procedure :: kine => traj_kine !< Kinetic energy of the system.
@@ -737,6 +738,37 @@ contains
             end if
         end if
     end subroutine traj_writeheader
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: traj_write_state_layout
+    !> @brief Write the layout of the electronic states to the file states.json.
+    !> @details
+    !! The file gives the format version, the basis of the dynamics (dynamics_basis), in which the
+    !! cst and qe columns of energy.dat are given, and the layout of the states of the potential
+    !! (see add_state_layout of the potential).
+    !----------------------------------------------------------------------------------------------
+    subroutine traj_write_state_layout(t, res_dir)
+        use json_module, only : json_core, json_value
+        class(system_type), intent(in) :: t
+        character(len=*), intent(in) :: res_dir !< Directory for writing results.
+        integer, parameter :: format_version = 1
+        type(json_core) :: json
+        type(json_value), pointer :: root
+
+        call json%initialize()
+        call json%create_object(root, '')
+        call json%add(root, 'format_version', format_version)
+        call json%add(root, 'dynamics_basis', t%wf%basis)
+        call t%pot%add_state_layout(json, root)
+        call json%print(root, res_dir//'/states.json')
+        call json%destroy(root)
+        if (json%failed()) then
+            write(stderr, *) 'Warning in system_type_mod, traj_write_state_layout subroutine.'
+            write(stderr, *) '  Failed to write '//res_dir//'/states.json.'
+            call json%clear_exceptions()
+        end if
+    end subroutine traj_write_state_layout
 
 
 end module system_type_mod

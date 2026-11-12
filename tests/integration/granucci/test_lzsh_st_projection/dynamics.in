@@ -1,0 +1,17 @@
+$method
+ seed 7
+ qlib model granucci-st r_sigma 8
+ qm_en_error = 1.0e-13
+$system
+ geometry geom
+ ndim = 1
+ istate = 1
+ effective_spin_states projection
+$surfhop lz
+ velocity vel
+$dynamics
+ time = 50.0
+ tstep = 0.1
+$output
+ noprint 2,4,5,6,8-11
+$end

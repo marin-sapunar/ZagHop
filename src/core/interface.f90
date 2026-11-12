@@ -28,7 +28,6 @@ contains
     subroutine run_qm(t, hop)
         use system_type_mod, only : system_type, vc_potential
         use matrix_mod, only : unit_mat
-        use tully_mod, only : tully_model
         use json_module, only : json_core, json_file, json_value
         type(system_type), intent(inout) :: t
         logical, intent(in) :: hop

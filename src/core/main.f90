@@ -71,6 +71,7 @@ program zaghop
             call system('mkdir -p '//ctrl%output_dir)
             call tr1%open_files(ctrl%print, ctrl%print_units, ctrl%output_dir)
             call tr1%writeheader(ctrl%print, ctrl%print_units)
+            call tr1%write_state_layout(ctrl%output_dir)
             call write_status(abort_flag)
         end if
         ! Run energy/gradient calculation for initial geometry.
@@ -176,6 +177,7 @@ program zaghop
         write(stdout, *) '                         FINISHING MAIN PROGRAM LOOP                           '
         write(stdout, *) '-------------------------------------------------------------------------------'
         write(stdout, *)
+        call tr1%pot%print_summary(stdout)
         call mainclock%print(stdout, ' Total run time:')
     end if
 
