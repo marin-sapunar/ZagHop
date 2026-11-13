@@ -13,7 +13,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install libblas-dev liblapack-dev
+          sudo apt install -y libblas-dev liblapack-dev
       - name: Setup Python
         uses: actions/setup-python@v6
       - name: Install dependencies

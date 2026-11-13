@@ -99,9 +99,6 @@ module control_var
         !------------------------------------------------------------------------------------------
         ! Surface hopping options. The method and its own options are held in tr1%wf.
         !------------------------------------------------------------------------------------------
-        logical :: soc !< Signal to include spin-orbit coupling in the Hamiltonian.
-        logical :: sodegen ! spin-orbit degeneration treatment
-        logical :: socbas ! spin-obit basis representation
 
         character(len=:), allocatable :: tdc_type !< Method for calculating the time-derivative coupling matrix:
         !! - 'hst' - Use wave function overlaps with the Hammes-Schiffer/Tully method.

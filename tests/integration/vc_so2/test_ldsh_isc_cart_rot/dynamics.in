@@ -8,7 +8,6 @@ $surfhop ld-fssh
  velocity nadvec
  tdse_steps 1
  prob_formula sharc
- soc
 $dynamics
  tstep = 0.1
  max_time =   100.0000

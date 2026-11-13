@@ -136,9 +136,6 @@ contains
         ctrl%orientlvl = 0
         tol_cns = 0.000000000001_dp ! Default rattle tolerance.
         ! Surface hopping options.
-        ctrl%sodegen = .true.
-        ctrl%soc = .false.
-        ctrl%socbas = .false.
         ctrl%tdc_type = 'hst'
         ctrl%tdc_interpolate = 2
         ctrl%ene_interpolate = 2
@@ -1144,10 +1141,6 @@ contains
                 ctrl%tdc_type = "nadvec"
             case('npi', 'overlap_npi')
                 ctrl%tdc_type = "npi"
-            case('soc', 'soc_degen')
-                ctrl%soc= .true.
-            case('socbas') ! Spin-orbit basis representation
-               ctrl%socbas=.true.
             case('adt', 'overlap_adt')
                 ctrl%adt = .true.
             case('energy')
