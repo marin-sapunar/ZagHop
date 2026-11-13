@@ -378,7 +378,8 @@ program sh_test
     !> Intersystem crossing between a singlet and a triplet, from either state, given as
     !! components and as an effective state. The squared coupling summed over the components is
     !! s2 = |h|**2 at t = 0 and 4 |h|**2 at t = 100, and the crossing is at t = 25, so the
-    !! interpolated s2 is 1.75 |h|**2. The gap slope is 0.04 / 100.
+    !! interpolated s2 is 1.75 |h|**2. The gap slope is 0.04 / 100. The probability uses the
+    !! root-sum-square coupling in both directions.
     integer function lz_isc_test() result(ret)
         use global_defs, only : dp
         use sh_lz_mod, only : tsh_lz
@@ -390,29 +391,23 @@ program sh_test
 
         s2 = 1.75_dp * sum(h**2)
 
-        ! S -> T. The singlet has a single component, so initial_mean is the same as rss.
+        ! S -> T.
         ret = 1
-        if (abs(isc_prob(lz, 'components', 'rss', 1, h) - p_isc(s2)) > tiny) return
+        if (abs(isc_prob(lz, 'components', 1, h) - p_isc(s2)) > tiny) return
         if (lz%n_state /= 2 .or. size(lz%prob) /= 2) return
-        if (abs(isc_prob(lz, 'components', 'rms', 1, h) - p_isc(s2 / 3)) > tiny) return
-        if (abs(isc_prob(lz, 'components', 'initial_mean', 1, h) - p_isc(s2)) > tiny) return
 
         ! T -> S.
         ret = 2
-        if (abs(isc_prob(lz, 'components', 'rss', 2, h) - p_isc(s2)) > tiny) return
-        if (abs(isc_prob(lz, 'components', 'rms', 2, h) - p_isc(s2 / 3)) > tiny) return
-        if (abs(isc_prob(lz, 'components', 'initial_mean', 2, h) - p_isc(s2 / 3)) > tiny) return
+        if (abs(isc_prob(lz, 'components', 2, h) - p_isc(s2)) > tiny) return
 
         ! The effective state with the root-sum-square coupling gives the same probabilities.
         ret = 3
-        if (abs(isc_prob(lz, 'effective_rss', 'rss', 1, h) - p_isc(s2)) > tiny) return
-        if (abs(isc_prob(lz, 'effective_rss', 'rms', 2, h) - p_isc(s2 / 3)) > tiny) return
-        if (abs(isc_prob(lz, 'effective_rss', 'initial_mean', 2, h) - p_isc(s2 / 3)) > tiny)    &
-        &   return
+        if (abs(isc_prob(lz, 'effective_rss', 1, h) - p_isc(s2)) > tiny) return
+        if (abs(isc_prob(lz, 'effective_rss', 2, h) - p_isc(s2)) > tiny) return
 
         ! A strong coupling gives a hop at the latest point.
         ret = 4
-        if (.not. isc_prob(lz, 'components', 'rss', 1, 100 * h) > 0.999_dp) return
+        if (.not. isc_prob(lz, 'components', 1, 100 * h) > 0.999_dp) return
         if (lz%active_state /= 2 .or. .not. lz%request%hop .or. .not. lz%request%isc) return
         if (lz%request%previous_state /= 1 .or. lz%request%action /= request_none) return
         ret = 0
@@ -430,7 +425,7 @@ program sh_test
 
     !> Run the crossing of lz_isc_test from spin-free state active (1 singlet, 2 triplet) and
     !! return the probability of the hop to the other state.
-    real(dp) function isc_prob(lz, spin_states, coupling, active, h) result(prob)
+    real(dp) function isc_prob(lz, spin_states, active, h) result(prob)
         use global_defs, only : dp
         use sh_test_mod, only : scripted_evaluator
         use sh_lz_mod, only : tsh_lz
@@ -438,7 +433,6 @@ program sh_test
         use random_pcg_mod, only : rng_pcg_xsh_rr
         type(tsh_lz), intent(out) :: lz
         character(len=*), intent(in) :: spin_states
-        character(len=*), intent(in) :: coupling
         integer, intent(in) :: active
         real(dp), intent(in) :: h(3) !< Couplings of the singlet and the triplet components at t = 0.
         type(scripted_evaluator) :: pot
@@ -448,7 +442,6 @@ program sh_test
         call rng%init(1)
         call pot%setup([1, 1], [1, 3], spin_states)
         call lz%initialize(rng, pot, active)
-        lz%isc_coupling = coupling
         lz%en_err = 1.0e-13_dp
 
         call pot%set_soc(st_soc(pot%n_state, h))

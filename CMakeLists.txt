@@ -194,6 +194,22 @@ project(ZagHop LANGUAGES Fortran)
   target_include_directories(pot_test PRIVATE
                              $<TARGET_PROPERTY:jsonfortran,BINARY_DIR>)
   add_test(NAME pot_unit_test COMMAND pot_test)
+  # Cases which should stop with an error.
+  add_test(NAME pot_unit_test_effective_doublet COMMAND pot_test doublet)
+  set_tests_properties(pot_unit_test_effective_doublet PROPERTIES
+    PASS_REGULAR_EXPRESSION "only implemented for singlets and triplets")
+  add_test(NAME pot_unit_test_effective_source COMMAND pot_test effective)
+  set_tests_properties(pot_unit_test_effective_source PROPERTIES
+    PASS_REGULAR_EXPRESSION "need a potential with spin_states = components")
+  add_test(NAME pot_unit_test_effective_no_coupling COMMAND pot_test no_coupling)
+  set_tests_properties(pot_unit_test_effective_no_coupling PROPERTIES
+    PASS_REGULAR_EXPRESSION "No singlet-triplet spin-orbit coupling at the reference")
+  add_test(NAME pot_unit_test_effective_unsigned_projection COMMAND pot_test unsigned_projection)
+  set_tests_properties(pot_unit_test_effective_unsigned_projection PROPERTIES
+    PASS_REGULAR_EXPRESSION "The projection model is always signed")
+  add_test(NAME pot_unit_test_model_parameter COMMAND pot_test model_parameter)
+  set_tests_properties(pot_unit_test_model_parameter PROPERTIES
+    PASS_REGULAR_EXPRESSION "Unrecognized parameter of model granucci-st: sigma")
 
   add_executable(sh_test tests/unit/sh_test.f90)
   target_link_libraries(sh_test zagcore)

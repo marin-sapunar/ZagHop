@@ -79,6 +79,10 @@ class ZagHopTest(unittest.TestCase):
         ref = np.loadtxt(os.path.join(refdir, fname), comments="#")
         self.assertTrue(np.allclose(new, ref), f"Difference in {fname} file.")
 
+    def load_reference(self, test, fname):
+        """ Load a file from the Reference directory of another test. """
+        return np.loadtxt(os.path.join(self.idir, test, "Reference", fname), comments="#")
+
     def angular_momentum(self):
         """ Angular momentum (atomic units) about the centre of mass at each printed step.
 
