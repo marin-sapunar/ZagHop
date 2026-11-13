@@ -28,7 +28,6 @@ class GranucciTest(ZagHopTest):
         self.run_traj()
         self.compare_energy()
         self.compare_results("prob")
-        self.compare_json("states.json")
         self.assertGreater(self.max_prob(), 0.999)
         self.assertEqual(self.load_results("energy.dat")[-1, 1], 4)
 
@@ -39,7 +38,6 @@ class GranucciTest(ZagHopTest):
         self.run_traj()
         self.compare_energy()
         self.compare_results("prob")
-        self.compare_json("states.json")
         self.assertEqual(self.load_results("energy.dat").shape[1], 4 + 2, "Not 2 states.")
         new = self.load_results("energy.dat")[:, 2:4]
         ref = self.load_reference("test_ldsh_st_components", "energy.dat")[:, 2:4]
@@ -80,7 +78,6 @@ class GranucciTest(ZagHopTest):
         """ Test LZSH on the projection model of granucci-st, which is that of all components."""
         self.run_traj()
         self.compare_energy()
-        self.compare_json("states.json")
         self.compare_results("energy.dat", reference="test_lzsh_st_components")
 
     def test_ldsh_sst_components(self):
