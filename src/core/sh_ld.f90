@@ -19,6 +19,9 @@ module sh_ld_mod
     private
     public :: tsh_ld
 
+    real(dp), parameter :: prob_thresh = 1.0e-14_dp !< Threshold for the population loss of the
+    !! active state and the denominators in the hopping probability formulas.
+
 
     type, extends(tsh_method) :: tsh_ld
         character(len=:), allocatable :: representation
@@ -189,6 +192,14 @@ contains
     end subroutine ld_write_coefficients
 
 
+    !----------------------------------------------------------------------------------------------
+    ! FUNCTION: prob_sharc
+    !> @brief Hopping probabilities from the SHARC formula (Mai et al., doi: 10.1002/wcms.1370,
+    !! eq. 12)
+    !> @details
+    !! Negative probabilities are set to zero and the probabilities are renormalized if their sum
+    !! exceeds 1.
+    !----------------------------------------------------------------------------------------------
     pure function prob_sharc(b, c_t, c_dt, p) result(prob)
         integer, intent(in) :: b
         complex(dp), intent(in) :: c_t(:)
@@ -196,38 +207,60 @@ contains
         complex(dp), intent(in) :: p(:, :)
         real(dp) :: prob(size(c_t))
         real(dp) :: b_diff
+        real(dp) :: psum
         integer :: a
-        real(dp), parameter :: tiny = 1.0e-10_dp
 
         prob = 0.0_dp
         b_diff = 1 - abs(c_dt(b))**2 / abs(c_t(b))**2
-        if (abs(b_diff) <= tiny) return
+        if (b_diff <= prob_thresh) return
         do a = 1, size(c_t)
             if (a == b) cycle
             prob(a) = max(b_diff * real(c_dt(a) * conjg(p(a, b)) * conjg(c_t(b))) / &
             &         (abs(c_t(b))**2 - real(c_dt(b) * conjg(p(b, b)) * conjg(c_t(b)))), 0.0_dp)
         end do
+        psum = sum(prob)
+        if (psum > 1.0_dp) prob = prob / psum
     end function prob_sharc
 
 
+    !----------------------------------------------------------------------------------------------
+    ! FUNCTION: prob_ld01
+    !> @brief Hopping probabilities from the LD01 formula (Granucci et al., doi: 10.1063/1.1376633,
+    !! eqs. 17 and 19).
+    !> @details
+    !! Negative probabilities are set to zero. The denominator vanishes when the population of the
+    !! states other than m is zero at the start of the step, where the formula is undefined; all
+    !! probabilities are then set to zero.
+    !----------------------------------------------------------------------------------------------
     pure function prob_ld01(m, c_t, c_dt, ubar) result(prob)
         integer, intent(in) :: m
         complex(dp), intent(in) :: c_t(:)
         complex(dp), intent(in) :: c_dt(:)
         complex(dp), intent(in) :: ubar(:, :)
         real(dp) :: prob(size(c_t))
+        real(dp) :: den
         integer :: n
 
         prob = 0.0_dp
+        den = abs(c_dt(m))**2 - real(ubar(m, m) * c_t(m) * conjg(c_dt(m)))
+        if (abs(den) <= prob_thresh) return
         do n = 1, size(c_t)
             if (m == n) cycle
-            prob(n) = -real(ubar(m, n) * c_t(n) * conjg(c_dt(m))) / abs(c_t(m))**2 * &
-                      (abs(c_dt(m))**2 - abs(c_t(m))**2) / &
-                      (abs(c_dt(m))**2 - real(ubar(m, m) * c_t(m) * conjg(c_dt(m))))
+            prob(n) = max(-real(ubar(m, n) * c_t(n) * conjg(c_dt(m))) / abs(c_t(m))**2 *     &
+            &             (abs(c_dt(m))**2 - abs(c_t(m))**2) / den, 0.0_dp)
         end do
     end function prob_ld01
 
 
+    !----------------------------------------------------------------------------------------------
+    ! FUNCTION: prob_ld01_l
+    !> @brief Hopping probabilities from the LD01-L formula (Qiu et al., doi: 10.1021/acs.jctc.3c00126,
+    !! eq. 20).
+    !> @details
+    !! The Tully FSSH formula with T_mn*dt replaced by the overlap u_mn, so it is only valid to first
+    !! order in the change of the adiabatic states over the step. Negative probabilities are set to
+    !! zero.
+    !----------------------------------------------------------------------------------------------
     pure function prob_ld01_l(m, c_t, c_dt, u) result(prob)
         integer, intent(in) :: m
         complex(dp), intent(in) :: c_t(:)
@@ -244,6 +277,13 @@ contains
     end function prob_ld01_l
 
 
+    !----------------------------------------------------------------------------------------------
+    ! FUNCTION: prob_ld19
+    !> @brief Hopping probabilities from the LD19 formula (Qiu et al., doi: 10.1021/acs.jctc.3c00126,
+    !! eqs. 21-24).
+    !> @details
+    !! All probabilities are zero if no state coupled to m (u(m, n) /= 0) gains population.
+    !----------------------------------------------------------------------------------------------
     pure function prob_ld19(m, c_t, c_dt, u) result(prob)
         integer, intent(in) :: m
         complex(dp), intent(in) :: c_t(:)
@@ -252,10 +292,11 @@ contains
         real(dp) :: prob(size(c_t))
         integer :: n
         real(dp) :: w_m
+        real(dp) :: psum
 
         prob = 0.0_dp
         w_m = (1 - abs(c_dt(m))**2 / abs(c_t(m))**2)
-        if (w_m <= 0.0_dp) return
+        if (w_m <= prob_thresh) return
 
         do n = 1, size(c_t)
             if (m == n) cycle
@@ -263,7 +304,9 @@ contains
             prob(n) = sqrt(max(abs(c_dt(n))**2 - abs(c_t(n))**2, 0.0_dp)) * abs(u(m, n))
         end do
 
-        prob = w_m * prob / sum(prob)
+        psum = sum(prob)
+        if (psum <= 0.0_dp) return
+        prob = w_m * prob / psum
     end function prob_ld19
 
 
