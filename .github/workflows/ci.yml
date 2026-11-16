@@ -1,29 +1,49 @@
 name: CI
 
-on: 
+on:
   push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
         with:
           submodules: recursive
-      - name: Install dependencies
+
+      - name: Install system dependencies
         run: |
-          sudo apt update
-          sudo apt install -y libblas-dev liblapack-dev
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libblas-dev liblapack-dev
+
       - name: Setup Python
         uses: actions/setup-python@v6
-      - name: Install dependencies
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install numpy
-      - name: Run CMake
+          python -m pip install numpy setuptools
+
+      - name: Configure
         run: cmake --preset release
+
       - name: Build
-        run: cmake --build --preset release
-      - name: Run ZagHop Tests
-        working-directory: ./build/release
-        run: ctest
+        run: cmake --build --preset release --parallel
+
+      - name: Test
+        working-directory: build/release
+        run: ctest --output-on-failure
