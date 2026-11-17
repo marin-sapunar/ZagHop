@@ -12,6 +12,13 @@
 ! evaluator declares the Quantics order (component_order = 'by_state'), and the base class
 ! reorders the diabatic potential after each evaluation (set_full_hamiltonian).
 !
+! The classical coordinates are the dynamical DOFs of the operator (spfdof(:, 1)), as written by
+! Quantics in the geom and veloc files. For DD in Cartesian coordinates, they are the Cartesian
+! coordinates of the atoms (classical_coordinates = 'cartesian', geometry (3, natom)), and otherwise
+! one value per DOF (classical_coordinates = 'quantics', geometry (1, ndof)). Quantics uses the same
+! rule. The masses are the effective masses of the kinetic energy terms of the operator
+! (tshdofmass). For DD in Cartesians, these are the atom masses (equal for the x, y, z of an atom).
+!
 ! For direct dynamics (DD) operators, the potential is interpolated from a Quantics database (DB).
 ! The trajectory is treated as a single GWP by the Quantics DD routines. If the DB is not read-only,
 ! new quantum chemistry calculations are run and added to the DB as required at each step.
@@ -32,7 +39,7 @@ module quantics_interface_mod
     use dirdyn, only: dercpdim,ndofddpes,&
         dbnrec,nactdim,natmtsh,ldbsave,&
         lupdhes,lnactdb,lddrddb,lddwrdb,ddtrajnum,num_gp,&
-        dddiab,ddupdate,lddsoc
+        dddiab,ddupdate,lddsoc,tshdofmass,ltshdofmass
     use dirdyn, only: alloc_dirdyn,alloc_dddb0,alloc_dddb,atnam,nsmult,imultmap
     use directdyn
     use potevalmod, only: calcdiab,calcdiabder,calcvreps,calcpes,calcpesder
@@ -60,41 +67,108 @@ module quantics_interface_mod
         procedure :: set_geometry => quantics_set_geometry
         procedure :: eval_diab => quantics_eval_diab
         procedure :: default_reference => quantics_default_reference
-        !   procedure :: get_oscill => quantics_get_oscill
+        procedure :: check_atoms => quantics_check_atoms
     end type quantics_interface
 
 
 contains
 
-    !> The origin of the dynamical coordinates of the operator, q = 0.
+    !> The origin of the dynamical coordinates of the operator, q = 0. There is no default
+    !! reference for DD in Cartesian coordinates.
     subroutine quantics_default_reference(self, geom)
         class(quantics_interface), intent(in) :: self
         real(dop), allocatable, intent(out) :: geom(:, :)
 
-        allocate(geom(1, self%ndof), source=0.0_dop)
+        if (self%classical_coordinates == 'quantics') then
+            allocate(geom(1, self%ndof), source=0.0_dop)
+        end if
     end subroutine quantics_default_reference
 
 
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: quantics_check_atoms
+    !> @brief Check the masses of the system against the masses of the operator.
+    !> @details
+    !! With one mass per DOF (ndim = 1), the masses are compared with the effective masses of the
+    !! kinetic energy terms (tshdofmass). With one mass per atom (DD in Cartesians), they are
+    !! compared with the mass of the x coordinate of each atom. Labels are not checked. Oper files written before
+    !! tshdofmass was added are not checked. The tolerance allows for masses given with 6
+    !! significant digits.
+    !----------------------------------------------------------------------------------------------
+    subroutine quantics_check_atoms(self, sym, mass)
+        class(quantics_interface), intent(in) :: self
+        character(len=*), intent(in) :: sym(:) !< Atom symbols.
+        real(dop), intent(in) :: mass(:) !< Atom masses (amu).
+        real(dop), parameter :: tol = 1.0e-5_dop
+        real(dop), allocatable :: ref(:)
+        integer :: i
+
+        if (.not. ltshdofmass) return
+        if (size(mass) == self%ndof) then
+            ref = [(tshdofmass(spfdof(i, 1)), i = 1, self%ndof)]
+        else if (self%classical_coordinates == 'cartesian' .and. size(mass) == self%ndof / 3) then
+            ref = [(tshdofmass(spfdof(3 * i - 2, 1)), i = 1, self%ndof / 3)]
+        else
+            write(stderr, *) 'Error in quantics_mod, check_atoms subroutine.'
+            write(stderr, '(3x,a,i0,a,i0,a)') 'The system has ', size(mass),                       &
+            &   ' atoms. The operator has ', self%ndof, ' dynamical DOFs.'
+            stop
+        end if
+        ref = ref / Da_me
+        do i = 1, size(mass)
+            if (abs(mass(i) - ref(i)) > tol * ref(i)) then
+                write(stderr, *) 'Error in quantics_mod, check_atoms subroutine.'
+                write(stderr, '(3x,a,i0,3a)') 'Mass of atom ', i, ' (', trim(sym(i)),              &
+                &   ') does not match the operator.'
+                write(stderr, '(3x,a,es18.10,a,es18.10,a)') 'Input: ', mass(i), ' amu, operator: ', &
+                &   ref(i), ' amu.'
+                stop
+            end if
+        end do
+    end subroutine quantics_check_atoms
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: quantics_set_geometry
+    !> @brief Set the dynamical coordinates of the operator.
+    !> @details
+    !! Accepts one value per DOF ('quantics', shape (1, ndof)) and, for DD in Cartesians, the
+    !! Cartesian coordinates of the atoms ('cartesian', shape (3, ndof/3)). The DOFs of each atom
+    !! are x, y, z in the order of the atoms, so both give the same flat vector, and gradients and
+    !! couplings need no conversion.
+    !----------------------------------------------------------------------------------------------
     subroutine quantics_set_geometry(self, geometry, coordinates)
         class(quantics_interface), intent(inout) :: self
         real(dop), intent(in) :: geometry(:, :)
         character(len=*), intent(in) :: coordinates
         integer :: n
 
-        if (coordinates /= self%classical_coordinates) then
+        select case(coordinates)
+        case('quantics')
+            if (size(geometry, 1) /= 1 .or. size(geometry, 2) /= self%ndof) then
+                write(stderr, *) 'Error in quantics_mod, set_geometry subroutine.'
+                write(stderr, *) '  Geometry should have dimensions (1, ndof).'
+                stop
+            end if
+        case('cartesian')
+            if (self%classical_coordinates /= 'cartesian') then
+                write(stderr, *) 'Error in quantics_mod, set_geometry subroutine.'
+                write(stderr, *) '  Cartesian coordinates are only available for DD in Cartesians.'
+                stop
+            end if
+            if (size(geometry, 1) /= 3 .or. size(geometry, 2) /= self%ndof / 3) then
+                write(stderr, *) 'Error in quantics_mod, set_geometry subroutine.'
+                write(stderr, *) '  Geometry should have dimensions (3, ndof/3).'
+                stop
+            end if
+        case default
             write(stderr, *) 'Error in quantics_mod, set_geometry subroutine.'
             write(stderr, *) '  Unsupported coordinates "'//coordinates//'". Expected "'//          &
             &                self%classical_coordinates//'".'
             stop
-        end if
+        end select
 
-        if (size(geometry, 1) /= 1 .or. size(geometry, 2) /= self%ndof) then
-            write(stderr, *) 'Error in quantics_mod, set_geometry subroutine.'
-            write(stderr, *) '  Geometry should have dimensions (1, ndof).'
-            stop
-        end if
-
-        self%q = geometry(1, :)
+        self%q = reshape(geometry, [self%ndof])
 
         ! Place dynamical coordinates at their Quantics DOF index (frozen DOFs are set in init).
         do n = 1, self%ndof
@@ -118,8 +192,6 @@ contains
         !integer(long) :: check
         !logical(kind=4) :: lcheck, lerr
         real(dop), external :: dlamch
-
-        self%classical_coordinates = 'quantics'
 
         open(ilog,file='quantics.log',status='unknown',position='append')
 
@@ -267,6 +339,13 @@ contains
         self%component_order = 'by_state'
         self%ndof = nspfdof(1)
         allocate(self%q(self%ndof), source=0.0_dop)
+
+        ! Coordinates of the trajectory, chosen as in Quantics (prop_zagreb).
+        if (ldd .and. ddcoo == 2) then
+            self%classical_coordinates = 'cartesian'
+        else
+            self%classical_coordinates = 'quantics'
+        end if
 
         ! Frozen coordinates are fixed at the centre of their basis.
         allocate(self%gpoint(maxdim), source=0.0_dop)

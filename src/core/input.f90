@@ -299,8 +299,10 @@ contains
             ctrl%max_tot_en_change_step = huge(ctrl%max_tot_en_change_step)
         end if
 
-        ! Atoms need to match the potential (for VC, the reference geometry of the normal modes).
-        if (tr1%classical_coordinates == 'cartesian') then
+        ! Atoms need to match the potential (for VC, the reference geometry of the normal modes;
+        ! for Quantics, the masses of the operator).
+        if (tr1%classical_coordinates == 'cartesian' .or.                                         &
+        &   tr1%classical_coordinates == 'quantics') then
             call tr1%pot%check_atoms(tr1%sym, tr1%mass / Da_me)
         end if
 
