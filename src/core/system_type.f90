@@ -10,6 +10,7 @@ module system_type_mod
     ! Import variables
     use global_defs
     use constants
+    use string_mod, only : pad_right
     use tsh_method_mod, only : tsh_method
     use vc_evaluator_mod
     use vc_model_mod
@@ -18,7 +19,6 @@ module system_type_mod
 
     private
     public :: system_type
-    public :: vc_potential !< TODO move to more appropriate place
     public :: vc_data
     public :: vc_nmode
     public :: trajectory_data, tr1, tr2
@@ -49,7 +49,7 @@ module system_type_mod
         character(len=:), allocatable :: classical_coordinates !< Coordinates of the classical
                                                                !! propagation (geom/velo).
         integer :: natom = 0 !< Total number of atoms.
-        character(len=2), allocatable :: sym(:) !< List of atom symbols.
+        character(len=16), allocatable :: sym(:) !< List of atom symbols (or DOF labels).
         real(dp), allocatable :: chrg(:) !< List of atom partial charges.
         real(dp), allocatable :: mass(:) !< List of atom masses.
         real(dp), allocatable :: geom(:, :) !< Geometry.
@@ -94,7 +94,6 @@ module system_type_mod
 
     type(vc_model), target :: vc_data !< LVC model for the system.
     type(normal_modes), target :: vc_nmode !< Normal modes of the LVC model.
-    type(vc_evaluator) :: vc_potential !< LVC potential interface for the system.
 
 
 contains
@@ -460,7 +459,7 @@ contains
             write(punit(2), *) t%natom
             write(punit(2), *) '# t= ', time_fs, 'fs, state=', t%wf%active_state
             do i = 1, t%natom
-                write(punit(2), 1003) t%sym(i), t%geom(:, i) * a0_A
+                write(punit(2), 1003) pad_right(t%sym(i), 2), t%geom(:, i) * a0_A
             end do
         end if
 
@@ -532,7 +531,7 @@ contains
 
 1001 format (f12.5,1x,i4)
 1002 format (1x,1000f18.10)
-1003 format (1x,a2,2x,1000f18.10)
+1003 format (1x,a,2x,1000f18.10)
 1006 format (1x,1000e22.12)
     end subroutine traj_writestep
 

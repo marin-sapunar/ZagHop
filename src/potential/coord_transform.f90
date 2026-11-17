@@ -209,8 +209,9 @@ contains
             &   abs(mass(i) - self%mass(i)) <= tol * self%mass(i)) cycle
             write(stderr, *) 'Error in coord_transform_mod, check_atoms subroutine.'
             write(stderr, '(3x,a,i0,a)') 'Atom ', i, ' does not match the reference geometry.'
-            write(stderr, '(5x,a,a2,a,f14.8)') 'Geometry:  ', sym(i), ', mass: ', mass(i)
-            write(stderr, '(5x,a,a2,a,f14.8)') 'Reference: ', self%sym(i), ', mass: ', self%mass(i)
+            write(stderr, '(5x,a,a,a,f14.8)') 'Geometry:  ', trim(sym(i)), ', mass: ', mass(i)
+            write(stderr, '(5x,a,a,a,f14.8)') 'Reference: ', trim(self%sym(i)), ', mass: ',         &
+            &                                 self%mass(i)
             write(stderr, *) '  File: ', self%v0_file
             stop
         end do

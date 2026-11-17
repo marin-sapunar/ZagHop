@@ -328,22 +328,26 @@ contains
             write(stdout, *)
             write(stdout, '(3x,a)') 'Initial geometry of the QM system: '
             do i = 1, tr1%qnatom
-                write(stdout, '(2x,a5,1000e18.10)') tr1%sym(tr1%qind(i)), tr1%geom(:, tr1%qind(i))
+                write(stdout, '(2x,a,1x,1000e18.10)') pad_right(tr1%sym(tr1%qind(i)), 4),     &
+                &                                     tr1%geom(:, tr1%qind(i))
             end do
             write(stdout, '(3x,a)') 'Initial velocity of the QM system: '
             do i = 1, tr1%qnatom
-                write(stdout, '(2x,a5,1000e18.10)') tr1%sym(tr1%qind(i)), tr1%velo(:, tr1%qind(i))
+                write(stdout, '(2x,a,1x,1000e18.10)') pad_right(tr1%sym(tr1%qind(i)), 4),     &
+                &                                     tr1%velo(:, tr1%qind(i))
             end do
         end if
         if (ctrl%mm .and. stdp2) then
             write(stdout, *)
             write(stdout, '(3x,a)') 'Initial geometry of the MM system: '
             do i = 1, tr1%mnatom
-                write(stdout, '(2x,a5,1000e18.10)') tr1%sym(tr1%mind(i)), tr1%geom(:, tr1%mind(i))
+                write(stdout, '(2x,a,1x,1000e18.10)') pad_right(tr1%sym(tr1%mind(i)), 4),     &
+                &                                     tr1%geom(:, tr1%mind(i))
             end do
             write(stdout, '(3x,a)') 'Initial velocity of the MM system: '
             do i = 1, tr1%mnatom
-                write(stdout, '(2x,a5,1000e18.10)') tr1%sym(tr1%mind(i)), tr1%velo(:, tr1%mind(i))
+                write(stdout, '(2x,a,1x,1000e18.10)') pad_right(tr1%sym(tr1%mind(i)), 4),     &
+                &                                     tr1%velo(:, tr1%mind(i))
             end do
         end if
     end subroutine read_input
@@ -362,7 +366,7 @@ contains
     !----------------------------------------------------------------------------------------------
     subroutine read_geom()
         logical :: check
-        character(len=2) :: tsym
+        character(len=16) :: tsym
         real(dp) :: tmass
         character :: part
         integer :: i

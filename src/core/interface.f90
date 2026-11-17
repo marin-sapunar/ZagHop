@@ -26,7 +26,7 @@ contains
     !! @todo UPDATE DOCS
     !----------------------------------------------------------------------------------------------
     subroutine run_qm(t, hop)
-        use system_type_mod, only : system_type, vc_potential
+        use system_type_mod, only : system_type
         use matrix_mod, only : unit_mat
         use json_module, only : json_core, json_file, json_value
         type(system_type), intent(inout) :: t
@@ -287,7 +287,7 @@ contains
     subroutine nad_interface_write_atoms(nat, qnat, mnat, qind, mind, sym, geo, vel, pbc, box)
         integer, intent(in) :: nat, qnat, mnat
         integer, intent(in) :: qind(:), mind(:)
-        character(len=2), intent(in) :: sym(:)
+        character(len=*), intent(in) :: sym(:)
         real(dp), intent(in) :: geo(:, :), vel(:, :)
         logical, intent(in) :: pbc
         real(dp), intent(in) :: box(6)

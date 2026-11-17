@@ -19,6 +19,7 @@ module string_mod
     public :: char_is_num
     public :: rmwhite
     public :: compact
+    public :: pad_right
 
     
     type string
@@ -420,6 +421,21 @@ contains
             end if
         end do
     end function ToLower
+
+
+    !----------------------------------------------------------------------------------------------
+    ! FUNCTION: pad_right
+    !> @brief Trimmed string, padded with blanks on the right to at least width characters.
+    !> @details
+    !! Used to print labels in a column of minimum width without truncating longer labels.
+    !----------------------------------------------------------------------------------------------
+    pure function pad_right(str, width) result(padded)
+        character(len=*), intent(in) :: str
+        integer, intent(in) :: width
+        character(len=max(width, len_trim(str))) :: padded
+
+        padded = str
+    end function pad_right
 
 
     pure function char_is_num(cha) result(is_numeric)
