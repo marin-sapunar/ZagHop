@@ -212,7 +212,7 @@ def read_coord(fname, natom):
                     line = ifile.readline().split()
                     atoms.append(line[3])
                     xyz = line[0:3]
-                    xyz = [np.float(q) for q in xyz]
+                    xyz = [float(q) for q in xyz]
                     rgeom[3*i:3*i+3] = xyz
     return atoms, rgeom
 
