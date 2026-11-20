@@ -117,5 +117,38 @@ class ZagHopTest(unittest.TestCase):
         self.assertTrue(np.array_equal(time, grid), "Times in energy.dat are not the output grid.")
 
 
+class QuanticsTest(ZagHopTest):
+    """ Trajectory tests using the Quantics interface.
+
+    The restart, dvr and oper files read by the interface are generated for each test by running
+    Quantics on the input file of the test (copied from common) with the setup_only keyword. Quantics writes
+    them to the quantics name directory, from where they are copied to the run directory, two
+    directories above the trajectory. A direct dynamics DB (dd_data) is copied to the trajectory
+    directory, as Quantics does when running trajectories."""
+
+    # Quantics input file in the common directory.
+    quantics_input = ""
+    # Input files for tests that do not use quantics_input (test name: input file).
+    quantics_inputs = {}
+    # Name directory set in the Quantics input.
+    quantics_name = "quantics"
+
+    def setUp(self):
+        super().setUp()
+        quantics = os.path.join(os.environ["QUANTICS_DIR"], "bin", "binary",
+                                os.environ["QUANTICS_PLATFORM"], "quantics")
+        with open(os.path.join(self.rundir, "quantics.stdout"), "w") as out, \
+             open(os.path.join(self.rundir, "quantics.stderr"), "w") as err:
+            inp = self.quantics_inputs.get(self.name, self.quantics_input)
+            code = subprocess.call([quantics, "-mnd", "-w", inp],
+                                   cwd=self.rundir, stdout=out, stderr=err)
+        self.assertEqual(code, 0, "Quantics error termination.")
+        for fname in ("restart", "dvr", "oper"):
+            shutil.copy(os.path.join(self.rundir, self.quantics_name, fname), self.rundir)
+        dd_data = os.path.join(self.rundir, "dd_data")
+        if os.path.isdir(dd_data):
+            shutil.copytree(dd_data, os.path.join(self.rundir, self.trajdir, "dd_data"))
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

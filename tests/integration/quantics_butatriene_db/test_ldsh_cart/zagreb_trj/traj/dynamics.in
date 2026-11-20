@@ -1,0 +1,17 @@
+$system
+ nstate = 2
+ istate = 2
+ ndim = 3
+$method
+ seed 6
+ qlib quantics
+$surfhop
+ nadvec linear
+$dynamics
+ tstep = 0.1
+ max_time = 1.0
+ max_toten_d = 999.0
+ max_toten_d_step = 999.0
+$output
+ printerval = 5
+$end

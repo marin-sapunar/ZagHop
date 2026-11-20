@@ -1,0 +1,95 @@
+#######################################################################
+###              DD-TSH / Propagation in normal modes              ####
+###  From Quantics tests/elk_inputs/test112.inp.
+###  ZagHop test (setup_only): Quantics only writes the restart, dvr
+###  and oper files; the test runs the trajectory with zaghop.
+#######################################################################
+
+RUN-SECTION
+name = quantics
+propagation     direct = nmodes
+title =  Butatriene test dynamics
+tfinal = 10.0   tout = 0.5  tpsi= 0.5
+gridpop
+srfhop_zagreb swarm = 5
+end-run-section
+
+parameter-section
+freq0_1 = 176.6850, cm-1
+freq0_2 = 213.6577, cm-1
+freq0_3 = 328.5540, cm-1
+freq0_4 = 539.8112, cm-1
+freq0_5 = 767.6306, cm-1
+freq0_6 = 866.1351, cm-1
+freq0_7 = 866.9618, cm-1
+freq0_8 = 900.9703, cm-1
+freq0_9 = 1139.5777, cm-1
+freq0_10 = 1152.5946, cm-1
+freq0_11 = 1534.7947, cm-1
+freq0_12 = 1629.9635, cm-1
+freq0_13 = 1701.6844, cm-1
+freq0_14 = 2196.1771, cm-1
+freq0_15 = 3308.4715, cm-1
+freq0_16 = 3310.2706, cm-1
+freq0_17 = 3393.2895, cm-1
+freq0_18 = 3393.3177, cm-1
+end-parameter-section
+
+INITIAL-GEOMETRY-SECTION
+nstates = 2    init_state = 2   init_basis_dist = wigner_no
+cartesian = angst
+6                     0.000000    0.000000    1.959948
+6                     0.000000    0.000000    0.630953
+6                     0.000000    0.000000   -0.630953
+6                     0.000000    0.000000   -1.959948
+1                     0.000000    0.917846   -2.515682
+1                     0.000000   -0.917846   -2.515682
+1                     0.000000    0.917846    2.515682
+1                     0.000000   -0.917846    2.515682
+end-cartesian
+nmode
+1B2U	0.0000	176.6850,  cm-1 width = 0.7071 freeze
+2B3U	0.0000	213.6577,  cm-1 width = 0.7071 freeze
+3B3G	0.0000	328.5540,  cm-1 width = 0.7071 freeze
+4B2G	0.0000	539.8112,  cm-1 width = 0.7071 freeze
+5AU 	0.0000  767.6306, cm-1 width = 0.7071
+6B2G	0.0000	866.1351, cm-1 width = 0.7071  freeze
+7B3U	0.0000	866.9618, cm-1 width = 0.7071  freeze
+8AG	0.0000	900.9703, cm-1 width = 0.7071  freeze
+9B3G	0.0000	1139.5777, cm-1 width = 0.7071 freeze
+10B2U 	0.0000	1152.5946, cm-1 width = 0.7071 freeze
+11B1U 	0.0000	1534.7947, cm-1 width = 0.7071 freeze
+12AG  	0.0000	1629.9635, cm-1 width = 0.7071 freeze
+13B1U 	0.0000	1701.6844, cm-1 width = 0.7071 freeze
+14AG  	0.0000	2196.1771, cm-1 width = 0.7071
+15AG  	0.0000	3308.4715, cm-1 width = 0.7071 freeze
+16B1U 	0.0000	3310.2706, cm-1 width = 0.7071 freeze
+17B3G 	0.0000	3393.2895, cm-1 width = 0.7071 freeze
+18B2U 	0.0000	3393.3177, cm-1 width = 0.7071 freeze
+end-nmode
+end-initial-geometry-section
+
+DIRDYN-SECTION
+data = dd_data/but_db
+transfile = but_fc_cas_freq.log
+update = always
+qcprogram = gaussian         method = cas
+ener0 = -152.9326464722      nbasis = 44
+# substitute db = only for next 2 lines to generate DB
+dd_diab=global  dbmin = 0.10      ddlog
+db = read       ddlog
+subcmd = run_g09 , 2
+dbsave    hess_upd
+end-dirdyn-section
+
+SH_ZAGREB-SECTION
+setup_only
+ignore_deltae
+DYNAMICS.IN
+$method
+ seed 43
+END-DYNAMICS.IN
+END-SH_ZAGREB-SECTION
+
+
+end-input

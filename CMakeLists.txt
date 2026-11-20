@@ -215,6 +215,24 @@ project(ZagHop LANGUAGES Fortran)
   target_link_libraries(sh_test zagcore)
   add_test(NAME sh_unit_test COMMAND sh_test)
 
+  # Register each test_* method of a Python unittest class as a separate ctest test.
+  function(zaghop_add_python_tests module class prefix)
+    cmake_parse_arguments(ARG "" "" "ENVIRONMENT" ${ARGN})
+    set(_file "${CMAKE_SOURCE_DIR}/tests/integration/${module}.py")
+    # Reconfigure when the file changes, so new test methods get registered.
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_file}")
+    set(_env PATH=path_list_append:${CMAKE_RUNTIME_OUTPUT_DIRECTORY} ${ARG_ENVIRONMENT})
+    file(STRINGS "${_file}" _lines REGEX "^    def test_[A-Za-z0-9_]+")
+    foreach(_line ${_lines})
+      string(REGEX MATCH "test_[A-Za-z0-9_]+" _test "${_line}")
+      add_test(NAME "ZagHop:${prefix}::${_test}"
+        COMMAND ${Python_EXECUTABLE} -m unittest -v "${module}.${class}.${_test}"
+        WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+      set_tests_properties("ZagHop:${prefix}::${_test}" PROPERTIES
+        ENVIRONMENT_MODIFICATION "${_env}")
+    endforeach()
+  endfunction()
+
   find_package(Python)
   if(Python_FOUND)
     message(STATUS "Python executable: ${Python_EXECUTABLE}")
@@ -227,97 +245,22 @@ project(ZagHop LANGUAGES Fortran)
       COMMAND ${CMAKE_COMMAND} -E copy_directory
               ${CMAKE_SOURCE_DIR}/tests/integration ${CMAKE_BINARY_DIR}/tests)
 
-    file(STRINGS "${CMAKE_SOURCE_DIR}/tests/integration/test_tully.py"
-         _tully_test_lines REGEX "^    def (test_[A-Za-z0-9_]+)")
-    foreach(_line ${_tully_test_lines})
-      string(REGEX MATCH "def (test_[A-Za-z0-9_]+)" _ "${_line}")
-      set(_test_name "${CMAKE_MATCH_1}")
-      add_test(NAME "ZagHop:Tully::${_test_name}"
-        COMMAND ${Python_EXECUTABLE} -m unittest -v
-                "test_tully.TullyTest.${_test_name}"
-        WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
-      set_tests_properties("ZagHop:Tully::${_test_name}" PROPERTIES
-        ENVIRONMENT_MODIFICATION PATH=path_list_append:${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
-    endforeach()
-
-    file(STRINGS "${CMAKE_SOURCE_DIR}/tests/integration/test_granucci.py"
-         _granucci_test_lines REGEX "^    def (test_[A-Za-z0-9_]+)")
-    foreach(_line ${_granucci_test_lines})
-      string(REGEX MATCH "def (test_[A-Za-z0-9_]+)" _ "${_line}")
-      set(_test_name "${CMAKE_MATCH_1}")
-      add_test(NAME "ZagHop:Granucci::${_test_name}"
-        COMMAND ${Python_EXECUTABLE} -m unittest -v
-                "test_granucci.GranucciTest.${_test_name}"
-        WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
-      set_tests_properties("ZagHop:Granucci::${_test_name}" PROPERTIES
-        ENVIRONMENT_MODIFICATION PATH=path_list_append:${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
-    endforeach()
-
-    file(STRINGS "${CMAKE_SOURCE_DIR}/tests/integration/test_vc_pyrazine.py"
-         _vc_pyrazine_test_lines REGEX "^    def (test_[A-Za-z0-9_]+)")
-    foreach(_line ${_vc_pyrazine_test_lines})
-      string(REGEX MATCH "def (test_[A-Za-z0-9_]+)" _ "${_line}")
-      set(_test_name "${CMAKE_MATCH_1}")
-      add_test(NAME "ZagHop:VC:Pyrazine::${_test_name}"
-        COMMAND ${Python_EXECUTABLE} -m unittest -v
-                "test_vc_pyrazine.VcPyrazineTest.${_test_name}"
-        WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
-      set_tests_properties("ZagHop:VC:Pyrazine::${_test_name}" PROPERTIES
-        ENVIRONMENT_MODIFICATION PATH=path_list_append:${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
-    endforeach()
-
-    file(STRINGS "${CMAKE_SOURCE_DIR}/tests/integration/test_vc_so2.py"
-         _vc_so2_test_lines REGEX "^    def (test_[A-Za-z0-9_]+)")
-    foreach(_line ${_vc_so2_test_lines})
-      string(REGEX MATCH "def (test_[A-Za-z0-9_]+)" _ "${_line}")
-      set(_test_name "${CMAKE_MATCH_1}")
-      add_test(NAME "ZagHop:VC:SO2::${_test_name}"
-        COMMAND ${Python_EXECUTABLE} -m unittest -v
-                "test_vc_so2.VcSo2Test.${_test_name}"
-        WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
-      set_tests_properties("ZagHop:VC:SO2::${_test_name}" PROPERTIES
-        ENVIRONMENT_MODIFICATION PATH=path_list_append:${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
-    endforeach()
-
+    zaghop_add_python_tests(test_tully       TullyTest      Tully)
+    zaghop_add_python_tests(test_granucci    GranucciTest   Granucci)
+    zaghop_add_python_tests(test_vc_pyrazine VcPyrazineTest VC:Pyrazine)
+    zaghop_add_python_tests(test_vc_so2      VcSo2Test      VC:SO2)
     if(QUANTICS)
-      file(STRINGS "${CMAKE_SOURCE_DIR}/tests/integration/test_quantics_pyrazine.py"
-           _quantics_pyrazine_test_lines REGEX "^    def (test_[A-Za-z0-9_]+)")
-      foreach(_line ${_quantics_pyrazine_test_lines})
-        string(REGEX MATCH "def (test_[A-Za-z0-9_]+)" _ "${_line}")
-        set(_test_name "${CMAKE_MATCH_1}")
-        add_test(NAME "ZagHop:Quantics:Pyrazine::${_test_name}"
-          COMMAND ${Python_EXECUTABLE} -m unittest -v
-                  "test_quantics_pyrazine.QuanticsPyrazineTest.${_test_name}"
-          WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
-        set_tests_properties("ZagHop:Quantics:Pyrazine::${_test_name}" PROPERTIES
-          ENVIRONMENT_MODIFICATION PATH=path_list_append:${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
-      endforeach()
-
-      file(STRINGS "${CMAKE_SOURCE_DIR}/tests/integration/test_quantics_so2.py"
-           _quantics_so2_test_lines REGEX "^    def (test_[A-Za-z0-9_]+)")
-      foreach(_line ${_quantics_so2_test_lines})
-        string(REGEX MATCH "def (test_[A-Za-z0-9_]+)" _ "${_line}")
-        set(_test_name "${CMAKE_MATCH_1}")
-        add_test(NAME "ZagHop:Quantics:SO2::${_test_name}"
-          COMMAND ${Python_EXECUTABLE} -m unittest -v
-                  "test_quantics_so2.QuanticsSo2Test.${_test_name}"
-          WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
-        set_tests_properties("ZagHop:Quantics:SO2::${_test_name}" PROPERTIES
-          ENVIRONMENT_MODIFICATION PATH=path_list_append:${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
-      endforeach()
-
-      file(STRINGS "${CMAKE_SOURCE_DIR}/tests/integration/test_quantics_butatriene_db.py"
-           _quantics_butatriene_db_test_lines REGEX "^    def (test_[A-Za-z0-9_]+)")
-      foreach(_line ${_quantics_butatriene_db_test_lines})
-        string(REGEX MATCH "def (test_[A-Za-z0-9_]+)" _ "${_line}")
-        set(_test_name "${CMAKE_MATCH_1}")
-        add_test(NAME "ZagHop:Quantics:ButatrieneDB::${_test_name}"
-          COMMAND ${Python_EXECUTABLE} -m unittest -v
-                  "test_quantics_butatriene_db.QuanticsButatrieneDbTest.${_test_name}"
-          WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
-        set_tests_properties("ZagHop:Quantics:ButatrieneDB::${_test_name}" PROPERTIES
-          ENVIRONMENT_MODIFICATION PATH=path_list_append:${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
-      endforeach()
+      # The tests run Quantics to generate the restart, dvr and oper files.
+      set(_quantics_env
+          QUANTICS_DIR=set:${QUANTICS_DIR}
+          QUANTICS_PLATFORM=set:${QUANTICS_PLATFORM}
+          LD_LIBRARY_PATH=path_list_append:${QUANTICS_DIR}/bin/dyn_libs)
+      zaghop_add_python_tests(test_quantics_pyrazine QuanticsPyrazineTest
+                              Quantics:Pyrazine ENVIRONMENT ${_quantics_env})
+      zaghop_add_python_tests(test_quantics_so2 QuanticsSo2Test
+                              Quantics:SO2 ENVIRONMENT ${_quantics_env})
+      zaghop_add_python_tests(test_quantics_butatriene_db QuanticsButatrieneDbTest
+                              Quantics:ButatrieneDB ENVIRONMENT ${_quantics_env})
     endif()
   else()
      message(STATUS "Python not found.")

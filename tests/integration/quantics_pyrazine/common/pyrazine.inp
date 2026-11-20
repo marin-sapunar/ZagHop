@@ -1,0 +1,81 @@
+#######################################################################
+###  Pyrazine LVC model (9 modes, Sala et al.), 3 trajectories
+###  ZagHop test (setup_only): Quantics only writes the restart, dvr
+###  and oper files; the test runs the trajectory with zaghop.
+#######################################################################
+
+RUN-SECTION
+name = quantics
+propagate
+tfinal = 10.0
+tout = 0.5
+tpsi = 1.0
+psi gridpop
+title = pyrazine LVC, LD-FSSH, deterministic swarm
+srfhop_zagreb swarm = 3
+end-run-section
+
+OPERATOR-SECTION
+opname = p9
+shztrans = lvc
+end-operator-section
+
+PARAMETER-SECTION
+freq0_1  =  593    ,cm-1   #Ag
+freq0_2  = 1017    ,cm-1   #Ag
+freq0_3  = 1242    ,cm-1   #Ag
+freq0_4  = 1605    ,cm-1   #Ag
+freq0_5  =  936    ,cm-1   #B1g
+freq0_6  =  734    ,cm-1   #B2g
+freq0_7  =  942    ,cm-1   #B2g
+freq0_8  = 1352    ,cm-1   #B3g
+freq0_9  = 1553    ,cm-1   #B3g
+end-PARAMETER-SECTION
+
+primitive-basis-section
+v6a     classical
+v1      classical
+v9a     classical
+v8a     classical
+v10a    classical
+v4      classical
+v5      classical
+v3      classical
+v8b     classical
+el      el	4
+end-primitive-basis-section
+
+SH_ZAGREB-SECTION
+setup_only
+DYNAMICS.IN
+$surfhop ld-fssh
+ nadvec  linear
+ velocity nadvec
+ tdse_steps 20
+$method
+ seed 7
+$dynamics
+ tstep = 0.1
+$output
+ printerval = 5
+ noprint  2,5,7,10,11
+END-DYNAMICS.IN
+END-SH_ZAGREB-SECTION
+
+INIT_WF-SECTION
+wigner = off
+build
+    init_state = 4
+    v6a   HO    0.00   0.00     1.00     1.00
+    v1    HO    0.00   0.00     1.00     1.00
+    v9a   HO    0.00   0.00     1.00     1.00
+    v8a   HO    0.00   0.00     1.00     1.00
+    v10a  HO    0.00   0.00     1.00     1.00
+    v4    HO    0.00   0.00     1.00     1.00
+    v5    HO    0.00   0.00     1.00     1.00
+    v3    HO    0.00   0.00     1.00     1.00
+    v8b   HO    0.00   0.00     1.00     1.00
+end-build
+end-init_wf-section
+
+end-input

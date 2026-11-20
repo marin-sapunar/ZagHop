@@ -1,0 +1,167 @@
+#######################################################################
+###           VC model for Pyrazine, 9 modes, 3 states (Sala et al.)
+#######################################################################
+
+OP_DEFINE-SECTION
+title
+Pyrazine 9-mode model
+end-title
+end-op_define-section
+
+
+PARAMETER-SECTION
+
+# constants
+sqrt2  = 2.0^0.5
+ln2 = 0.6931471805599453
+
+# frequencies
+w6a   =  593    ,cm-1	#Ag
+w1    = 1017    ,cm-1	#Ag
+w9a   = 1242    ,cm-1	#Ag
+w8a   = 1605    ,cm-1	#Ag
+w10a  =  936    ,cm-1	#B1g
+w4    =  734    ,cm-1	#B2g
+w5    =  942    ,cm-1	#B2g
+w3    = 1352    ,cm-1	#B3g
+w8b   = 1553    ,cm-1	#B3g
+
+# energies
+# transitions to the 3 lowest of each symmetry were calculated but only 
+# 3 core states had significant transitions
+E1	= 0.00		,ev	#Ag
+E2	= 3.93		,ev	#B3u
+E3	= 4.45		,ev	#Au
+E4	= 4.79		,ev	#B2u
+
+# linear, on-diagonal coupling coefficients
+# S1(B3u)
+kappa1_6a	= -0.081    ,ev
+kappa1_1	= -0.038    ,ev
+kappa1_9a	=  0.117    ,ev
+kappa1_8a	= -0.087    ,ev
+# S2(Au)
+kappa2_6a       = -0.168    ,ev
+kappa2_1        = -0.083    ,ev
+kappa2_9a       = -0.071    ,ev
+kappa2_8a       = -0.465    ,ev
+# S3(B2u)
+kappa3_6a       =  0.128    ,ev
+kappa3_1        = -0.183    ,ev
+kappa3_9a       =  0.045    ,ev
+kappa3_8a       =  0.026    ,ev
+
+# linear, off-diagonal coupling coefficients
+lambda13_10a	=  0.195    ,ev
+lambda12_3	=  0.065    ,ev
+lambda12_8b	=  0.219    ,ev
+lambda23_4	=  0.060    ,ev
+lambda23_5	=  0.053    ,ev
+
+# quadratic, on-diagonal coupling coefficients
+#H(2,2)
+gamma1_10a      = -0.012    ,ev
+gamma1_3        = -0.006    ,ev
+gamma1_8b       = -0.012    ,ev
+gamma1_4        = -0.030    ,ev
+gamma1_5        = -0.014    ,ev
+#H(3,3)
+gamma2_10a      = -0.048    ,ev
+gamma2_3        = -0.006    ,ev
+gamma2_8b       = -0.012    ,ev
+gamma2_4        = -0.031    ,ev
+gamma2_5        = -0.026    ,ev
+#H(4,4)
+gamma3_10a      = -0.012    ,ev
+gamma3_3        =  0.001    ,ev
+gamma3_8b       =  0.007    ,ev
+gamma3_4        = -0.031    ,ev
+gamma3_5        = -0.026    ,ev
+
+end-parameter-section
+
+
+
+HAMILTONIAN-SECTION
+------------------------------------------------------------------
+modes| v6a | v1 | v9a | v8a | v10a | v4 | v5 | v3 | v8b | el
+modes| Time
+------------------------------------------------------------------
+
+------------------------------------------------------------------
+# kinetic energy 
+w6a   	|1	KE
+w1    	|2	KE
+w9a   	|3	KE
+w8a   	|4	KE
+w10a	|5	KE
+w4    	|6	KE
+w5    	|7	KE
+w3    	|8	KE
+w8b   	|9	KE
+
+------------------------------------------------------------------
+# harmonic potential
+0.5*w6a     |1      q^2
+0.5*w1      |2      q^2
+0.5*w9a     |3      q^2
+0.5*w8a     |4      q^2
+0.5*w10a    |5      q^2
+0.5*w4      |6      q^2
+0.5*w5      |7      q^2
+0.5*w3      |8      q^2
+0.5*w8b     |9      q^2
+
+------------------------------------------------------------------
+# electronic states
+E1	|10	S1&1
+E2      |10     S2&2
+E3      |10     S3&3
+E4      |10     S4&4
+
+------------------------------------------------------------------
+# linear intrastate coupling
+lambda13_10a 	|5	q	|10	S2&4
+lambda23_4      |6	q	|10	S3&4
+lambda23_5      |7	q	|10	S3&4
+lambda12_3   	|8	q	|10	S2&3
+lambda12_8b  	|9	q	|10	S2&3
+
+------------------------------------------------------------------
+# linear interstate coupling
+kappa1_6a 	|1	q	|10	S2&2
+kappa1_1  	|2	q	|10	S2&2
+kappa1_9a 	|3	q	|10	S2&2
+kappa1_8a 	|4	q	|10	S2&2
+kappa2_6a 	|1	q	|10	S3&3
+kappa2_1  	|2	q	|10	S3&3
+kappa2_9a 	|3	q	|10	S3&3
+kappa2_8a 	|4	q	|10	S3&3
+kappa3_6a 	|1	q	|10	S4&4
+kappa3_1  	|2	q	|10	S4&4
+kappa3_9a 	|3	q	|10	S4&4
+kappa3_8a 	|4	q	|10	S4&4
+
+------------------------------------------------------------------
+# quadratic coupling
+gamma1_10a	|5	q^2	|10	S2&2      
+gamma1_4    |6 	q^2	|10 	S2&2
+gamma1_5    |7 	q^2	|10 	S2&2
+gamma1_3	|8     	q^2	|10  	S2&2
+gamma1_8b 	|9     	q^2	|10 	S2&2
+gamma2_10a	|5     	q^2	|10 	S3&3
+gamma2_4    |6 	q^2	|10 	S3&3
+gamma2_5    |7 	q^2	|10 	S3&3
+gamma2_3	|8     	q^2	|10   	S3&3
+gamma2_8b 	|9     	q^2	|10 	S3&3
+gamma3_10a	|5     	q^2	|10 	S4&4
+gamma3_4    |6 	q^2	|10 	S4&4
+gamma3_5    |7 	q^2	|10 	S4&4
+gamma3_3   	|8    	q^2	|10 	S4&4
+gamma3_8b	|9     	q^2	|10  	S4&4
+------------------------------------------------------------------
+
+end-hamiltonian-section
+
+
+end-operator

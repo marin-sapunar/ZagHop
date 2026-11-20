@@ -1,0 +1,18 @@
+%mem=800mb
+%chk=$chk$
+#P CAS(5,6,NRoot=$root$)/3-21G* pop=full NoSymm scf=(maxcycle=128)
+$Swap:IOp(5/97=100,10/97=100)$
+$Force:Freq IOp(5/17=41000200,10/10=700007)$
+$Freq:Freq IOp(5/17=41000200,10/10=700007)$
+$Guess:Guess=Cards$
+$Guess0:Guess=Read$
+
+butatriene cation
+
+1 2
+<geometry>
+
+<mo-coefficients>
+
+0.5       0.5
+

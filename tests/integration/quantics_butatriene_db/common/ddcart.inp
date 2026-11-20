@@ -1,0 +1,56 @@
+#######################################################################
+###   Butatriene, DD in Cartesians, read-only DB (Part 3, test 6)   ###
+###  ZagHop test (setup_only): Quantics only writes the restart, dvr
+###  and oper files; the test runs the trajectory with zaghop.
+#######################################################################
+
+RUN-SECTION
+name = quantics
+propagation     direct = cartesian
+title =  Butatriene DD in Cartesians
+tfinal = 1.0   tout = 0.5
+psi  gridpop  steps  auto
+srfhop_zagreb    swarm = 1
+end-run-section
+
+INITIAL-GEOMETRY-SECTION
+nstates = 2    init_state = 2   init_basis_dist = wigner
+cartesian = angst
+6                     0.000000    0.000000    1.959948
+6                     0.000000    0.000000    0.630953
+6                     0.000000    0.000000   -0.630953
+6                     0.000000    0.000000   -1.959948
+1                     0.000000    0.917846   -2.515682
+1                     0.000000   -0.917846   -2.515682
+1                     0.000000    0.917846    2.515682
+1                     0.000000   -0.917846    2.515682
+end-cartesian
+end-initial-geometry-section
+
+SH_ZAGREB-SECTION
+setup_only
+ignore_deltae
+DYNAMICS.IN
+$method
+ seed 6
+$surfhop
+ nadvec linear
+$dynamics
+ tstep = 0.1
+$output
+ printerval = 5
+END-DYNAMICS.IN
+END-SH_ZAGREB-SECTION
+
+DIRDYN-SECTION
+data = dd_data/but_db
+transfile = but_fc_cas_freq.log
+qcprogram = gaussian     method = cas
+ener0 = -152.9326464722
+dd_diab=global dbmin = 0.20
+db = read      ddlog
+nbasis = 44
+subcmd = run_g09 , 2
+end-dirdyn-section
+
+end-input
