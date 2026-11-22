@@ -1,5 +1,6 @@
 module evaluator_base_mod
     use global_defs
+    use state_overlap_mod, only : state_overlap, request_id
     implicit none
 
     private
@@ -19,7 +20,8 @@ module evaluator_base_mod
     !> @details
     !! With spin_states = 'components', each spin component is a separate state, and the states of
     !! the manifold form mult consecutive groups of n states, one group for each component. With
-    !! spin_states = 'effective', each spin-free state is a single state, in a single group.
+    !! spin_states = 'effective_rss' or 'effective_mean', each spin-free state is a single state,
+    !! in a single group.
     type :: spin_manifold
         integer :: mult = 1 !< Multiplicity, 2S+1.
         integer :: n = 0 !< Number of spin-free states.
@@ -31,15 +33,19 @@ module evaluator_base_mod
 
     !> Base class of all potentials.
     !> @details
-    !! Specific evaluators only implement set_geometry and the evaluation of the potential at the
-    !! current geometry, and fill the variables of the base classes. The base classes do the rest.
+    !! Specific evaluators implement update_geometry and the evaluation of the potential at the
+    !! current geometry, and fill the variables of the base classes. The base classes do the rest
+    !!
+    !! An evaluator holds the quantities of a single point. The only dependence on the path is
+    !! through the previous point passed to eval: the phases of the states (and any other sign
+    !! convention) follow those of the previous point, and link holds the overlaps between the
+    !! states of the two points. Each evaluation gets a new id, which identifies the point in
+    !! link.
     type, abstract :: potential_evaluator
         integer :: n_state = 0
         integer :: n_sf = 0 !< Number of spin-free states.
         type(spin_manifold), allocatable :: manifold(:)
-        character(len=:), allocatable :: spin_states !< 'components' or 'effective'.
-        logical :: mean_couplings = .false. !< Couplings between manifolds of effective states
-                                            !! are given as the mean over the component pairs.
+        character(len=:), allocatable :: spin_states !< 'components' or 'effective_*'.
         character(len=:), allocatable :: classical_coordinates !< Coordinates expected by
                                                                !! update_geometry.
         integer :: n_source_states = 0 !< Number of states given by the source of the potential,
@@ -49,11 +55,13 @@ module evaluator_base_mod
         !! - by_component - All states of the first component, then of the second, ... (ZagHop).
         !! - by_state - All components of the first state, then of the second, ... (Quantics).
         integer, allocatable :: state_map(:) !< Index in the source of each state (n_state).
+        integer :: id = 0 !< Id of the evaluated point. 0 before the first evaluation.
+        type(state_overlap) :: link !< Overlaps between the states of the previous point and of
+                                   !! this point. Not set without a previous point.
     contains
         procedure(eval), deferred :: eval
-        procedure(set_geometry), deferred :: set_geometry
-        procedure, non_overridable :: update_geometry
-        procedure :: save_previous
+        procedure(update_geometry), deferred :: update_geometry
+        procedure :: new_point
         procedure :: get_derivative_target_coord
         procedure :: set_cartesian_frame
         procedure :: check_atoms
@@ -65,7 +73,6 @@ module evaluator_base_mod
         procedure(get_nadv), deferred :: get_nadv
         procedure(get_soc2), deferred :: get_soc2
         procedure :: set_spin_manifolds
-        procedure :: spin_states_keyword
         procedure :: basis_size
         procedure :: locate_state
         procedure :: expand
@@ -92,9 +99,14 @@ module evaluator_base_mod
 
 
     abstract interface
-        subroutine eval(self)
+        !> Evaluate the potential at the current geometry. prev is the evaluator of the previous
+        !! point of the trajectory, if there is one. The phases of the states then follow those of
+        !! prev, and link holds the overlaps between the states of prev and of this point.
+        !! Implementations start with new_point. prev must not be the evaluator itself.
+        subroutine eval(self, prev)
             import potential_evaluator
             class(potential_evaluator), intent(inout) :: self
+            class(potential_evaluator), intent(in), optional :: prev
         end subroutine eval
     end interface
 
@@ -125,14 +137,15 @@ module evaluator_base_mod
     abstract interface
         !> Set the geometry at which the potential is evaluated next. Coordinates gives the
         !! coordinate system of the geometry. Anything that get_derivative_target_coord needs to
-        !! convert derivatives to these coordinates must be stored here.
-        subroutine set_geometry(self, geometry, coordinates)
+        !! convert derivatives to these coordinates must be stored here. Gradients and
+        !! nonadiabatic couplings are returned in the coordinates of this geometry.
+        subroutine update_geometry(self, geometry, coordinates)
             use global_defs, only : dp
             import potential_evaluator
             class(potential_evaluator), intent(inout) :: self
             real(dp), intent(in) :: geometry(:, :)
             character(len=*), intent(in) :: coordinates
-        end subroutine set_geometry
+        end subroutine update_geometry
     end interface
 
 
@@ -204,28 +217,19 @@ contains
 
 
     !----------------------------------------------------------------------------------------------
-    ! SUBROUTINE: update_geometry
-    !> @brief Move the potential to a new geometry.
+    ! SUBROUTINE: new_point
+    !> @brief Start the evaluation of a new point: give it a new id and remove the link to the
+    !! previous point.
     !> @details
-    !! Saves what the evaluator keeps from the previous geometry (save_previous) and passes the
-    !! geometry to the evaluator (set_geometry). Gradients and nonadiabatic couplings are returned
-    !! in the coordinates of this geometry.
+    !! The link must be removed because the evaluator of a new point of the trajectory is a copy
+    !! of the evaluator of the previous point, with its link.
     !----------------------------------------------------------------------------------------------
-    subroutine update_geometry(self, geometry, coordinates)
+    subroutine new_point(self)
         class(potential_evaluator), intent(inout) :: self
-        real(dp), intent(in) :: geometry(:, :)
-        character(len=*), intent(in) :: coordinates
 
-        call self%save_previous()
-        call self%set_geometry(geometry, coordinates)
-    end subroutine update_geometry
-
-
-    !> Save the quantities of the current geometry that are needed at the next geometry. Nothing
-    !! is saved in the base class.
-    subroutine save_previous(self)
-        class(potential_evaluator), intent(inout) :: self
-    end subroutine save_previous
+        self%id = request_id()
+        call self%link%clear()
+    end subroutine new_point
 
 
     !----------------------------------------------------------------------------------------------
@@ -235,7 +239,7 @@ contains
     !> @details
     !! The result is flat. In the base class the two coordinate systems are the same. An
     !! evaluator that accepts geometries in other coordinates overrides this function. Everything
-    !! it needs must be stored in set_geometry, not in update_geometry.
+    !! it needs must be stored in update_geometry.
     !----------------------------------------------------------------------------------------------
     function get_derivative_target_coord(self, d) result(dr)
         class(potential_evaluator), intent(in) :: self
@@ -293,15 +297,8 @@ contains
         integer :: i, m, sf, ci, c, k
 
         select case(spin_states)
-        case('components')
-            self%spin_states = 'components'
-            self%mean_couplings = .false.
-        case('effective_rss')
-            self%spin_states = 'effective'
-            self%mean_couplings = .false.
-        case('effective_mean')
-            self%spin_states = 'effective'
-            self%mean_couplings = .true.
+        case('components', 'effective_rss', 'effective_mean')
+            self%spin_states = spin_states
         case default
             write(stderr, *) 'Error in evaluator_base_mod, set_spin_manifolds subroutine.'
             write(stderr, *) '  Unrecognized spin_states: ', spin_states
@@ -376,21 +373,6 @@ contains
             end associate
         end do
     end subroutine set_spin_manifolds
-
-
-    !> Value of the spin_states keyword that gives the spin states of the potential.
-    pure function spin_states_keyword(self) result(keyword)
-        class(potential_evaluator), intent(in) :: self
-        character(len=:), allocatable :: keyword
-
-        if (self%spin_states == 'components') then
-            keyword = 'components'
-        else if (self%mean_couplings) then
-            keyword = 'effective_mean'
-        else
-            keyword = 'effective_rss'
-        end if
-    end function spin_states_keyword
 
 
     !----------------------------------------------------------------------------------------------

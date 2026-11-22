@@ -642,16 +642,12 @@ contains
         type(reader), intent(inout) :: readf
         integer :: i
         integer :: n_state_group
-        integer :: max_nstate
-        integer :: min_nstate
         integer, allocatable :: nstate(:)
         integer, allocatable :: multiplicity(:)
         character(len=:), allocatable :: cartesian_frame
         character(len=:), allocatable :: spin_states
 
         n_state_group = 0
-        max_nstate = 0
-        min_nstate = 0
         call readf%rewind()
         call readf%go_to_keyword('$system')
         do
@@ -672,12 +668,6 @@ contains
                 do i = 1, readf%narg - 1
                     read(readf%args(i+1)%s, *) nstate(i)
                 end do
-            case('variable_nstate')
-                read(readf%args(2)%s, *) ctrl%variable_nstate
-            case('max_nstate')
-                read(readf%args(2)%s, *) max_nstate
-            case('min_nstate')
-                read(readf%args(2)%s, *) min_nstate
             case('multiplicity')
                 if (n_state_group == 0) then
                     n_state_group = readf%narg - 1
@@ -780,10 +770,10 @@ contains
         ! spin_states must then agree with them, unless all states are singlets.
         if (allocated(tr1%pot%manifold)) then
             if (allocated(spin_states) .and. any(tr1%pot%manifold%mult > 1)) then
-                if (spin_states /= tr1%pot%spin_states_keyword()) then
+                if (spin_states /= tr1%pot%spin_states) then
                     write(stderr, *) 'Error in Input module, read_system subroutine.'
                     write(stderr, *) '  The potential sets its own spin states. Only ',           &
-                    &                'spin_states = '//tr1%pot%spin_states_keyword()//' is possible.'
+                    &                'spin_states = '//tr1%pot%spin_states//' is possible.'
                     stop
                 end if
             end if
@@ -1108,7 +1098,7 @@ contains
                 write(stderr, '(3x,a,f8.6,a)') 'Retained fraction of the couplings at the '//    &
                 &                              'reference geometry: ', pot%ref_fraction, '.'
             class default
-                if (pot%spin_states == 'effective' .and. any(pot%manifold%mult > 1)) then
+                if (pot%spin_states /= 'components' .and. any(pot%manifold%mult > 1)) then
                     write(stderr, *) 'Warning in Input module, read_surfhop subroutine.'
                     write(stderr, *) '  LD-FSSH with effective spin states. The spin-adiabatic ', &
                     &                'states are built from the effective couplings, which is only'

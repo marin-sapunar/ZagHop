@@ -22,7 +22,7 @@ module vc_evaluator_mod
         procedure :: initialize => vc_initialize
         procedure :: set_cartesian_frame => vc_set_cartesian_frame
         procedure :: check_atoms => vc_check_atoms
-        procedure :: set_geometry => vc_set_geometry
+        procedure :: update_geometry => vc_update_geometry
         procedure :: eval_diab => vc_eval_diab
         procedure :: get_derivative_target_coord => vc_get_derivative_target_coord
         procedure :: get_reference_geometry => vc_get_reference_geometry
@@ -94,14 +94,14 @@ contains
     !> Normal modes, or a Cartesian geometry that is converted to normal modes. The Cartesian
     !! geometry and the rotation into the Eckart frame are kept for
     !! vc_get_derivative_target_coord.
-    subroutine vc_set_geometry(self, geometry, coordinates)
+    subroutine vc_update_geometry(self, geometry, coordinates)
         class(vc_evaluator), intent(inout) :: self
         real(dp), intent(in) :: geometry(:, :)
         character(len=*), intent(in) :: coordinates
 
         if (coordinates == self%classical_coordinates) then
             if (size(geometry, 1) /= 1) then
-                write(stderr, *) 'Error in vc_evaluator_mod, set_geometry subroutine.'
+                write(stderr, *) 'Error in vc_evaluator_mod, update_geometry subroutine.'
                 write(stderr, *) '  Geometry should have dimensions (1, nmode).'
                 stop
             end if
@@ -115,17 +115,17 @@ contains
                 self%q = self%model%nm%cart_to_nm(geometry)
             end if
         else
-            write(stderr, *) 'Error in vc_evaluator_mod, set_geometry subroutine.'
+            write(stderr, *) 'Error in vc_evaluator_mod, update_geometry subroutine.'
             write(stderr, *) '  Unsupported coordinates "'//coordinates//'". Expected "'//      &
             &                self%classical_coordinates//'" or "cartesian".'
             stop
         end if
         self%input_coordinates = coordinates
-    end subroutine vc_set_geometry
+    end subroutine vc_update_geometry
 
 
     !> Convert a derivative with respect to the normal modes to the coordinates of the geometry
-    !! passed to set_geometry: unchanged for normal modes, Cartesian for a Cartesian geometry.
+    !! passed to update_geometry: unchanged for normal modes, Cartesian for a Cartesian geometry.
     function vc_get_derivative_target_coord(self, d) result(dr)
         class(vc_evaluator), intent(in) :: self
         real(dp), intent(in) :: d(:)

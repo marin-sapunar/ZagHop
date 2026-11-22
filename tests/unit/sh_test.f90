@@ -10,8 +10,9 @@ module sh_test_mod
     contains
         procedure :: setup => scripted_setup
         procedure :: set_energies => scripted_set_energies
+        procedure :: set_hamiltonian => scripted_set_hamiltonian
         procedure :: set_soc => scripted_set_soc
-        procedure :: set_geometry => scripted_set_geometry
+        procedure :: update_geometry => scripted_update_geometry
         procedure :: eval_diab => scripted_eval_diab
     end type scripted_evaluator
 
@@ -44,6 +45,17 @@ contains
         call self%eval()
     end subroutine scripted_set_energies
 
+    !> Spin-free Hamiltonian, not necessarily diagonal, evaluated with the previous point prev, if
+    !! given.
+    subroutine scripted_set_hamiltonian(self, sf_w, prev)
+        class(scripted_evaluator), intent(inout) :: self
+        real(dp), intent(in) :: sf_w(:, :)
+        class(scripted_evaluator), intent(in), optional :: prev
+
+        self%sf_w = sf_w
+        call self%eval(prev)
+    end subroutine scripted_set_hamiltonian
+
     !> Spin-orbit couplings between the states, used from the next call of set_energies.
     subroutine scripted_set_soc(self, soc)
         class(scripted_evaluator), intent(inout) :: self
@@ -52,11 +64,11 @@ contains
         self%soc_w = soc
     end subroutine scripted_set_soc
 
-    subroutine scripted_set_geometry(self, geometry, coordinates)
+    subroutine scripted_update_geometry(self, geometry, coordinates)
         class(scripted_evaluator), intent(inout) :: self
         real(dp), intent(in) :: geometry(:, :)
         character(len=*), intent(in) :: coordinates
-    end subroutine scripted_set_geometry
+    end subroutine scripted_update_geometry
 
     subroutine scripted_eval_diab(self)
         class(scripted_evaluator), intent(inout) :: self
@@ -68,7 +80,21 @@ end module sh_test_mod
 program sh_test
     implicit none
     integer :: ret
+    character(len=32) :: arg
 
+    ! With an argument, run a case which should stop with an error.
+    if (command_argument_count() > 0) then
+        call get_command_argument(1, arg)
+        call sh_error(trim(arg))
+        write(*, *) 'No error.'
+        stop 1
+    end if
+
+    ret = ld_link_test()
+    if (ret /= 0) then
+        write(*,*) "Error in ld_link_test."
+        stop ret
+    end if
 
     ret = trajectory_buffer_test()
     if (ret /= 0) then
@@ -107,6 +133,88 @@ program sh_test
     end if
 
     contains
+
+
+    !----------------------------------------------------------------------------------------------
+    !> LD-FSSH propagates with the transformation T of the link of the potential. With one
+    !! substep, the coefficients after a step are T^t exp(-i dt (H1 + T H2 T^t) / 2) c, and their
+    !! norm is conserved. Two states whose adiabatic states rotate during the step.
+    !----------------------------------------------------------------------------------------------
+    integer function ld_link_test() result(ret)
+        use global_defs, only : dp
+        use sh_test_mod, only : scripted_evaluator
+        use sh_ld_mod, only : tsh_ld
+        use matrix_mod, only : mat_sy_exp
+        use random_mod, only : rng_type
+        use random_pcg_mod, only : rng_pcg_xsh_rr
+        type(scripted_evaluator) :: pot1, pot2
+        type(tsh_ld) :: ld
+        class(rng_type), pointer :: rng
+        real(dp), parameter :: dt = 10.0_dp, tol = 1.0e-12_dp
+        real(dp) :: h(2, 2), t(2, 2)
+        complex(dp) :: c(2)
+
+        allocate(rng_pcg_xsh_rr :: rng)
+        call rng%init(1)
+        call pot1%setup([2], [1])
+        call ld%initialize(rng, pot1, 2)
+        call pot1%set_hamiltonian(reshape([0.0_dp, 0.01_dp, 0.01_dp, 0.02_dp], [2, 2]))
+        call ld%start(0.0_dp, pot1)
+
+        ! The next point is a copy of the previous one, as in the trajectory data.
+        ret = 1
+        pot2 = pot1
+        call pot2%set_hamiltonian(reshape([0.0_dp, 0.02_dp, 0.02_dp, 0.01_dp], [2, 2]), pot1)
+        if (.not. pot2%link%matches(pot1%id, pot2%id, 'adiabatic')) return
+        t = pot2%link%t
+        if (abs(t(1, 2)) < 0.1_dp) return
+
+        ret = 2
+        call ld%propagate(dt, pot2)
+        h = 0.5_dp * (pot1%get_Hamiltonian('adiabatic')                                          &
+        &   + matmul(t, matmul(pot2%get_Hamiltonian('adiabatic'), transpose(t))))
+        c = matmul(transpose(t), matmul(mat_sy_exp(h, cmplx(0.0_dp, -dt, kind=dp)),              &
+        &   [cmplx(0.0_dp, 0.0_dp, kind=dp), cmplx(1.0_dp, 0.0_dp, kind=dp)]))
+        if (any(abs(ld%coeff - c) > tol)) return
+        if (abs(sum(abs(ld%coeff)**2) - 1.0_dp) > tol) return
+        ret = 0
+    end function ld_link_test
+
+
+    !----------------------------------------------------------------------------------------------
+    !> Cases which should stop with an error:
+    !! - ld_wrong_link - LD-FSSH propagates to a point whose link starts at another evaluation
+    !!   than the last point of the method (here at the same geometry, as after a step back).
+    !----------------------------------------------------------------------------------------------
+    subroutine sh_error(case_name)
+        use global_defs, only : dp
+        use sh_test_mod, only : scripted_evaluator
+        use sh_ld_mod, only : tsh_ld
+        use random_mod, only : rng_type
+        use random_pcg_mod, only : rng_pcg_xsh_rr
+        character(len=*), intent(in) :: case_name
+        type(scripted_evaluator) :: pot1, pot1b, pot2
+        type(tsh_ld) :: ld
+        class(rng_type), pointer :: rng
+
+        select case(case_name)
+        case('ld_wrong_link')
+            allocate(rng_pcg_xsh_rr :: rng)
+            call rng%init(1)
+            call pot1%setup([2], [1])
+            call ld%initialize(rng, pot1, 2)
+            call pot1%set_hamiltonian(reshape([0.0_dp, 0.01_dp, 0.01_dp, 0.02_dp], [2, 2]))
+            call ld%start(0.0_dp, pot1)
+            pot1b = pot1
+            call pot1b%set_hamiltonian(pot1%sf_w)
+            pot2 = pot1b
+            call pot2%set_hamiltonian(reshape([0.0_dp, 0.02_dp, 0.02_dp, 0.01_dp], [2, 2]),     &
+            &                         pot1b)
+            call ld%propagate(10.0_dp, pot2)
+        case default
+            write(*, *) 'Unknown case: ', case_name
+        end select
+    end subroutine sh_error
 
 
     !> Times of all stored points in time order.

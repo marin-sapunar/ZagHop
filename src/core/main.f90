@@ -116,21 +116,9 @@ program zaghop
 
         ! Get new gradients.
         if (ctrl%mm) call run_mm(tr1)
-        !> @todo Re-check and re-activate variable_nstate option.
-        ! if (ctrl%variable_nstate == 1) then
-        !     do i = tr1%nstate, max(tr1%cstate + 2, -1, tr1%min_nstate), -1
-        !         ! Remove top states whose contribution to the total wave function is below the
-        !         ! threshold until the first state which should be kept is reached.
-        !         if (abs(tr1%cwf(i)) > 0.01) exit
-        !         if (stdp2) then
-        !             write(stdout, '(3x,a, i0, a)') 'Excluding state ', i, ' from calculation.'
-        !         end if
-        !         tr1%nstate = i-1
-        !         tr1%cwf(i) = 0.0_dp
-        !     end do
-        ! end if
         if (stdp2) write(stdout, *) '  Running QM calculation.'
-        call run_qm(tr1, .false.)
+        ! After trajectory_next, tr2 is the previous point, distinct from tr1.
+        call run_qm(tr1, .false., tr2)
 
         ! Get new velocity.
         call dyn_updatevelo(tr1%dt, tr1%mass, tr1%geom, tr2%grad, tr1%grad, tr2%velo,         &

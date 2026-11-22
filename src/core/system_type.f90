@@ -489,10 +489,12 @@ contains
             write(punit(7), 1006) t%wf%prob
         end if
 
-        if (popt(20) .and. t%step > 0) then
+        ! The locally diabatic basis is that of the propagation: the orthogonalised overlaps with
+        ! the states of the previous point, from the link of the potential.
+        if (popt(20) .and. t%pot%link%valid()) then
             write(punit(20), *) '# t= ', time_fs, 'fs, state=', t%wf%active_state
-            wrk = t%pot%get_transformation('locally_diabatic', 'adiabatic')
-            do i = 1, t%wf%n_state
+            wrk = t%pot%link%t
+            do i = 1, size(wrk, 2)
                 write(punit(20), 1006) wrk(:, i)
             end do
         end if
@@ -513,9 +515,10 @@ contains
             end do
         end if
 
-        if (popt(30) .and. t%step > 0) then
-            wrk = t%pot%get_transformation('locally_diabatic', t%wf%basis)
-            write(punit(30), 1006) wrk(:, t%wf%active_state)
+        if (popt(30) .and. t%pot%link%valid()) then
+            if (t%pot%link%basis == t%wf%basis) then
+                write(punit(30), 1006) t%pot%link%t(:, t%wf%active_state)
+            end if
         end if
 
         if (popt(31)) then

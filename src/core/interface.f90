@@ -22,15 +22,14 @@ contains
     !
     ! DESCRIPTION:
     !> @brief Run a single point QM calculation.
-    !> @details
-    !! @todo UPDATE DOCS
     !----------------------------------------------------------------------------------------------
-    subroutine run_qm(t, hop)
+    subroutine run_qm(t, hop, prev)
         use system_type_mod, only : system_type
         use matrix_mod, only : unit_mat
         use json_module, only : json_core, json_file, json_value
         type(system_type), intent(inout) :: t
         logical, intent(in) :: hop
+        type(system_type), intent(in), optional :: prev
         integer :: cunit, i, j
         logical :: check(5)
         character(len=200) :: json_str
@@ -42,7 +41,11 @@ contains
 
         if (.not. hop) then
             call t%pot%update_geometry(t%geom, t%classical_coordinates)
-            call t%pot%eval()
+            if (present(prev)) then
+                call t%pot%eval(prev%pot)
+            else
+                call t%pot%eval()
+            end if
         end if
         t%grad(:, t%qind) = reshape(t%pot%get_gradient(t%wf%basis, t%wf%active_state),           &
         &                           [size(t%grad, 1), size(t%qind)])

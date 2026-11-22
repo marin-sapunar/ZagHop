@@ -4,14 +4,17 @@ module evaluator_diabatic_mod
     implicit none
 
 
-    !> Potential given by a diabatic Hamiltonian.
+    !----------------------------------------------------------------------------------------------
+    !> TYPE: diabatic_evaluator
+    !> @brief Evaluate potentials defined in the diabatic basis.
     !> @details
-    !! eval_diab gives the spin-free Hamiltonian (sf_w, sf_dw), once for each spin-free state, and
-    !! the spin-orbit couplings between the states (soc_w, soc_dw). The full diabatic Hamiltonian
+    !! The spin-free Hamiltonian (sf_w) and the spin-orbit couplings (soc_w) along with their
+    !! derivatives (sf_dw and soc_dw) are given by eval_hamiltonian. The full diabatic Hamiltonian
     !! is assembled from the two. The 'spin_free' basis has one state for each spin-free state.
     !! It diagonalises the spin-free Hamiltonian within each manifold, and its energies, gradients
     !! and couplings come from the spin-free Hamiltonian alone. The spin-orbit couplings between
     !! spin-free states are only given as squared magnitudes, summed over the components.
+    !----------------------------------------------------------------------------------------------
     type, abstract, extends(potential_evaluator) :: diabatic_evaluator
         integer :: ndof = 0
         real(dp), allocatable :: sf_w(:, :) !< Spin-free Hamiltonian (n_sf, n_sf).
@@ -24,11 +27,9 @@ module evaluator_diabatic_mod
         real(dp), allocatable :: adiab_dw(:, :, :)
         real(dp), allocatable :: adiab_trans(:, :)
         real(dp), allocatable :: sf_trans(:, :) !< Eigenvectors of each manifold block of sf_w.
-        real(dp), allocatable :: lsf_trans(:, :) !< sf_trans at the previous point.
         real(dp), allocatable :: spin_free_w(:, :) !< Spin-free Hamiltonian in the 'spin_free'
                                                    !! basis (n_sf, n_sf).
         real(dp), allocatable :: spin_free_dw(:, :, :) !< Derivatives of spin_free_w.
-        real(dp), allocatable :: ldiab_trans(:, :)
         logical :: soc_checked = .false. !< Spin-orbit couplings within groups were checked.
     contains
         procedure :: eval => eval_all
@@ -38,7 +39,6 @@ module evaluator_diabatic_mod
         procedure :: allocate_bases
         procedure :: split_hamiltonian
         procedure :: set_full_hamiltonian
-        procedure :: save_previous => diabatic_save_previous
         procedure :: change_basis => change_basis_mat
         procedure :: eval_eigvec => eval_eigvec
         procedure :: get_Hamiltonian => get_Hamiltonian
@@ -67,13 +67,21 @@ contains
     !----------------------------------------------------------------------------------------------
     ! SUBROUTINE: eval_all
     !> @brief Evaluate the potential and build all bases at the current geometry.
+    !> @details
+    !! With prev, the evaluator of the previous point, the phases of the adiabatic states and of
+    !! the spin-free states within each manifold are matched to those of prev, and link holds the
+    !! overlaps between the adiabatic states of prev and of this point, U(prev)^T U. Without prev,
+    !! the signs of the states are fixed by fix_sign.
     !----------------------------------------------------------------------------------------------
-    subroutine eval_all(self)
+    subroutine eval_all(self, prev)
         use matrix_mod, only : unitary_transform
         class(diabatic_evaluator), intent(inout) :: self
+        class(potential_evaluator), intent(in), optional :: prev
         integer :: imode, m, s0, n
         real(dp), allocatable :: w(:, :)
+        real(dp), allocatable :: s(:, :) !< Overlaps between the adiabatic states of prev and self.
 
+        call self%new_point()
         call self%eval_hamiltonian()
 
         ! Full diabatic Hamiltonian.
@@ -87,20 +95,26 @@ contains
         call self%eval_eigvec('adiabatic')
         call self%eval_eigvec('spin_free')
 
-        if (allocated(self%ldiab_trans)) then
-            call match_phase(self%ldiab_trans, self%adiab_trans)
+        if (present(prev)) then
+            select type(prev)
+            class is (diabatic_evaluator)
+                call check_previous(prev)
+                call match_phase(prev%adiab_trans, self%adiab_trans, s)
+                do m = 1, size(self%manifold)
+                    s0 = self%manifold(m)%sf0
+                    n = self%manifold(m)%n
+                    call match_phase(prev%sf_trans(s0:s0+n-1, s0:s0+n-1),                         &
+                    &                self%sf_trans(s0:s0+n-1, s0:s0+n-1))
+                end do
+                call self%link%set(prev%id, self%id, 'adiabatic', s)
+            class default
+                write(stderr, *) 'Error in evaluator_diabatic_mod, eval_all subroutine.'
+                write(stderr, *) '  The previous point is not given by a diabatic Hamiltonian.'
+                stop
+            end select
         else
             ! First point, without states to match the phase to.
             call fix_sign(self%adiab_trans)
-        end if
-        if (allocated(self%lsf_trans)) then
-            do m = 1, size(self%manifold)
-                s0 = self%manifold(m)%sf0
-                n = self%manifold(m)%n
-                call match_phase(self%lsf_trans(s0:s0+n-1, s0:s0+n-1),                            &
-                &                self%sf_trans(s0:s0+n-1, s0:s0+n-1))
-            end do
-        else
             call fix_sign(self%sf_trans)
         end if
 
@@ -119,6 +133,26 @@ contains
             call unitary_transform(self%sf_trans, w, trans=.true.)
             self%spin_free_dw(imode, :, :) = w
         end do
+
+    contains
+
+        !> Check that prev was evaluated, with the same states.
+        subroutine check_previous(prev)
+            class(diabatic_evaluator), intent(in) :: prev
+
+            if (.not. allocated(prev%adiab_trans) .or. .not. allocated(prev%sf_trans)) then
+                write(stderr, *) 'Error in evaluator_diabatic_mod, eval_all subroutine.'
+                write(stderr, *) '  The previous point was not evaluated.'
+                stop
+            end if
+            if (any(shape(prev%adiab_trans) /= shape(self%adiab_trans)) .or.                     &
+            &   any(shape(prev%sf_trans) /= shape(self%sf_trans))) then
+                write(stderr, *) 'Error in evaluator_diabatic_mod, eval_all subroutine.'
+                write(stderr, *) '  The previous point has a different number of states.'
+                stop
+            end if
+        end subroutine check_previous
+
     end subroutine eval_all
 
 
@@ -215,16 +249,6 @@ contains
     end subroutine set_full_hamiltonian
 
 
-    !> Save the eigenvectors of the current geometry, for phase matching at the next geometry and
-    !! for the locally diabatic basis.
-    subroutine diabatic_save_previous(self)
-        class(diabatic_evaluator), intent(inout) :: self
-
-        if (allocated(self%adiab_trans)) self%ldiab_trans = self%adiab_trans
-        if (allocated(self%sf_trans)) self%lsf_trans = self%sf_trans
-    end subroutine diabatic_save_previous
-
-
     !----------------------------------------------------------------------------------------------
     ! SUBROUTINE: split_hamiltonian
     !> @brief Set the spin-free Hamiltonian and the spin-orbit couplings from a full Hamiltonian.
@@ -250,7 +274,7 @@ contains
             self%sf_dw(imode, :, :) = component_average(dw(imode, :, :))
             self%soc_dw(imode, :, :) = dw(imode, :, :) - self%expand(self%sf_dw(imode, :, :))
         end do
-        if (self%mean_couplings) then
+        if (self%spin_states == 'effective_mean') then
             call self%to_rss_couplings(self%soc_w)
             do imode = 1, size(dw, 1)
                 call self%to_rss_couplings(self%soc_dw(imode, :, :))
@@ -343,8 +367,10 @@ contains
             trans = unit_mat(self%n_state)
         case('adiabatic')
             trans = transpose(self%adiab_trans)
-        case('locally_diabatic')
-            trans = transpose(self%ldiab_trans)
+        case default
+            write(stderr, *) 'Error in evaluator_diabatic_mod, get_transformation function.'
+            write(stderr, *) '  Unknown basis: ', from_basis
+            stop
         end select
 
         select case(to_basis)
@@ -352,8 +378,10 @@ contains
             ! No change of basis needed for diabatic representation
         case('adiabatic')
             trans = matmul(trans, self%adiab_trans)
-        case('locally_diabatic')
-            trans = matmul(trans, self%ldiab_trans)
+        case default
+            write(stderr, *) 'Error in evaluator_diabatic_mod, get_transformation function.'
+            write(stderr, *) '  Unknown basis: ', to_basis
+            stop
         end select
     end function get_transformation
 
@@ -534,9 +562,17 @@ contains
     end function get_soc2
 
 
-    subroutine match_phase(bra, ket)
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: match_phase
+    !> @brief Match the phases of the vectors in ket to those in bra (phasematch_assigned_rotation).
+    !> @details
+    !! The overlaps bra^T ket between the vectors, after the phases of ket are matched, are
+    !! returned in olap.
+    !----------------------------------------------------------------------------------------------
+    subroutine match_phase(bra, ket, olap)
         real(dp), intent(in) :: bra(:, :)
         real(dp), intent(inout) :: ket(:, :)
+        real(dp), allocatable, intent(out), optional :: olap(:, :) !< bra^T ket.
         integer :: i
         real(dp), allocatable :: overlap(:, :)
         integer, allocatable :: phase(:)
@@ -549,6 +585,7 @@ contains
                 ket(:, i) = -ket(:, i)
             end if
         end do
+        if (present(olap)) call move_alloc(overlap, olap)
     end subroutine match_phase
 
 
@@ -594,8 +631,6 @@ contains
             ! No change of basis needed for diabatic representation
         case('adiabatic')
             call unitary_transform(self%adiab_trans, mat, trans=.true.)
-        case('locally_diabatic')
-            call unitary_transform(self%ldiab_trans, mat, trans=.true.)
         case default
             write(stderr, *) 'Error in evaluator_diabatic_mod, change_basis_mat subroutine.'
             write(stderr, *) '  Unknown basis: ', basis

@@ -13,10 +13,10 @@
 !! - sq3 - As rss, divided by 3 (the SO-SQ3 scaling of effective operators in the literature).
 !!
 !! The signs s_ik of rss, rms and sq3 follow the couplings by continuity (Granucci, Persico and
-!! Spighi, J. Chem. Phys. 137, 22A501 (2012)). At the first evaluation, s_ik is the sign of
-!! u.h_ik. Afterwards, s_ik changes when h_ik changes direction by more than 90 degrees from the
-!! previous geometry, so the coupling stays smooth when it passes through zero. Without signed,
-!! all s_ik are +1.
+!! Spighi, J. Chem. Phys. 137, 22A501 (2012)). At the first point, s_ik is the sign of u.h_ik.
+!! Afterwards, s_ik changes when h_ik changes direction by more than 90 degrees from the previous
+!! point (passed to eval), so the coupling stays smooth when it passes through zero. Without
+!! signed, all s_ik are +1.
 !!
 !! u is the eigenvector with the largest eigenvalue of G = sum_ik h_ik h_ik^T, where h_ik are the
 !! couplings of singlet i with the three components of triplet k, at a reference geometry. For
@@ -57,16 +57,15 @@ module evaluator_effective_spin_mod
         real(dp) :: ref_fraction = 1.0_dp !< Retained fraction at the reference geometry.
         real(dp) :: fraction = 1.0_dp !< Retained fraction at the current geometry.
         real(dp) :: min_fraction = 1.0_dp !< Smallest retained fraction of all evaluations.
-        real(dp), allocatable :: h_cur(:, :, :) !< Singlet-triplet couplings h(c, i, k) of the
-                                                !! source at the current geometry (rss, rms, sq3).
-        real(dp), allocatable :: sign_cur(:, :) !< Signs s_ik at the current geometry.
-        real(dp), allocatable :: h_prev(:, :, :) !< h_cur at the previous geometry. A pair that
-                                                 !! was zero keeps its last nonzero value.
-        real(dp), allocatable :: sign_prev(:, :) !< sign_cur at the previous geometry.
+        real(dp), allocatable :: h_ref(:, :, :) !< Reference singlet-triplet couplings h(c, i, k)
+        !! of the source for the signs at the next point (rss, rms, sq3): those of this point, or,
+        !! for a pair whose couplings are zero here, its last nonzero couplings at earlier points.
+        !! During eval, the references of the previous point.
+        real(dp), allocatable :: sign_ref(:, :) !< Signs s_ik that belong to h_ref.
     contains
         procedure :: init => effective_init
-        procedure :: set_geometry => effective_set_geometry
-        procedure :: save_previous => effective_save_previous
+        procedure :: eval => effective_eval
+        procedure :: update_geometry => effective_update_geometry
         procedure :: eval_diab => effective_eval_diab
         procedure :: get_derivative_target_coord => effective_get_derivative_target_coord
         procedure :: get_reference_geometry => effective_get_reference_geometry
@@ -91,8 +90,8 @@ contains
     !! A copy of the source is kept. Its spin manifolds must be set, with spin_states =
     !! components, and only singlets and triplets. u is computed at the reference geometry, given
     !! in ref_geom or, by default, the default_reference of the source. Nothing of the evaluation at
-    !! the reference is kept: set_geometry saves no history, and the first point of the trajectory
-    !! overwrites the state of the source.
+    !! the reference is kept: the first point of the trajectory overwrites the state of the
+    !! source.
     !----------------------------------------------------------------------------------------------
     subroutine effective_init(self, src, soc_model, ref_geom, ref_coordinates, signed)
         use linalg_wrapper_mod, only : syev
@@ -160,14 +159,14 @@ contains
             call init_error('ref_geom and ref_coordinates are given together.')
         end if
         if (present(ref_geom)) then
-            call self%source%set_geometry(ref_geom, ref_coordinates)
+            call self%source%update_geometry(ref_geom, ref_coordinates)
         else
             call self%source%default_reference(geom)
             if (.not. allocated(geom)) then
                 call init_error('The potential has no default reference geometry. Give one '//    &
                 &               'with reference_geometry.')
             end if
-            call self%source%set_geometry(geom, self%source%classical_coordinates)
+            call self%source%update_geometry(geom, self%source%classical_coordinates)
         end if
         call self%source%eval_hamiltonian()
 
@@ -238,42 +237,45 @@ contains
 
 
     !> Pass the geometry to the source.
-    subroutine effective_set_geometry(self, geometry, coordinates)
+    subroutine effective_update_geometry(self, geometry, coordinates)
         class(effective_spin_evaluator), intent(inout) :: self
         real(dp), intent(in) :: geometry(:, :)
         character(len=*), intent(in) :: coordinates
 
-        call self%source%set_geometry(geometry, coordinates)
-    end subroutine effective_set_geometry
+        call self%source%update_geometry(geometry, coordinates)
+    end subroutine effective_update_geometry
 
 
     !----------------------------------------------------------------------------------------------
-    ! SUBROUTINE: effective_save_previous
-    !> @brief Save the eigenvectors, and the singlet-triplet couplings and their signs for the
-    !! signs by continuity at the next geometry.
+    ! SUBROUTINE: effective_eval
+    !> @brief Evaluate the model at the current geometry, with the signs of the couplings by
+    !! continuity from the previous point prev.
     !> @details
-    !! A pair whose couplings are zero keeps its last nonzero couplings, so a sign change exactly
-    !! at a point is still found at the next one.
+    !! The sign references of prev (h_ref, sign_ref) are copied before the evaluation, and
+    !! set_rss_couplings replaces them with those of this point. Without prev, the signs are those
+    !! of a first point. The rest is done by eval_all.
     !----------------------------------------------------------------------------------------------
-    subroutine effective_save_previous(self)
+    subroutine effective_eval(self, prev)
         class(effective_spin_evaluator), intent(inout) :: self
-        integer :: i, k
+        class(potential_evaluator), intent(in), optional :: prev
 
-        call diabatic_save_previous(self)
-        if (.not. allocated(self%h_cur)) return
-        if (.not. allocated(self%h_prev)) then
-            allocate(self%h_prev(3, size(self%h_cur, 2), size(self%h_cur, 3)), source=0.0_dp)
-            allocate(self%sign_prev(size(self%h_cur, 2), size(self%h_cur, 3)), source=1.0_dp)
-        end if
-        do k = 1, size(self%h_cur, 3)
-            do i = 1, size(self%h_cur, 2)
-                if (norm2(self%h_cur(:, i, k)) > tiny(1.0_dp)) then
-                    self%h_prev(:, i, k) = self%h_cur(:, i, k)
-                    self%sign_prev(i, k) = self%sign_cur(i, k)
+        if (allocated(self%h_ref)) deallocate(self%h_ref)
+        if (allocated(self%sign_ref)) deallocate(self%sign_ref)
+        if (present(prev)) then
+            select type(prev)
+            class is (effective_spin_evaluator)
+                if (allocated(prev%h_ref)) then
+                    self%h_ref = prev%h_ref
+                    self%sign_ref = prev%sign_ref
                 end if
-            end do
-        end do
-    end subroutine effective_save_previous
+            class default
+                write(stderr, *) 'Error in evaluator_effective_spin_mod, effective_eval subroutine.'
+                write(stderr, *) '  The previous point is not given by effective spin states.'
+                stop
+            end select
+        end if
+        call eval_all(self, prev)
+    end subroutine effective_eval
 
 
     !----------------------------------------------------------------------------------------------
@@ -318,8 +320,11 @@ contains
     !> @details
     !! The coupling of singlet i and triplet k is s_ik |h_ik| (coupling_signs), divided by sqrt(3)
     !! for rms and by 3 for sq3. Its derivative is s_ik h_ik.dh_ik / |h_ik|, and zero where
-    !! h_ik = 0. All other couplings are zero. The couplings and signs are kept for the signs at
-    !! the next geometry.
+    !! h_ik = 0. All other couplings are zero.
+    !!
+    !! The couplings and signs of the pairs with nonzero couplings then replace the references
+    !! (h_ref, sign_ref) for the signs at the next point. A pair whose couplings are zero keeps its
+    !! last nonzero couplings, so a sign change exactly at a point is still found at the next one.
     !----------------------------------------------------------------------------------------------
     subroutine set_rss_couplings(self)
         class(effective_spin_evaluator), intent(inout) :: self
@@ -330,8 +335,18 @@ contains
         h = self%st_couplings(self%source%soc_w)
         r = norm2(h, dim=1)
         s = self%coupling_signs(h)
-        self%h_cur = h
-        self%sign_cur = s
+        if (.not. allocated(self%h_ref)) then
+            allocate(self%h_ref(3, size(h, 2), size(h, 3)), source=0.0_dp)
+            allocate(self%sign_ref(size(h, 2), size(h, 3)), source=1.0_dp)
+        end if
+        do k = 1, size(h, 3)
+            do i = 1, size(h, 2)
+                if (r(i, k) > tiny(1.0_dp)) then
+                    self%h_ref(:, i, k) = h(:, i, k)
+                    self%sign_ref(i, k) = s(i, k)
+                end if
+            end do
+        end do
         select case(self%soc_model)
         case('rms')
             s = s / sqrt(3.0_dp)
@@ -370,11 +385,12 @@ contains
     !> @brief Signs s_ik of the rss, rms and sq3 couplings at the current geometry.
     !> @details
     !! Without signed, all signs are +1. Otherwise, a pair with nonzero couplings at an earlier
-    !! geometry keeps the sign saved there, and changes it if h_ik(prev).h_ik < 0 (Granucci,
-    !! Persico and Spighi 2012, Eq. 16). A pair without earlier couplings, at the first evaluation
-    !! or after only zero couplings, takes the sign of u.h_ik (+1 at zero), which gives the
-    !! relative signs of the projection model. The signs depend only on the saved values, so a
-    !! second evaluation at the same geometry gives the same signs.
+    !! point keeps the sign of its reference (sign_ref, of the previous point during eval), and
+    !! changes it if h_ik(ref).h_ik < 0 (Granucci, Persico and Spighi 2012, Eq. 16). A pair
+    !! without earlier couplings, at the first point or after only zero couplings, takes the sign
+    !! of u.h_ik (+1 at zero), which gives the relative signs of the projection model. The signs
+    !! depend only on the references of the previous point, so a second evaluation at the same
+    !! geometry with the same previous point gives the same signs.
     !----------------------------------------------------------------------------------------------
     pure function coupling_signs(self, h) result(s)
         class(effective_spin_evaluator), intent(in) :: self
@@ -386,10 +402,10 @@ contains
         if (.not. self%signed) return
         do k = 1, size(h, 3)
             do i = 1, size(h, 2)
-                if (allocated(self%h_prev)) then
-                    if (norm2(self%h_prev(:, i, k)) > tiny(1.0_dp)) then
-                        s(i, k) = self%sign_prev(i, k)
-                        if (dot_product(self%h_prev(:, i, k), h(:, i, k)) < 0.0_dp) then
+                if (allocated(self%h_ref)) then
+                    if (norm2(self%h_ref(:, i, k)) > tiny(1.0_dp)) then
+                        s(i, k) = self%sign_ref(i, k)
+                        if (dot_product(self%h_ref(:, i, k), h(:, i, k)) < 0.0_dp) then
                             s(i, k) = -s(i, k)
                         end if
                         cycle

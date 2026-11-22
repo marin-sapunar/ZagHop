@@ -7,7 +7,7 @@ module pot_test_mod
     !> Evaluator without a potential, used to test the spin manifold setup.
     type, extends(diabatic_evaluator) :: group_evaluator
     contains
-        procedure :: set_geometry => group_set_geometry
+        procedure :: update_geometry => group_update_geometry
         procedure :: eval_diab => group_eval_diab
     end type group_evaluator
 
@@ -28,7 +28,7 @@ module pot_test_mod
         real(dp), allocatable :: soc0(:, :), soc1(:, :, :)
         logical :: scaled = .false.
     contains
-        procedure :: set_geometry => linear_set_geometry
+        procedure :: update_geometry => linear_update_geometry
         procedure :: eval_diab => linear_eval_diab
         procedure :: default_reference => linear_default_reference
         procedure :: get_derivative_target_coord => linear_derivative
@@ -41,13 +41,13 @@ module pot_test_mod
 
 contains
 
-    subroutine linear_set_geometry(self, geometry, coordinates)
+    subroutine linear_update_geometry(self, geometry, coordinates)
         class(linear_evaluator), intent(inout) :: self
         real(dp), intent(in) :: geometry(:, :)
         character(len=*), intent(in) :: coordinates
 
         self%x = geometry(1, :)
-    end subroutine linear_set_geometry
+    end subroutine linear_update_geometry
 
     subroutine linear_eval_diab(self)
         class(linear_evaluator), intent(inout) :: self
@@ -82,11 +82,11 @@ contains
         end if
     end function linear_derivative
 
-    subroutine group_set_geometry(self, geometry, coordinates)
+    subroutine group_update_geometry(self, geometry, coordinates)
         class(group_evaluator), intent(inout) :: self
         real(dp), intent(in) :: geometry(:, :)
         character(len=*), intent(in) :: coordinates
-    end subroutine group_set_geometry
+    end subroutine group_update_geometry
 
     subroutine group_eval_diab(self)
         class(group_evaluator), intent(inout) :: self
@@ -143,6 +143,12 @@ program pot_test
     ret = derivative_test()
     if (ret /= 0) then
         write(*,*) "Error in derivative_test."
+        stop ret
+    end if
+
+    ret = link_test()
+    if (ret /= 0) then
+        write(*,*) "Error in link_test."
         stop ret
     end if
 
@@ -246,13 +252,12 @@ program pot_test
 
 
     !> Gradients and coupling vectors are converted by get_derivative_target_coord and returned
-    !! flat. update_geometry saves the eigenvectors of the previous geometry, and the spin-orbit
-    !! couplings within groups are checked at the first evaluation.
+    !! flat, and the spin-orbit couplings within groups are checked at the first evaluation.
     integer function derivative_test() result(ret)
         use global_defs, only : dp
         use pot_test_mod, only : coord_evaluator
         type(coord_evaluator) :: pot
-        real(dp), allocatable :: grad(:), nadv(:), d(:), trans(:, :), sf_trans(:, :)
+        real(dp), allocatable :: grad(:), nadv(:), d(:)
         real(dp) :: geom(3, 2)
 
         call pot%set_spin_manifolds([2], [1], 'components')
@@ -274,8 +279,6 @@ program pot_test
         if (any(grad /= [d, 2.0_dp * d, 3.0_dp * d])) return
 
         ret = 3
-        trans = pot%adiab_trans
-        sf_trans = pot%sf_trans
         geom = 0.0_dp
         call pot%update_geometry(geom, 'model')
         grad = pot%get_gradient('adiabatic', 2)
@@ -289,13 +292,66 @@ program pot_test
         d = pot%adiab_dw(:, 1, 2) / (pot%adiab_w(2, 2) - pot%adiab_w(1, 1))
         if (size(nadv) /= 6) return
         if (any(nadv /= [d, 2.0_dp * d, 3.0_dp * d])) return
-
-        ! The eigenvectors of the previous geometry were saved.
-        ret = 5
-        if (.not. allocated(pot%ldiab_trans) .or. .not. allocated(pot%lsf_trans)) return
-        if (any(pot%ldiab_trans /= trans) .or. any(pot%lsf_trans /= sf_trans)) return
         ret = 0
     end function derivative_test
+
+
+    !----------------------------------------------------------------------------------------------
+    !> The link between the states of two points. Each evaluation gets a new id. With a previous
+    !! point, the phases of the states are matched to it and the link holds U(prev)^T U and its
+    !! orthogonalisation, which is the same for exact eigenvectors. Without a previous point, a
+    !! copied link is removed. A point evaluated from another previous point does not link the
+    !! first one.
+    !----------------------------------------------------------------------------------------------
+    integer function link_test() result(ret)
+        use global_defs, only : dp
+        use matrix_mod, only : unit_mat
+        use pot_test_mod, only : linear_evaluator
+        type(linear_evaluator) :: pot1, pot2, pot3
+        real(dp) :: h0(3, 2, 2), h1(3, 2, 2, 2), x0(3, 3), x1(3, 3, 2)
+        real(dp), allocatable :: s(:, :)
+        real(dp), parameter :: tol = 1.0e-12_dp
+        integer :: i
+
+        call general_couplings(h0, h1, x0, x1)
+        call set_linear_model(pot1, h0, h1, x0, x1)
+        call pot1%update_geometry(reshape([0.1_dp, 0.2_dp], [1, 2]), 'model')
+        call pot1%eval()
+        ret = 1
+        if (pot1%id <= 0 .or. pot1%link%valid()) return
+
+        ! The next point, as in the trajectory data a copy of the previous one, after a small step.
+        ret = 2
+        pot2 = pot1
+        call pot2%update_geometry(reshape([0.1_dp + 1.0e-6_dp, 0.2_dp - 1.0e-6_dp], [1, 2]),      &
+        &                         'model')
+        call pot2%eval(pot1)
+        if (pot2%id == pot1%id) return
+        if (.not. pot2%link%matches(pot1%id, pot2%id, 'adiabatic')) return
+        s = matmul(transpose(pot1%adiab_trans), pot2%adiab_trans)
+        if (any(pot2%link%s /= s)) return
+        if (any(abs(pot2%link%t - s) > tol)) return
+        if (any(abs(matmul(transpose(pot2%link%t), pot2%link%t) - unit_mat(8)) > tol)) return
+        ! After a small step, each state overlaps mostly with itself, with a matched phase.
+        do i = 1, 8
+            if (pot2%link%s(i, i) < 0.99_dp) return
+        end do
+
+        ! Without a previous point, the copied link is removed.
+        ret = 3
+        pot3 = pot2
+        call pot3%eval()
+        if (pot3%link%valid() .or. pot3%id == pot2%id) return
+
+        ! The next point links the point it was evaluated from, not the one before it.
+        ret = 4
+        pot3 = pot2
+        call pot3%update_geometry(reshape([0.1_dp + 2.0e-6_dp, 0.2_dp], [1, 2]), 'model')
+        call pot3%eval(pot2)
+        if (.not. pot3%link%matches(pot2%id, pot3%id, 'adiabatic')) return
+        if (pot3%link%matches(pot1%id, pot3%id, 'adiabatic')) return
+        ret = 0
+    end function link_test
 
 
     integer function group_test() result(ret)
@@ -513,7 +569,7 @@ program pot_test
         ! The model has one state for each spin-free state, and P is an isometry.
         ret = 1
         call eff%init(src, 'projection')
-        if (eff%n_state /= 4 .or. eff%n_sf /= 4 .or. eff%spin_states /= 'effective') return
+        if (eff%n_state /= 4 .or. eff%n_sf /= 4 .or. eff%spin_states /= 'effective_rss') return
         if (any(eff%manifold%n_comp /= [1, 1]) .or. any(eff%manifold%mult /= [1, 3])) return
         if (eff%ndof /= 2 .or. eff%classical_coordinates /= 'model') return
         if (abs(norm2(eff%u) - 1.0_dp) > tol) return
@@ -692,11 +748,11 @@ program pot_test
                 geom_d = geom
                 geom_d(1, n) = geom(1, n) + delta
                 call eff_d%update_geometry(geom_d, 'model')
-                call eff_d%eval()
+                call eff_d%eval(eff(m))
                 e_p = eff_d%get_energy('adiabatic')
                 geom_d(1, n) = geom(1, n) - delta
                 call eff_d%update_geometry(geom_d, 'model')
-                call eff_d%eval()
+                call eff_d%eval(eff(m))
                 e_m = eff_d%get_energy('adiabatic')
                 do s = 1, 4
                     grad = eff(m)%get_gradient('adiabatic', s)
@@ -715,7 +771,9 @@ program pot_test
     !!   x = 1 without vanishing. Its coupling keeps the sign of the first point.
     !! - h_21 = (0.5 - x) d, with d parallel to a, is exactly zero at x = 0.5. Its coupling is
     !!   (0.5 - x) |d| when signed, and |0.5 - x| |d| without signs.
-    !! A second evaluation at the same geometry gives the same couplings.
+    !! Each point is evaluated with the previous one. A second evaluation at the same geometry, with
+    !! the same previous point or with the point itself as the previous one, gives the same
+    !! couplings.
     !----------------------------------------------------------------------------------------------
     integer function effective_sign_test() result(ret)
         use global_defs, only : dp
@@ -723,6 +781,7 @@ program pot_test
         use evaluator_effective_spin_mod, only : effective_spin_evaluator
         type(linear_evaluator) :: src
         type(effective_spin_evaluator) :: eff(5)
+        type(effective_spin_evaluator) :: prev !< Previous point.
         character(len=3), parameter :: models(5) = ['rss', 'rms', 'sq3', 'rss', 'sq3']
         logical, parameter :: signed(5) = [.true., .true., .true., .false., .false.]
         real(dp), parameter :: scale(5) = [1.0_dp, 1.0_dp / sqrt(3.0_dp), 1.0_dp / 3.0_dp,        &
@@ -753,7 +812,11 @@ program pot_test
                 x = real(i, dp) / 10.0_dp
                 geom(1, :) = [x, 0.0_dp]
                 call eff(m)%update_geometry(geom, 'model')
-                call eff(m)%eval()
+                if (i == 0) then
+                    call eff(m)%eval()
+                else
+                    call eff(m)%eval(prev)
+                end if
                 c11 = scale(m) * norm2((1.0_dp - x) * a + x * c)
                 c21 = scale(m) * (0.5_dp - x) * norm2(d)
                 dc21 = -scale(m) * norm2(d)
@@ -765,15 +828,17 @@ program pot_test
                 if (abs(eff(m)%soc_w(2, 3) - c21) > tol) return
                 if (i /= 5 .and. abs(eff(m)%soc_dw(1, 2, 3) - dc21) > tol) return
                 if (any(eff(m)%soc_w(:, 4) /= 0.0_dp)) return
-                ! A second evaluation, with and without saving the current point.
+                ! A second evaluation, with the same previous point and with the current point as
+                ! the previous one.
                 if (i == 5 .or. i == 6) then
                     soc_w = eff(m)%soc_w
-                    call eff(m)%eval()
+                    call eff(m)%eval(prev)
                     if (any(eff(m)%soc_w /= soc_w)) return
-                    call eff(m)%update_geometry(geom, 'model')
-                    call eff(m)%eval()
+                    prev = eff(m)
+                    call eff(m)%eval(prev)
                     if (any(eff(m)%soc_w /= soc_w)) return
                 end if
+                prev = eff(m)
             end do
         end do
         ret = 0
@@ -986,7 +1051,7 @@ program pot_test
         call grp%set_spin_manifolds([1, 2], [1, 3], 'effective_rss')
         call json%create_object(root, '')
         call grp%add_state_layout(json, root)
-        if (jstr(json, root, 'spin_states') /= 'effective') return
+        if (jstr(json, root, 'spin_states') /= 'effective_rss') return
         if (jint(json, root, 'n_state.diabatic') /= 3) return
         if (jint(json, root, 'n_state.spin_free') /= 3) return
         if (jint(json, root, 'manifolds(2).n') /= 2) return
@@ -998,7 +1063,7 @@ program pot_test
         call eff%init(st, 'sq3', signed=.false.)
         call json%create_object(root, '')
         call eff%add_state_layout(json, root)
-        if (jstr(json, root, 'spin_states') /= 'effective') return
+        if (jstr(json, root, 'spin_states') /= 'effective_rss') return
         if (jint(json, root, 'n_state.diabatic') /= 2) return
         if (jint(json, root, 'manifolds(2).n_comp') /= 1) return
         if (jstr(json, root, 'effective_spin_states.model') /= 'sq3') return

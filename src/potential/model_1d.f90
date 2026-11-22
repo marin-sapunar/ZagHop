@@ -54,7 +54,7 @@ module model_1d_mod
         real(dp) :: x = 0.0_dp
     contains
         procedure :: init => model_init
-        procedure :: set_geometry => model_set_geometry
+        procedure :: update_geometry => model_update_geometry
         procedure :: eval_diab => model_eval_diab
         procedure :: default_reference => model_default_reference
         procedure, private :: read_params
@@ -160,20 +160,20 @@ contains
     end subroutine model_error
 
 
-    subroutine model_set_geometry(self, geometry, coordinates)
+    subroutine model_update_geometry(self, geometry, coordinates)
         class(model_1d_evaluator), intent(inout) :: self
         real(dp), intent(in) :: geometry(:, :)
         character(len=*), intent(in) :: coordinates
 
         if (coordinates /= self%classical_coordinates) then
-            write(stderr, *) 'Error in model_1d_mod, set_geometry subroutine.'
+            write(stderr, *) 'Error in model_1d_mod, update_geometry subroutine.'
             write(stderr, *) '  Unsupported coordinates "'//coordinates//'". Expected "'//          &
             &                self%classical_coordinates//'".'
             stop
         end if
 
         self%x = geometry(1, 1)
-    end subroutine model_set_geometry
+    end subroutine model_update_geometry
 
 
     !> The default reference geometry is x = 0. For the Granucci models with the default

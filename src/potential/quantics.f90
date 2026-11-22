@@ -64,7 +64,7 @@ module quantics_interface_mod
         real(dop), allocatable :: hops(:) !< Operator data read from the oper file (hopsdim).
     contains
         procedure :: init => quantics_initialize
-        procedure :: set_geometry => quantics_set_geometry
+        procedure :: update_geometry => quantics_update_geometry
         procedure :: eval_diab => quantics_eval_diab
         procedure :: default_reference => quantics_default_reference
         procedure :: check_atoms => quantics_check_atoms
@@ -129,7 +129,7 @@ contains
 
 
     !----------------------------------------------------------------------------------------------
-    ! SUBROUTINE: quantics_set_geometry
+    ! SUBROUTINE: quantics_update_geometry
     !> @brief Set the dynamical coordinates of the operator.
     !> @details
     !! Accepts one value per DOF ('quantics', shape (1, ndof)) and, for DD in Cartesians, the
@@ -137,7 +137,7 @@ contains
     !! are x, y, z in the order of the atoms, so both give the same flat vector, and gradients and
     !! couplings need no conversion.
     !----------------------------------------------------------------------------------------------
-    subroutine quantics_set_geometry(self, geometry, coordinates)
+    subroutine quantics_update_geometry(self, geometry, coordinates)
         class(quantics_interface), intent(inout) :: self
         real(dop), intent(in) :: geometry(:, :)
         character(len=*), intent(in) :: coordinates
@@ -146,23 +146,23 @@ contains
         select case(coordinates)
         case('quantics')
             if (size(geometry, 1) /= 1 .or. size(geometry, 2) /= self%ndof) then
-                write(stderr, *) 'Error in quantics_mod, set_geometry subroutine.'
+                write(stderr, *) 'Error in quantics_mod, update_geometry subroutine.'
                 write(stderr, *) '  Geometry should have dimensions (1, ndof).'
                 stop
             end if
         case('cartesian')
             if (self%classical_coordinates /= 'cartesian') then
-                write(stderr, *) 'Error in quantics_mod, set_geometry subroutine.'
+                write(stderr, *) 'Error in quantics_mod, update_geometry subroutine.'
                 write(stderr, *) '  Cartesian coordinates are only available for DD in Cartesians.'
                 stop
             end if
             if (size(geometry, 1) /= 3 .or. size(geometry, 2) /= self%ndof / 3) then
-                write(stderr, *) 'Error in quantics_mod, set_geometry subroutine.'
+                write(stderr, *) 'Error in quantics_mod, update_geometry subroutine.'
                 write(stderr, *) '  Geometry should have dimensions (3, ndof/3).'
                 stop
             end if
         case default
-            write(stderr, *) 'Error in quantics_mod, set_geometry subroutine.'
+            write(stderr, *) 'Error in quantics_mod, update_geometry subroutine.'
             write(stderr, *) '  Unsupported coordinates "'//coordinates//'". Expected "'//          &
             &                self%classical_coordinates//'".'
             stop
@@ -174,7 +174,7 @@ contains
         do n = 1, self%ndof
             self%gpoint(spfdof(n, 1)) = self%q(n)
         end do
-    end subroutine quantics_set_geometry
+    end subroutine quantics_update_geometry
 
 
     subroutine quantics_initialize(self)

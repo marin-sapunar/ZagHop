@@ -214,6 +214,10 @@ project(ZagHop LANGUAGES Fortran)
   add_executable(sh_test tests/unit/sh_test.f90)
   target_link_libraries(sh_test zagcore)
   add_test(NAME sh_unit_test COMMAND sh_test)
+  # Cases which should stop with an error.
+  add_test(NAME sh_unit_test_ld_wrong_link COMMAND sh_test ld_wrong_link)
+  set_tests_properties(sh_unit_test_ld_wrong_link PROPERTIES
+    PASS_REGULAR_EXPRESSION "do not link the last point")
 
   # Register each test_* method of a Python unittest class as a separate ctest test.
   function(zaghop_add_python_tests module class prefix)

@@ -11,7 +11,6 @@ module sh_ld_mod
     use global_defs
     use tsh_method_mod, only : tsh_method, tsh_request, base_initialize => initialize
     use evaluator_base_mod, only : potential_evaluator
-    use orthog_mod, only : orthog_lowdin
     use matrix_mod, only : mat_sy_exp
     use random_mod, only : rng_type
     implicit none
@@ -32,8 +31,8 @@ module sh_ld_mod
         !! - 0 - None.
         !! - 1 - Energy based decoherence scheme (Granucci, Persico; doi: 10.1063/1.2715585).
         complex(dp), allocatable :: coeff(:)
-        real(dp), allocatable :: u_t1(:, :)
-        real(dp), allocatable :: h_t1(:, :)
+        real(dp), allocatable :: h_t1(:, :) !< Adiabatic Hamiltonian at the last processed point.
+        integer :: id_t1 = 0 !< Id of the evaluation of the last processed point (of coeff, h_t1).
     contains
         procedure :: initialize => ld_initialize
         procedure :: start => ld_start
@@ -66,7 +65,7 @@ contains
 
     !----------------------------------------------------------------------------------------------
     ! SUBROUTINE: ld_start
-    !> @brief Store the adiabatic Hamiltonian and states at the initial point.
+    !> @brief Store the adiabatic Hamiltonian and the id of the initial point.
     !----------------------------------------------------------------------------------------------
     subroutine ld_start(self, t, potential)
         class(tsh_ld), intent(inout) :: self
@@ -75,7 +74,7 @@ contains
 
         self%t = t
         self%h_t1 = potential%get_Hamiltonian('adiabatic')
-        self%u_t1 = potential%get_transformation('diabatic', 'adiabatic')
+        self%id_t1 = potential%id
         self%request = tsh_request(t_final=t)
     end subroutine ld_start
 
@@ -91,6 +90,11 @@ contains
     !! build the propagator of the whole step, P = T^t.W_n...W_1, which takes the coefficients at
     !! the start of the step to the adiabatic basis at t2. The hopping probabilities are evaluated
     !! once, from the coefficients at the start and end of the step and P (or T).
+    !!
+    !! T is the Lowdin orthogonalised overlap matrix S_KL = <psi_K(t)|psi_L(t2)> between the
+    !! adiabatic states at the start and end of the step (Granucci et al., eqs. 15, B5 and B6),
+    !! from the link of the potential (a state_overlap). The link must be between the last
+    !! processed point and the current one; otherwise the program stops.
     !----------------------------------------------------------------------------------------------
     subroutine ld_propagate(self, t2, potential)
         class(tsh_ld), intent(inout) :: self
@@ -104,18 +108,22 @@ contains
         complex(dp) :: w3(self%n_state, self%n_state) !< Propagator of a substep (LD basis).
         complex(dp) :: w_step(self%n_state, self%n_state) !< Propagator of the step (LD basis).
         complex(dp) :: w4(self%n_state, self%n_state) !< Propagator of the step, P = T^t.w_step.
-        real(dp), allocatable :: u_t2(:, :)
         integer :: i, cstate
         complex(dp) :: c_propagation(self%n_state) !< Coefficients in the LD basis.
         complex(dp) :: c_t2(self%n_state) !< Coefficients at t2 in the adiabatic basis at t2.
 
-        cstate = self%active_state
-        u_t2 = potential%get_transformation('diabatic', 'adiabatic')
-        h_t2 = potential%get_Hamiltonian('adiabatic')
+        if (.not. potential%link%matches(self%id_t1, potential%id, 'adiabatic')) then
+            write(stderr, *) 'Error in sh_ld_mod, ld_propagate subroutine.'
+            write(stderr, *) '  The overlaps of the potential do not link the last point of the ', &
+            &                'method to the current point.'
+            write(stderr, '(3x,a,i0,a,i0,a,i0,a,i0,a)') 'Expected points ', self%id_t1, ' -> ',  &
+            &   potential%id, ', given ', potential%link%id_bra, ' -> ', potential%link%id_ket, '.'
+            stop
+        end if
 
-        ! Get overlap matrix.
-        t = matmul(transpose(self%u_t1), u_t2) ! T = U(t)^t . U(t+dt)
-        call orthog_lowdin(t)
+        cstate = self%active_state
+        h_t2 = potential%get_Hamiltonian('adiabatic')
+        t = potential%link%t ! Orthogonalised U(t)^t . U(t+dt)
 
         dh = matmul(matmul(t, h_t2), transpose(t)) ! H(t+dt) = T.H(t+dt).T^t
         dh = dh - self%h_t1
@@ -154,8 +162,8 @@ contains
         &                          t_final=t2)
 
         self%coeff = c_t2
-        self%u_t1 = u_t2
         self%h_t1 = h_t2
+        self%id_t1 = potential%id
         self%t = t2
     end subroutine ld_propagate
 

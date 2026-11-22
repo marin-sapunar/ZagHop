@@ -138,11 +138,6 @@ module control_var
 
         real(dp) :: qm_en_err = 1.0e-6 !< Estimated error in calculated energies.
 
-        integer :: variable_nstate !< Option for dynamically changing number of states calculated
-        !!                             along the trajectory.
-        !! - 0 - Constant number of states.
-        !! - 1 - Remove states higher than cstate + 1 and min_nstate when the absolute value of
-        !!       their coefficient in the total electronic wave functions drops below 0.01.
         logical :: oscill !< Signal to read oscillator strengths from the QM calculation.
 
     end type control
