@@ -31,6 +31,19 @@ class VcPyrazineTest(ZagHopTest):
         self.compare_energy()
         self.compare_results("cwf.dat")
 
+    def test_ldsh_diabatic(self):
+        """ Test istate_basis = diabatic.
+
+        Diabatic state 3 is projected onto the adiabatic states (weights 0.17, 0.82 for adiabatic
+        states 2 and 3). The seed is chosen so that the less likely state 2 is drawn, and the
+        wave function starts in it."""
+        self.run_traj()
+        self.stdout_contains("Initial state 3 of the diabatic basis projected onto the "
+                             "adiabatic basis.")
+        self.stdout_contains("Initial active state: 2.")
+        self.compare_energy()
+        self.compare_results("cwf.dat")
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

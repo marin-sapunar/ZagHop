@@ -15,7 +15,7 @@
 !--------------------------------------------------------------------------------------------------
 module tsh_method_mod
     use global_defs, only : dp, stdout, stderr, stdp1, stdp2
-    use evaluator_base_mod, only : potential_evaluator
+    use evaluator_base_mod, only : potential_evaluator, state_location
     use random_mod, only : rng_type
     implicit none
 
@@ -24,6 +24,7 @@ module tsh_method_mod
     public :: tsh_none
     public :: tsh_request
     public :: initialize
+    public :: set_initial_state
     public :: request_none
     public :: request_goto
     public :: request_insert
@@ -58,6 +59,7 @@ module tsh_method_mod
         type(tsh_request) :: request !< Request from the last processed point.
     contains
         procedure :: initialize
+        procedure :: set_initial_state
         procedure(start_iface), deferred :: start
         procedure(propagate_iface), deferred :: propagate
         procedure :: hop_rejected
@@ -125,6 +127,99 @@ contains
         self%active_state = active_state
         allocate(self%prob(self%n_state), source=0.0_dp)
     end subroutine initialize
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: set_initial_state
+    !> @brief Set the active state at the initial point from a state of a given basis.
+    !> @details
+    !! state is a state of basis, 'diabatic' or 'adiabatic'. A diabatic state is given by its index
+    !! in the source of the potential (see diabatic_from_source). If basis is the basis of the
+    !! method, the state becomes the active state. Otherwise, the active state a is drawn with
+    !! probability |T(i, a)|**2, where T is the transformation from basis to the basis of the
+    !! method at the current point (the same weights as zagpy sample state). One random number is
+    !! drawn only in this case. With the 'spin_free' basis of the method, a diabatic state is
+    !! projected through its spin-free state.
+    !! The potential must be evaluated at the initial point. Extensions that hold more than the
+    !! active state override this subroutine and call it first.
+    !----------------------------------------------------------------------------------------------
+    subroutine set_initial_state(self, potential, state, basis)
+        class(tsh_method), intent(inout) :: self
+        class(potential_evaluator), intent(in) :: potential
+        integer, intent(in) :: state !< Initial state, a state of basis.
+        character(len=*), intent(in) :: basis !< Basis of state.
+        integer :: i !< Index of the state in basis.
+        integer :: a
+        real(dp), allocatable :: trans(:, :)
+        real(dp), allocatable :: weight(:) !< Probability of each state of the method basis.
+        real(dp) :: cprob
+        real(dp) :: rnum
+        type(state_location) :: loc
+
+        select case(basis)
+        case('diabatic')
+            i = potential%diabatic_from_source(state)
+        case('adiabatic')
+            i = state
+            if (i < 1 .or. i > potential%basis_size(basis)) i = 0
+        case default
+            write(stderr, *) 'Error in tsh_method_mod, set_initial_state subroutine.'
+            write(stderr, *) '  Unknown basis of the initial state: ', basis
+            stop
+        end select
+        if (i == 0) then
+            write(stderr, *) 'Error in tsh_method_mod, set_initial_state subroutine.'
+            write(stderr, '(3x,a,i0,3a)') 'Initial state ', state, ' is not a state of the ',     &
+            &                             basis, ' basis.'
+            stop
+        end if
+
+        if (basis == self%basis) then
+            self%active_state = i
+            if (stdp1) then
+                write(stdout, *)
+                write(stdout, '(1x,a,i0,3a,i0,a)') 'Initial state ', state, ' of the ', basis,    &
+                &                                  ' basis is state ', i, '.'
+            end if
+            return
+        end if
+
+        if (self%basis == 'spin_free') then
+            if (basis /= 'diabatic') then
+                write(stderr, *) 'Error in tsh_method_mod, set_initial_state subroutine.'
+                write(stderr, *) '  The spin_free basis is only given in the diabatic basis.'
+                write(stderr, *) '  Basis of the initial state: ', basis
+                stop
+            end if
+            loc = potential%locate_state(i)
+            i = loc%sf
+            trans = potential%get_transformation('diabatic', 'spin_free')
+        else
+            trans = potential%get_transformation(basis, self%basis)
+        end if
+        weight = trans(i, :)**2
+        weight = weight / sum(weight)
+
+        call self%rng%uniform(rnum)
+        a = findloc(weight > 0.0_dp, .true., dim=1, back=.true.) ! Guard against rounding.
+        cprob = 0.0_dp
+        do i = 1, self%n_state
+            cprob = cprob + weight(i)
+            if (rnum < cprob) then
+                a = i
+                exit
+            end if
+        end do
+        self%active_state = a
+
+        if (stdp1) then
+            write(stdout, *)
+            write(stdout, '(1x,a,i0,6a)') 'Initial state ', state, ' of the ', basis, ' basis ',  &
+            &                             'projected onto the ', self%basis, ' basis.'
+            write(stdout, '(3x,a,1000f10.6)') 'Weights:', weight
+            write(stdout, '(3x,a,i0,a)') 'Initial active state: ', a, '.'
+        end if
+    end subroutine set_initial_state
 
 
     !----------------------------------------------------------------------------------------------

@@ -48,6 +48,10 @@ module control_var
         !! to ensure the results are reproducible since the Fortran `random_number` subroutine is
         !! compiler dependent.
         logical :: restart = .false. !< Restart from backup of previous run.
+        integer :: istate = 0 !< Initial state, a state of istate_basis.
+        character(len=:), allocatable :: istate_basis !< Basis of istate: 'method' (basis of the
+        !! surface hopping method), 'diabatic' (in the order of the source of the potential) or
+        !! 'adiabatic'.
         real(dp) :: stop_s0s1_ci = -10000.0_dp !< Threshold to stop program in case of S0/S1 CI.
         integer :: target_state = -1 !< Stop dynamics after reaching target state.
         real(dp) :: target_state_time = 0.0_dp !< Additional time to propagate after reaching the

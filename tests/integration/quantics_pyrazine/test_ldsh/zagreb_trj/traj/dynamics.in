@@ -2,6 +2,7 @@ $system
  ndim = 1
  nstate =    4
  istate =    4
+ istate_basis = diabatic
 $surfhop ld-fssh
  nadvec  linear                                                                 
  velocity nadvec                                                                

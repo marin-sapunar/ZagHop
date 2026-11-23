@@ -84,6 +84,12 @@ program zaghop
         if (stdp1) write(stdout, '(a)') ' Running initial QM calculation: '
         if (stdp1) call stepclock%start()
         call run_qm(tr1, .false.)
+        ! A state of another basis is projected onto the basis of the method at the initial
+        ! point, and the gradient is taken again for the chosen state.
+        if (ctrl%istate_basis /= 'method') then
+            call tr1%wf%set_initial_state(tr1%pot, ctrl%istate, ctrl%istate_basis)
+            call run_qm(tr1, .true.)
+        end if
         call tr1%wf%start(tr1%time, tr1%pot)
         if (stdp1) call stepclock%print(stdout, '  QM run time:')
         call trajectory_write_final(tr1%wf%request%t_final, ctrl%print, ctrl%print_units,         &

@@ -70,7 +70,16 @@ nstate \#		&
 
 istate \#		&
     \textbf{nstate} \newline
-    Initially populated state. In a FSSH calculation, the initial wave function coefficient of this state will be 1, while others will be 0.  \\
+    Initially populated state, a state of the basis given by istate\_basis. In a FSSH calculation, the initial wave function coefficient of the initial active state will be 1, while others will be 0. \newline
+    \textbf{istate file name}: read the state from the file name.  \\
+
+istate\_basis	&
+    \textbf{method} \newline
+    Basis of istate. Possible options: \newline
+	\tabitem [method] The basis of the surface hopping method (adiabatic for FSSH, spin-free for LZSH, sh\_basis for \$surfhop off). istate is the initial active state. \newline
+	\tabitem [diabatic] Diabatic states, numbered in the order of the source of the potential (for Quantics, all spin components of a state are consecutive; for vibronic coupling templates and model potentials, the ZagHop order). \newline
+	\tabitem [adiabatic] Eigenstates of the full Hamiltonian. \newline
+	If istate\_basis is not the basis of the method, istate is projected onto the states of the method basis at the initial geometry, and the initial active state $a$ is drawn with probability $|\langle i | a \rangle|^2$ (as in zagpy sample state). For LZSH, a diabatic state is projected through its spin-free state. With effective spin states, a diabatic spin component of the source is mapped to its effective state. Not used on restart.  \\
 
 geometry 		&
     \textbf{geom} \newline

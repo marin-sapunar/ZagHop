@@ -75,6 +75,7 @@ module evaluator_base_mod
         procedure :: set_spin_manifolds
         procedure :: basis_size
         procedure :: locate_state
+        procedure :: diabatic_from_source
         procedure :: expand
         procedure :: sum_components
         procedure :: to_rss_couplings
@@ -422,6 +423,28 @@ contains
         loc%sf = self%manifold(m)%sf0 + loc%index - 1
         loc%group = loc%group + loc%component
     end function locate_state
+
+
+    !----------------------------------------------------------------------------------------------
+    ! FUNCTION: diabatic_from_source
+    !> @brief Diabatic state given by its index in the source of the potential.
+    !> @details
+    !! The index in the source follows component_order (see state_map). The result is 0 if the
+    !! source has no state with this index.
+    !----------------------------------------------------------------------------------------------
+    pure function diabatic_from_source(self, i_source) result(state)
+        class(potential_evaluator), intent(in) :: self
+        integer, intent(in) :: i_source !< Index of the state in the source.
+        integer :: state
+
+        if (allocated(self%state_map)) then
+            state = findloc(self%state_map, i_source, dim=1)
+        else if (i_source >= 1 .and. i_source <= self%n_state) then
+            state = i_source
+        else
+            state = 0
+        end if
+    end function diabatic_from_source
 
 
     !----------------------------------------------------------------------------------------------

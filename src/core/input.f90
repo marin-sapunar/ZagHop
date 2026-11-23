@@ -45,7 +45,6 @@ module input_mod
     logical :: effective_signed = .true. !< Signs of the effective couplings by continuity.
     real(dp) :: tol_cns
     real(dp) :: mb_temperature = -1.0_dp
-    integer :: istate = 0 !< Initial active state.
 
 contains
 
@@ -130,6 +129,7 @@ contains
         ctrl%max_tot_en_change_step = 0.2_dp / eh_eV
         ctrl%target_state = 0
         ctrl%target_state_time = 0.0_dp
+        ctrl%istate_basis = 'method'
         ! Nuclear dynamics options.
         ctrl%max_time = 10.0_dp / aut_fs
         ctrl%dt_0 = 0.5_dp / aut_fs
@@ -688,11 +688,24 @@ contains
                         &          'istate file keyword requires a file name.')
                     end if
                     open(newunit=i, file=readf%args(3)%s, status='old', action='read')
-                    read(i, *) istate
+                    read(i, *) ctrl%istate
                     close(i)
                 else
-                    read(readf%args(2)%s, *) istate
+                    read(readf%args(2)%s, *) ctrl%istate
                 end if
+            case('istate_basis')
+                if (readf%narg < 2) then
+                    call errstop('read_system', 'istate_basis keyword requires a value.')
+                end if
+                ctrl%istate_basis = tolower(readf%args(2)%s)
+                select case(ctrl%istate_basis)
+                case('method', 'diabatic', 'adiabatic')
+                case default
+                    write(stderr, *) 'Error in Input module, read_system subroutine.'
+                    write(stderr, *) '  Unrecognized istate_basis value: ', ctrl%istate_basis
+                    write(stderr, *) '  Expected method, diabatic or adiabatic.'
+                    stop
+                end select
             case('geometry')
                 geominp = readf%args(2)%s
             case('velocity')
@@ -1082,7 +1095,13 @@ contains
             write(stderr, *) '  Expected off, lz, ld-fssh or a-fssh.'
             stop
         end select
-        call tr1%wf%initialize(ctrl%rng, tr1%pot, istate)
+        ! A state of another basis is chosen at the initial point, after the first evaluation of
+        ! the potential (set_initial_state). Until then, the method starts in state 1.
+        if (ctrl%istate_basis == 'method') then
+            call tr1%wf%initialize(ctrl%rng, tr1%pot, ctrl%istate)
+        else
+            call tr1%wf%initialize(ctrl%rng, tr1%pot, 1)
+        end if
         select type(wf => tr1%wf)
         type is (tsh_lz)
             wf%en_err = ctrl%qm_en_err

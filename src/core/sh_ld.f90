@@ -9,7 +9,8 @@
 !--------------------------------------------------------------------------------------------------
 module sh_ld_mod
     use global_defs
-    use tsh_method_mod, only : tsh_method, tsh_request, base_initialize => initialize
+    use tsh_method_mod, only : tsh_method, tsh_request, base_initialize => initialize,          &
+    &                          base_set_initial_state => set_initial_state
     use evaluator_base_mod, only : potential_evaluator
     use matrix_mod, only : mat_sy_exp
     use random_mod, only : rng_type
@@ -35,6 +36,7 @@ module sh_ld_mod
         integer :: id_t1 = 0 !< Id of the evaluation of the last processed point (of coeff, h_t1).
     contains
         procedure :: initialize => ld_initialize
+        procedure :: set_initial_state => ld_set_initial_state
         procedure :: start => ld_start
         procedure :: propagate => ld_propagate
         procedure :: decohere => ld_decohere
@@ -61,6 +63,22 @@ contains
         allocate(self%coeff(self%n_state), source=cmplx(0.0_dp, 0.0_dp, kind=dp))
         self%coeff(active_state) = cmplx(1.0_dp, 0.0_dp, kind=dp)
     end subroutine ld_initialize
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: ld_set_initial_state
+    !> @brief Set the active state at the initial point and put the full wave function in it.
+    !----------------------------------------------------------------------------------------------
+    subroutine ld_set_initial_state(self, potential, state, basis)
+        class(tsh_ld), intent(inout) :: self
+        class(potential_evaluator), intent(in) :: potential
+        integer, intent(in) :: state !< Initial state, a state of basis.
+        character(len=*), intent(in) :: basis !< Basis of state.
+
+        call base_set_initial_state(self, potential, state, basis)
+        self%coeff = cmplx(0.0_dp, 0.0_dp, kind=dp)
+        self%coeff(self%active_state) = cmplx(1.0_dp, 0.0_dp, kind=dp)
+    end subroutine ld_set_initial_state
 
 
     !----------------------------------------------------------------------------------------------

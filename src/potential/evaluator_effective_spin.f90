@@ -73,6 +73,7 @@ module evaluator_effective_spin_mod
         procedure :: check_atoms => effective_check_atoms
         procedure :: print_summary => effective_print_summary
         procedure :: add_state_layout => effective_add_state_layout
+        procedure :: diabatic_from_source => effective_diabatic_from_source
         procedure :: st_couplings
         procedure :: retained_fraction
         procedure :: set_rss_couplings
@@ -534,6 +535,28 @@ contains
         call self%source%add_state_layout(json, src)
         call json%add(obj, src)
     end subroutine effective_add_state_layout
+
+
+    !----------------------------------------------------------------------------------------------
+    ! FUNCTION: effective_diabatic_from_source
+    !> @brief Diabatic state of the model given by the index of a state of the source.
+    !> @details
+    !! The index follows the component_order of the source. Each spin component of the source is
+    !! mapped to its spin-free state, which is the state of the model. The result is 0 if the
+    !! source has no state with this index.
+    !----------------------------------------------------------------------------------------------
+    pure function effective_diabatic_from_source(self, i_source) result(state)
+        class(effective_spin_evaluator), intent(in) :: self
+        integer, intent(in) :: i_source !< Index of the state in the source.
+        integer :: state
+        type(state_location) :: loc
+
+        state = self%source%diabatic_from_source(i_source)
+        if (state > 0) then
+            loc = self%source%locate_state(state)
+            state = loc%sf
+        end if
+    end function effective_diabatic_from_source
 
 
 end module evaluator_effective_spin_mod

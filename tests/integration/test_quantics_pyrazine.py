@@ -15,8 +15,17 @@ class QuanticsPyrazineTest(QuanticsTest):
     quantics_input = "pyrazine.inp"
 
     def test_ldsh(self):
-        """ Test diabatic basis FSSH on pyrazine model."""
+        """ Test diabatic basis FSSH on pyrazine model.
+
+        The initial state (init_state = 4 in Quantics) is a diabatic state, projected onto the
+        adiabatic states. Quantics writes istate_basis = diabatic to its dynamics.in by default;
+        the trajectory runs with the dynamics.in of the test, which sets the same."""
+        with open(os.path.join(self.rundir, self.quantics_name, "dynamics.in")) as f:
+            self.assertIn("istate_basis = diabatic", f.read(),
+                          "istate_basis not set by Quantics in dynamics.in.")
         self.run_traj()
+        self.stdout_contains("Initial state 4 of the diabatic basis projected onto the "
+                             "adiabatic basis.")
         self.compare_energy()
 
 
