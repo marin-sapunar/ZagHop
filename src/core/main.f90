@@ -28,10 +28,12 @@ program zaghop
     use interface_mod
     use file_mod, only : check_is_dir
     use nuclear_dyn_mod
+    use backup_mod, only : write_backup, read_backup
     implicit none
 
     logical :: check
     logical :: insert
+    logical :: finished !< A restarted trajectory already reached its end time.
     integer :: abort_flag = 0
     type(timer) :: mainclock
     type(timer) :: stepclock
@@ -58,9 +60,17 @@ program zaghop
 
     ! Restart old trajectory or open new output file.
     if (ctrl%restart) then
-        ! Restart old trajectory.
-      !  call trajectory_read_backup(ctrl%bufile, trajectory_data)
+        ! Restore the stored points and cut the output files back to the backup. The output is
+        ! left unchanged if the saved point already reached the end time.
+        call read_backup(finished)
+        if (finished) then
+            if (stdp1) write(stdout, *) 'No steps to be done, ending calculation.'
+            if (stdp1) call mainclock%print(stdout, ' Total run time:')
+            stop
+        end if
+        call tr1%open_files(ctrl%print, ctrl%print_units, ctrl%output_dir)
         call write_status(abort_flag)
+        call trajectory_next(ctrl%dt_0)
     else
         ! Create output directory.
         if (check_is_dir(ctrl%output_dir)) then
@@ -94,9 +104,9 @@ program zaghop
         if (stdp1) call stepclock%print(stdout, '  QM run time:')
         call trajectory_write_final(tr1%wf%request%t_final, ctrl%print, ctrl%print_units,         &
         &                           ctrl%printerval)
+        ctrl%t0_tot_en = tr1%tote()
         call trajectory_next(ctrl%dt_0)
     end if
-    ctrl%t0_tot_en = tr1%tote()
 
     ! Stop the program if max_time already reached.
     if (tr1%time > ctrl%max_time) then
@@ -137,16 +147,14 @@ program zaghop
         if (.not. insert) then
             call end_of_step_checks()
 
-            ! Write output.
+            ! Write output. The backup is written before the points which are not final are
+            ! written at the end of the trajectory, so a restart writes them as they become final.
+            call trajectory_write_final(tr1%wf%request%t_final, ctrl%print, ctrl%print_units,     &
+            &                           ctrl%printerval)
+            if (backup_due()) call write_backup()
             if (abort_flag /= 0) then
                 call trajectory_write_final(huge(1.0_dp), ctrl%print, ctrl%print_units,           &
                 &                           ctrl%printerval)
-            else
-                call trajectory_write_final(tr1%wf%request%t_final, ctrl%print, ctrl%print_units, &
-                &                           ctrl%printerval)
-            end if
-            if ((mod(tr1%step, ctrl%buinterval) == 0) .or. (abort_flag /= 0)) then
-                call trajectory_write_backup(ctrl%bufile, trajectory_data)
             end if
         end if
 
@@ -193,6 +201,24 @@ contains
         write(sunit, '(i0)') flag
         close(sunit)
     end subroutine write_status
+
+
+    !----------------------------------------------------------------------------------------------
+    ! FUNCTION: backup_due
+    !> @brief A backup is written at the end of the step.
+    !> @details
+    !! With buinterval > 0, every buinterval steps of the output grid and when the trajectory
+    !! ends; with 0, only when it ends; with -1, never.
+    !----------------------------------------------------------------------------------------------
+    logical function backup_due() result(due)
+        due = .false.
+        if (ctrl%buinterval < 0) return
+        if (abort_flag /= 0) then
+            due = .true.
+        else if (ctrl%buinterval > 0) then
+            due = (mod(tr1%step, ctrl%buinterval) == 0)
+        end if
+    end function backup_due
 
 
     !----------------------------------------------------------------------------------------------
@@ -295,6 +321,7 @@ contains
                 if (stdp1) write(stdout, *) '  Target state reached.'
             else
                 if (stdp1) write(stdout, *) '  Target state reached, modifying max_time.'
+                ctrl%t_target = tr1%time
                 if (tr1%time + ctrl%target_state_time < ctrl%max_time) then
                     ctrl%max_time = tr1%time + ctrl%target_state_time
                     ctrl%target_state = -2 ! Signal max_time was changed because of target state.

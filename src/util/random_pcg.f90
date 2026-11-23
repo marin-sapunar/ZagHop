@@ -37,6 +37,8 @@ module random_pcg_mod
     contains
         procedure :: init => xsh_rr_init
         procedure :: random_integer => xsh_rr_int
+        procedure :: save_state => xsh_rr_save_state
+        procedure :: load_state => xsh_rr_load_state
     end type rng_pcg_xsh_rr
 
 
@@ -54,12 +56,72 @@ contains
         integer, intent(in) :: seed !< Seed used for the initialization. 
 
         call self%init_seed(seed)
-        self%irange = 2.0**32_dp
-        self%i_irangem1 = 1.0_dp / (self%irange - 1.0_dp)
+        call set_range(self)
         self%state = self%seed + incr
         self%state = self%state * mult + incr !< Advance state once.
         self%initialized = .true.
     end subroutine xsh_rr_init
+
+
+    !> Range of the integers returned by the generator, for converting them to reals.
+    subroutine set_range(self)
+        class(rng_pcg_xsh_rr), intent(inout) :: self
+
+        self%irange = 2.0**32_dp
+        self%i_irangem1 = 1.0_dp / (self%irange - 1.0_dp)
+    end subroutine set_range
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: xsh_rr_save_state
+    !> @brief Add the state of the generator to a JSON object, in the object pcg_xsh_rr.
+    !> @details
+    !! The 64-bit state is written as a decimal string, since JSON integers of json-fortran are
+    !! 32-bit.
+    !----------------------------------------------------------------------------------------------
+    subroutine xsh_rr_save_state(self, json, obj)
+        use json_module, only : json_core, json_value
+        class(rng_pcg_xsh_rr), intent(in) :: self
+        type(json_core), intent(inout) :: json
+        type(json_value), pointer, intent(in) :: obj !< Object to which the state is added.
+        type(json_value), pointer :: pcg
+        character(len=24) :: state_str
+
+        call rng_save_state(self, json, obj)
+        call json%create_object(pcg, 'pcg_xsh_rr')
+        call json%add(pcg, 'initialized', self%initialized)
+        write(state_str, '(i0)') self%state
+        call json%add(pcg, 'state', trim(state_str))
+        call json%add(obj, pcg)
+    end subroutine xsh_rr_save_state
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: xsh_rr_load_state
+    !> @brief Restore the state of the generator saved by save_state.
+    !----------------------------------------------------------------------------------------------
+    subroutine xsh_rr_load_state(self, json, obj)
+        use json_module, only : json_core, json_value
+        use json_util_mod, only : json_get_required, json_get_child
+        class(rng_pcg_xsh_rr), intent(inout) :: self
+        type(json_core), intent(inout) :: json
+        type(json_value), pointer, intent(in) :: obj !< Object holding the state.
+        type(json_value), pointer :: pcg
+        character(len=:), allocatable :: state_str
+        integer :: ios
+
+        call rng_load_state(self, json, obj)
+        pcg => json_get_child(json, obj, 'pcg_xsh_rr')
+        call json_get_required(json, pcg, 'initialized', self%initialized)
+        call json_get_required(json, pcg, 'state', state_str)
+        read(state_str, *, iostat=ios) self%state
+        if (ios /= 0) then
+            write(stderr, *) 'Error in random_pcg_mod, xsh_rr_load_state subroutine.'
+            write(stderr, *) '  Cannot read the state of the generator: ', state_str
+            stop 1
+        end if
+        call set_range(self)
+    end subroutine xsh_rr_load_state
 
 
     !----------------------------------------------------------------------------------------------

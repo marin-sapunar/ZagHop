@@ -312,42 +312,6 @@ contains
 
 
     !----------------------------------------------------------------------------------------------
-    ! SUBROUTINE: json_get_2d
-    !
-    ! DESCRIPTION:
-    !> @brief Extract a 2D array of real(dp) values from a json file.
-    !> @details
-    !! This is a hopefully temporary workaround for a feature that is not implemented in the
-    !! json-fortran package.
-    !----------------------------------------------------------------------------------------------
-    subroutine json_get_2d(jsonf, key, array)
-        use json_module
-        type(json_file) :: jsonf
-        type(json_core) :: core
-        type(json_value), pointer :: outer, inner
-        character(len=*), intent(in) :: key
-        real(dp), allocatable, intent(out) :: array(:,:)
-        real(dp), allocatable :: work_vec(:)
-        integer :: i, n1, n2
-        logical :: is_matrix
-
-        call core%initialize()
-        call jsonf%get(key, outer)
-        call core%matrix_info(outer, is_matrix, n_sets=n1, set_size=n2)
-        if (.not. is_matrix) then
-            write(stderr, *) "Error in json_get_2d."
-            write(stderr, *) "  Value in "//key//" is not a matrix."
-        end if
-        allocate(array(n1, n2))
-        do i = 1, n1
-            call core%get_child(outer, i, inner)
-            call core%get(inner, work_vec)
-            array(i, :) = work_vec
-        end do
-    end subroutine json_get_2d
-
-
-    !----------------------------------------------------------------------------------------------
     ! FUNCTION: EElP
     !
     ! DESCRIPTION:

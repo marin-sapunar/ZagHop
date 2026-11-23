@@ -57,6 +57,8 @@ module model_1d_mod
         procedure :: update_geometry => model_update_geometry
         procedure :: eval_diab => model_eval_diab
         procedure :: default_reference => model_default_reference
+        procedure :: save_state => model_save_state
+        procedure :: load_state => model_load_state
         procedure, private :: read_params
     end type model_1d_evaluator
 
@@ -380,5 +382,43 @@ contains
         soc_w(3:5, 1:2) = transpose(soc_w(1:2, 3:5))
     end subroutine granucci_sst
 
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: model_save_state
+    !> @brief Add the state of the evaluated point to a JSON object, with the name of the model
+    !! and the coordinate in the object 'model_1d'.
+    !----------------------------------------------------------------------------------------------
+    subroutine model_save_state(self, json, obj)
+        use json_module, only : json_core, json_value
+        class(model_1d_evaluator), intent(in) :: self
+        type(json_core), intent(inout) :: json
+        type(json_value), pointer, intent(in) :: obj !< Object to which the state is added.
+        type(json_value), pointer :: m
+
+        call diabatic_save_state(self, json, obj)
+        call json%create_object(m, 'model_1d')
+        call json%add(m, 'name', self%name)
+        call json%add(m, 'x', self%x)
+        call json%add(obj, m)
+    end subroutine model_save_state
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: model_load_state
+    !> @brief Restore the state of an evaluated point saved by save_state. Stops if the model
+    !! differs.
+    !----------------------------------------------------------------------------------------------
+    subroutine model_load_state(self, json, obj)
+        use json_module, only : json_core, json_value
+        use json_util_mod, only : json_get_required, json_get_child, json_check_value
+        class(model_1d_evaluator), intent(inout) :: self
+        type(json_core), intent(inout) :: json
+        type(json_value), pointer, intent(in) :: obj !< Object holding the state.
+        type(json_value), pointer :: m
+
+        call diabatic_load_state(self, json, obj)
+        m => json_get_child(json, obj, 'model_1d')
+        call json_check_value(json, m, 'name', self%name)
+        call json_get_required(json, m, 'x', self%x)
+    end subroutine model_load_state
 
 end module model_1d_mod

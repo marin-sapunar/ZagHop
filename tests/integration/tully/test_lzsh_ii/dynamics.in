@@ -11,7 +11,7 @@ $system
 $surfhop lz
  velocity=nadvec
 $dynamics
- time = 30.0
+ time = 5.0
  tstep = 0.5
 $output
   noprint 2,4-11

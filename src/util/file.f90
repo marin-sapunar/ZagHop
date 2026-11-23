@@ -16,6 +16,7 @@ module file_mod
     public :: check_is_dir
     public :: need_dir
     public :: need_file
+    public :: truncate_file
     
 
     !----------------------------------------------------------------------------------------------
@@ -393,6 +394,42 @@ contains
             stop
         end if
     end subroutine need_dir
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: truncate_file
+    !> @brief Cut a file to its first n_byte bytes.
+    !> @details
+    !! The file is opened for stream access and ENDFILE terminates it after byte n_byte. The file
+    !! must exist and must not be connected to another unit. Stops if the file is shorter than
+    !! n_byte.
+    !----------------------------------------------------------------------------------------------
+    subroutine truncate_file(file_name, n_byte)
+        character(len=*), intent(in) :: file_name
+        integer(int64), intent(in) :: n_byte !< Number of bytes to keep.
+        integer(int64) :: file_size
+        integer :: unit, ios
+        character :: c
+
+        inquire(file=file_name, size=file_size)
+        if (file_size < n_byte) then
+            write(stderr, '(1x,a)') 'Error in file_mod, truncate_file subroutine.'
+            write(stderr, '(3x,a,i0,a,i0,a)') 'File '//file_name//' has ', file_size,             &
+            &   ' bytes, expected at least ', n_byte, '.'
+            stop 1
+        end if
+        if (file_size == n_byte) return
+        open(newunit=unit, file=file_name, access='stream', form='unformatted',                   &
+        &    action='readwrite', status='old', iostat=ios)
+        if (ios == 0 .and. n_byte > 0) read(unit, pos=n_byte, iostat=ios) c
+        if (ios == 0) endfile(unit, iostat=ios)
+        if (ios /= 0) then
+            write(stderr, '(1x,a)') 'Error in file_mod, truncate_file subroutine.'
+            write(stderr, '(3x,a,i0,a)') 'Could not truncate '//file_name//' (iostat ', ios, ').'
+            stop 1
+        end if
+        close(unit)
+    end subroutine truncate_file
 
 
 end module file_mod

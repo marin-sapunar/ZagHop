@@ -74,6 +74,8 @@ module evaluator_effective_spin_mod
         procedure :: print_summary => effective_print_summary
         procedure :: add_state_layout => effective_add_state_layout
         procedure :: diabatic_from_source => effective_diabatic_from_source
+        procedure :: save_state => effective_save_state
+        procedure :: load_state => effective_load_state
         procedure :: st_couplings
         procedure :: retained_fraction
         procedure :: set_rss_couplings
@@ -558,5 +560,65 @@ contains
         end if
     end function effective_diabatic_from_source
 
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: effective_save_state
+    !> @brief Add the state of the evaluated point to a JSON object, with the effective model in
+    !! the object 'effective_spin_states'.
+    !> @details
+    !! The state of the source (its geometry and Hamiltonian) is saved in the object 'source'.
+    !! u and the projection are set up from the input, so only the quantities of the point (the
+    !! retained fractions and the sign references) are saved.
+    !----------------------------------------------------------------------------------------------
+    subroutine effective_save_state(self, json, obj)
+        use json_module, only : json_core, json_value
+        use json_util_mod, only : json_add_array
+        class(effective_spin_evaluator), intent(in) :: self
+        type(json_core), intent(inout) :: json
+        type(json_value), pointer, intent(in) :: obj !< Object to which the state is added.
+        type(json_value), pointer :: eff, src
+
+        call diabatic_save_state(self, json, obj)
+        call json%create_object(eff, 'effective_spin_states')
+        call json%add(eff, 'soc_model', self%soc_model)
+        call json%add(eff, 'fraction', self%fraction)
+        call json%add(eff, 'min_fraction', self%min_fraction)
+        if (allocated(self%h_ref)) then
+            call json_add_array(json, eff, 'h_ref', self%h_ref)
+            call json_add_array(json, eff, 'sign_ref', self%sign_ref)
+        end if
+        call json%create_object(src, 'source')
+        call self%source%save_state(json, src)
+        call json%add(eff, src)
+        call json%add(obj, eff)
+    end subroutine effective_save_state
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: effective_load_state
+    !> @brief Restore the state of an evaluated point saved by save_state. Stops if the model of
+    !! the couplings differs.
+    !----------------------------------------------------------------------------------------------
+    subroutine effective_load_state(self, json, obj)
+        use json_module, only : json_core, json_value
+        use json_util_mod, only : json_get_required, json_get_child, json_check_value
+        class(effective_spin_evaluator), intent(inout) :: self
+        type(json_core), intent(inout) :: json
+        type(json_value), pointer, intent(in) :: obj !< Object holding the state.
+        type(json_value), pointer :: eff
+
+        call diabatic_load_state(self, json, obj)
+        eff => json_get_child(json, obj, 'effective_spin_states')
+        call json_check_value(json, eff, 'soc_model', self%soc_model)
+        call json_get_required(json, eff, 'fraction', self%fraction)
+        call json_get_required(json, eff, 'min_fraction', self%min_fraction)
+        if (allocated(self%h_ref)) deallocate(self%h_ref)
+        if (allocated(self%sign_ref)) deallocate(self%sign_ref)
+        if (json%valid_path(eff, 'h_ref')) then
+            call json_get_required(json, eff, 'h_ref', self%h_ref)
+            call json_get_required(json, eff, 'sign_ref', self%sign_ref,                          &
+            &                      [size(self%h_ref, 2), size(self%h_ref, 3)])
+        end if
+        call self%source%load_state(json, json_get_child(json, eff, 'source'))
+    end subroutine effective_load_state
 
 end module evaluator_effective_spin_mod

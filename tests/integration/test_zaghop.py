@@ -62,6 +62,28 @@ class ZagHopTest(unittest.TestCase):
         self.assertTrue(os.path.isdir("Results"), "Error termination.")
         os.chdir(self.cwd)
 
+    def restart_traj(self, max_time):
+        """ Continue the trajectory of the current test from its backup up to max_time (fs).
+
+        The time (or max_time) of $dynamics in dynamics.in is replaced, $restart is added and
+        zaghop is run again in the same directory. Its standard output and error are appended to
+        nad.stdout and nad.stderr, so checks on nad.stdout see the whole trajectory."""
+        rdir = os.path.join(self.rundir, self.trajdir)
+        self.assertTrue(os.path.isfile(os.path.join(rdir, "backup.json")), "No backup file.")
+        path = os.path.join(rdir, "dynamics.in")
+        with open(path) as f:
+            text = f.read()
+        text, n = re.subn(r"^(\s*(?:max_time|time)\s*=?\s*)\S+", rf"\g<1>{max_time}", text,
+                          flags=re.MULTILINE)
+        self.assertEqual(n, 1, "No time keyword in dynamics.in.")
+        with open(path, "w") as f:
+            f.write("$restart\n" + text)
+        os.chdir(rdir)
+        with open("nad.stdout", "a") as out, open("nad.stderr", "a") as err:
+            subprocess.call("zaghop", stdout=out, stderr=err)
+        os.chdir(self.cwd)
+        self.stdout_contains("Restarting trajectory from backup file")
+
     def compare_energy(self):
         """ Compare full contents of the energy.dat file. """
         self.compare_results("energy.dat")

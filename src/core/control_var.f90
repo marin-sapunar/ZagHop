@@ -56,6 +56,9 @@ module control_var
         integer :: target_state = -1 !< Stop dynamics after reaching target state.
         real(dp) :: target_state_time = 0.0_dp !< Additional time to propagate after reaching the
         !! target state.
+        real(dp) :: t_target = -1.0_dp !< Time at which the target state was reached, with
+        !! target_state_time > 0. Negative before. Kept in the backup, so that a restart with
+        !! another max_time ends at the same time as an uninterrupted run.
         real(dp) :: max_tot_en_change_step = 100.0_dp !< Maximum change in total energy allowed
         !! during a single step.
         real(dp) :: max_tot_en_change = 100.0_dp !< Maximum change in total energy allowed over the

@@ -107,9 +107,9 @@ contains
         pcinp = 'pcharge'
         effective_model = 'off'
         ctrl%output_dir = 'Results'
-        ctrl%bufile = 'backup.dat'
+        ctrl%bufile = 'backup.json'
         ctrl%printerval = 1
-        ctrl%buinterval = 1
+        ctrl%buinterval = 0
         ! RNG.
         allocate(rng_pcg_xsh_rr::ctrl%rng)
         ctrl%rng%seed = -1
@@ -217,15 +217,17 @@ contains
         !     call system('mkdir -p '//ctrl%qmdir)
         ! end if
 
-        ! If restarting don't read initial conditions.
-        if (.not. ctrl%restart) then
-
-            ! Read initial conditions.
-            if (stdp2) then
-                write(stdout, *)
-                write(stdout, '(1x,a,a,a)') 'Reading geometry file ', geominp, '.'
-            end if
-            call read_geom()
+        ! On restart, the geometry file gives the atoms of the system, and the geometry and
+        ! velocity are read from the backup file.
+        call read_restart(readf)
+        if (stdp2) then
+            write(stdout, *)
+            write(stdout, '(1x,a,a,a)') 'Reading geometry file ', geominp, '.'
+        end if
+        call read_geom()
+        if (ctrl%restart) then
+            tr1%velo = 0.0_dp
+        else
             select case(veloinp)
             case('maxwell-boltzmann', 'mb')
                 if (stdp2) then
@@ -250,7 +252,6 @@ contains
         call read_mm(readf)
         call read_constraints(readf, tol_cns)
         call read_thermostat(readf)
-        call read_restart(readf)
         call readf%close()
 
         ! Modify options based on type of calculation.

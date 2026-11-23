@@ -26,8 +26,11 @@ class VcPyrazineTest(ZagHopTest):
         self.stdout_contains("Change in total energy too large.")
 
     def test_ldsh(self):
-        """ Test diabatic basis FSSH on pyrazine model."""
+        """ Test diabatic basis FSSH on pyrazine model.
+
+        The trajectory is run up to 50 fs and restarted from its backup."""
         self.run_traj()
+        self.restart_traj(100.0)
         self.compare_energy()
         self.compare_results("cwf.dat")
 

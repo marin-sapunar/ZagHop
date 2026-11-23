@@ -48,6 +48,8 @@ module evaluator_diabatic_mod
         procedure :: get_gradient => get_gradient
         procedure :: get_nadv => get_nadv
         procedure :: get_soc2 => get_soc2
+        procedure :: save_state => diabatic_save_state
+        procedure :: load_state => diabatic_load_state
     end type diabatic_evaluator
 
 
@@ -696,7 +698,120 @@ contains
         end do
     end subroutine phasematch_assigned_rotation
 
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: diabatic_save_state
+    !> @brief Add the evaluated Hamiltonians, their derivatives and the transformations between
+    !! the bases to a JSON object, in the object 'diabatic'.
+    !> @details
+    !! All evaluated arrays are saved, so a loaded point is the same as the evaluated one without
+    !! evaluating the potential again. Arrays which are not allocated (e.g. the bases of the
+    !! source of effective spin states, which are never built) are left out.
+    !----------------------------------------------------------------------------------------------
+    subroutine diabatic_save_state(self, json, obj)
+        use json_module, only : json_core, json_value
+        class(diabatic_evaluator), intent(in) :: self
+        type(json_core), intent(inout) :: json
+        type(json_value), pointer, intent(in) :: obj !< Object to which the state is added.
+        type(json_value), pointer :: d
 
+        call evaluator_save_state(self, json, obj)
+        call json%create_object(d, 'diabatic')
+        call json%add(d, 'ndof', self%ndof)
+        call json%add(d, 'soc_checked', self%soc_checked)
+        call save_2d(d, 'sf_w', self%sf_w)
+        call save_3d(d, 'sf_dw', self%sf_dw)
+        call save_2d(d, 'soc_w', self%soc_w)
+        call save_3d(d, 'soc_dw', self%soc_dw)
+        call save_2d(d, 'diab_w', self%diab_w)
+        call save_3d(d, 'diab_dw', self%diab_dw)
+        call save_2d(d, 'adiab_w', self%adiab_w)
+        call save_3d(d, 'adiab_dw', self%adiab_dw)
+        call save_2d(d, 'adiab_trans', self%adiab_trans)
+        call save_2d(d, 'sf_trans', self%sf_trans)
+        call save_2d(d, 'spin_free_w', self%spin_free_w)
+        call save_3d(d, 'spin_free_dw', self%spin_free_dw)
+        call json%add(obj, d)
+
+    contains
+
+        subroutine save_2d(d, name, a)
+            use json_util_mod, only : json_add_array
+            type(json_value), pointer, intent(in) :: d
+            character(len=*), intent(in) :: name
+            real(dp), allocatable, intent(in) :: a(:, :)
+
+            if (allocated(a)) call json_add_array(json, d, name, a)
+        end subroutine save_2d
+
+        subroutine save_3d(d, name, a)
+            use json_util_mod, only : json_add_array
+            type(json_value), pointer, intent(in) :: d
+            character(len=*), intent(in) :: name
+            real(dp), allocatable, intent(in) :: a(:, :, :)
+
+            if (allocated(a)) call json_add_array(json, d, name, a)
+        end subroutine save_3d
+
+    end subroutine diabatic_save_state
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: diabatic_load_state
+    !> @brief Restore the evaluated arrays saved by save_state.
+    !> @details
+    !! Arrays missing from the backup are deallocated. The shape of each array is checked
+    !! against the numbers of states and degrees of freedom of the current setup.
+    !----------------------------------------------------------------------------------------------
+    subroutine diabatic_load_state(self, json, obj)
+        use json_module, only : json_core, json_value
+        use json_util_mod, only : json_get_required, json_get_child, json_check_value
+        class(diabatic_evaluator), intent(inout) :: self
+        type(json_core), intent(inout) :: json
+        type(json_value), pointer, intent(in) :: obj !< Object holding the state.
+        type(json_value), pointer :: d
+        integer :: ns, nsf, nd
+
+        call evaluator_load_state(self, json, obj)
+        d => json_get_child(json, obj, 'diabatic')
+        call json_check_value(json, d, 'ndof', self%ndof)
+        call json_get_required(json, d, 'soc_checked', self%soc_checked)
+        ns = self%n_state
+        nsf = self%n_sf
+        nd = self%ndof
+        call load_2d('sf_w', self%sf_w, [nsf, nsf])
+        call load_3d('sf_dw', self%sf_dw, [nd, nsf, nsf])
+        call load_2d('soc_w', self%soc_w, [ns, ns])
+        call load_3d('soc_dw', self%soc_dw, [nd, ns, ns])
+        call load_2d('diab_w', self%diab_w, [ns, ns])
+        call load_3d('diab_dw', self%diab_dw, [nd, ns, ns])
+        call load_2d('adiab_w', self%adiab_w, [ns, ns])
+        call load_3d('adiab_dw', self%adiab_dw, [nd, ns, ns])
+        call load_2d('adiab_trans', self%adiab_trans, [ns, ns])
+        call load_2d('sf_trans', self%sf_trans, [nsf, nsf])
+        call load_2d('spin_free_w', self%spin_free_w, [nsf, nsf])
+        call load_3d('spin_free_dw', self%spin_free_dw, [nd, nsf, nsf])
+
+    contains
+
+        subroutine load_2d(name, a, expected)
+            character(len=*), intent(in) :: name
+            real(dp), allocatable, intent(inout) :: a(:, :)
+            integer, intent(in) :: expected(2)
+
+            if (allocated(a)) deallocate(a)
+            if (json%valid_path(d, name)) call json_get_required(json, d, name, a, expected)
+        end subroutine load_2d
+
+        subroutine load_3d(name, a, expected)
+            character(len=*), intent(in) :: name
+            real(dp), allocatable, intent(inout) :: a(:, :, :)
+            integer, intent(in) :: expected(3)
+
+            if (allocated(a)) deallocate(a)
+            if (json%valid_path(d, name)) call json_get_required(json, d, name, a, expected)
+        end subroutine load_3d
+
+    end subroutine diabatic_load_state
 
 
 end module evaluator_diabatic_mod

@@ -33,6 +33,24 @@ program util_test
         stop ret
     end if
 
+    ret = rng_state_test()
+    if (ret /= 0) then
+        write(*,*) "Error in rng_state_test."
+        stop ret
+    end if
+
+    ret = json_util_test()
+    if (ret /= 0) then
+        write(*,*) "Error in json_util_test."
+        stop ret
+    end if
+
+    ret = truncate_file_test()
+    if (ret /= 0) then
+        write(*,*) "Error in truncate_file_test."
+        stop ret
+    end if
+
     contains
     
     
@@ -241,6 +259,152 @@ program util_test
         &    - (ref - spread(center_of_mass(mass, ref), 2, size(mass)))
         val = sum(coef * disp) + 0.5_dp * sum(disp**2)
     end function aligned_test_function
+
+
+    !> After loading a saved state, a fresh generator continues the sequence of the original one,
+    !! including the cached second number of a Gaussian pair.
+    integer function rng_state_test() result(ret)
+        use global_defs, only : dp
+        use json_module, only : json_core, json_value
+        use random_mod, only : rng_type
+        use random_pcg_mod, only : rng_pcg_xsh_rr
+        class(rng_type), allocatable :: rng, copy
+        type(json_core) :: json
+        type(json_value), pointer :: root, back
+        character(len=:), allocatable :: text
+        real(dp) :: r1(50), r2(50), g1(3), g2(3)
+
+        ret = 1
+        allocate(rng_pcg_xsh_rr::rng)
+        allocate(rng_pcg_xsh_rr::copy)
+        call rng%init(4242)
+        call rng%uniform(r1)
+        call rng%gaussian(0.0_dp, 1.0_dp, g1(1))
+        call json%initialize()
+        call json%create_object(root, '')
+        call rng%save_state(json, root)
+        call json%serialize(root, text)
+        call json%destroy(root)
+        call rng%gaussian(0.0_dp, 1.0_dp, g1(2:3))
+        call rng%uniform(r1)
+
+        call copy%init(1)
+        call json%deserialize(back, text)
+        call copy%load_state(json, back)
+        call json%destroy(back)
+        call copy%gaussian(0.0_dp, 1.0_dp, g2(2:3))
+        call copy%uniform(r2)
+        if (copy%seed /= 4242) return
+        if (any(g1(2:3) /= g2(2:3))) return
+        if (any(r1 /= r2)) return
+        ret = 0
+    end function rng_state_test
+
+
+    !> Arrays written with json_util_mod and read back from the serialized text are unchanged.
+    integer function json_util_test() result(ret)
+        use global_defs, only : dp
+        use json_module, only : json_core, json_value
+        use json_util_mod, only : json_add_array, json_get_required, json_get_child
+        type(json_core) :: json
+        type(json_value), pointer :: root, back, obj
+        character(len=:), allocatable :: text, str
+        real(dp) :: a2(3, 2), a3(2, 3, 4), x
+        complex(dp) :: c1(3)
+        real(dp), allocatable :: b2(:, :), b3(:, :, :), e2(:, :), v(:)
+        complex(dp), allocatable :: d1(:)
+        integer, allocatable :: iv(:)
+        integer :: i, j, k, n
+
+        ret = 1
+        do i = 1, 3
+            do j = 1, 2
+                a2(i, j) = 1.0_dp / (i + 7 * j) - 0.1_dp * i
+            end do
+        end do
+        do i = 1, 2
+            do j = 1, 3
+                do k = 1, 4
+                    a3(i, j, k) = sqrt(real(i + 10 * j + 100 * k, dp)) * 1.0e-7_dp
+                end do
+            end do
+        end do
+        c1 = cmplx([1.0_dp / 3.0_dp, -2.0_dp, 0.0_dp], [0.1_dp, 0.0_dp, -1.0e-300_dp], kind=dp)
+
+        call json%initialize()
+        call json%create_object(root, '')
+        call json%create_object(obj, 'section')
+        call json%add(root, obj)
+        call json_add_array(json, obj, 'a2', a2)
+        call json_add_array(json, obj, 'a3', a3)
+        call json_add_array(json, obj, 'c1', c1)
+        call json_add_array(json, obj, 'empty', reshape([real(dp) ::], [0, 4]))
+        call json%add(obj, 'x', 4.0_dp * atan(1.0_dp))
+        call json%add(obj, 'n', -7)
+        call json%add(obj, 'iv', [3, 1, 2])
+        call json%add(obj, 'str', 'text')
+        call json%serialize(root, text)
+        call json%destroy(root)
+
+        call json%deserialize(back, text)
+        if (json%failed()) return
+        obj => json_get_child(json, back, 'section')
+        call json_get_required(json, obj, 'a2', b2)
+        if (any(shape(b2) /= shape(a2))) return
+        if (any(b2 /= a2)) return
+        call json_get_required(json, obj, 'a3', b3, shape(a3))
+        if (any(b3 /= a3)) return
+        call json_get_required(json, obj, 'c1', d1, 3)
+        if (any(d1 /= c1)) return
+        call json_get_required(json, obj, 'empty', e2, [0, 4])
+        if (any(shape(e2) /= [0, 4])) return
+        call json_get_required(json, obj, 'x', x)
+        if (x /= 4.0_dp * atan(1.0_dp)) return
+        call json_get_required(json, obj, 'n', n)
+        if (n /= -7) return
+        call json_get_required(json, obj, 'iv', iv, 3)
+        if (any(iv /= [3, 1, 2])) return
+        call json_get_required(json, obj, 'str', str)
+        if (str /= 'text') return
+        call json_get_required(json, obj, 'a2(2)', v, 2)
+        if (any(v /= a2(2, :))) return
+        call json%destroy(back)
+        ret = 0
+    end function json_util_test
+
+
+    !> A file is cut to the given number of bytes and can be appended to afterwards.
+    integer function truncate_file_test() result(ret)
+        use global_defs, only : int64
+        use file_mod, only : truncate_file
+        character(len=*), parameter :: fname = 'util_test_truncate.txt'
+        character(len=20) :: line
+        integer(int64) :: n_byte
+        integer :: u, i, ios
+
+        ret = 1
+        open(newunit=u, file=fname, action='write', status='replace')
+        write(u, '(a)') 'line 1'
+        flush(u)
+        inquire(unit=u, size=n_byte)
+        do i = 2, 5
+            write(u, '(a,i0)') 'line ', i
+        end do
+        close(u)
+        call truncate_file(fname, n_byte)
+        open(newunit=u, file=fname, action='write', position='append')
+        write(u, '(a)') 'line 6'
+        close(u)
+        open(newunit=u, file=fname, action='read')
+        read(u, '(a)') line
+        if (line /= 'line 1') return
+        read(u, '(a)') line
+        if (line /= 'line 6') return
+        read(u, '(a)', iostat=ios) line
+        if (ios == 0) return
+        close(u, status='delete')
+        ret = 0
+    end function truncate_file_test
 
     
 end program util_test

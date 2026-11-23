@@ -11,7 +11,7 @@ $dynamics
  tstep = 0.05
  max_time =   100.0000
 $output                                                                         
- buinterval = 2000                                                              
+ buinterval = -1                                                              
  printerval = 10
  noprint  2,4,5,7,8,10,11
 $method

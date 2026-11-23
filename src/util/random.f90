@@ -13,6 +13,8 @@ module random_mod
     private
     public :: rng_type
     public :: rng_type_int
+    public :: rng_save_state
+    public :: rng_load_state
 
 
     !----------------------------------------------------------------------------------------------
@@ -24,9 +26,13 @@ module random_mod
     !----------------------------------------------------------------------------------------------
     type, abstract :: rng_type
         integer :: seed = -1 !< Seed used for initializing the RNG.
+        logical :: gauss_cached = .false. !< The second number of the last Gaussian pair is unused.
+        real(dp) :: gauss_next = 0.0_dp !< Unused second number of the last Gaussian pair.
     contains
         private
         procedure, public :: init_seed => rng_init_seed
+        procedure, public :: save_state => rng_save_state
+        procedure, public :: load_state => rng_load_state
         procedure(rngReal), deferred, public :: random_real
         procedure(rngInt), deferred, public :: random_integer
         procedure(rngInit), deferred, public :: init
@@ -125,6 +131,42 @@ contains
             self%seed = seed
         end if
     end subroutine rng_init_seed
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: rng_save_state
+    !> @brief Add the state of the RNG to a JSON object.
+    !> @details
+    !! Adds the seed and the unused number of the last Gaussian pair. Extensions override this to
+    !! add the state of the generator in their own object, and call it first.
+    !----------------------------------------------------------------------------------------------
+    subroutine rng_save_state(self, json, obj)
+        use json_module, only : json_core, json_value
+        class(rng_type), intent(in) :: self
+        type(json_core), intent(inout) :: json
+        type(json_value), pointer, intent(in) :: obj !< Object to which the state is added.
+
+        call json%add(obj, 'seed', self%seed)
+        call json%add(obj, 'gauss_cached', self%gauss_cached)
+        call json%add(obj, 'gauss_next', self%gauss_next)
+    end subroutine rng_save_state
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: rng_load_state
+    !> @brief Restore the state of the RNG saved by save_state.
+    !----------------------------------------------------------------------------------------------
+    subroutine rng_load_state(self, json, obj)
+        use json_module, only : json_core, json_value
+        use json_util_mod, only : json_get_required
+        class(rng_type), intent(inout) :: self
+        type(json_core), intent(inout) :: json
+        type(json_value), pointer, intent(in) :: obj !< Object holding the state.
+
+        call json_get_required(json, obj, 'seed', self%seed)
+        call json_get_required(json, obj, 'gauss_cached', self%gauss_cached)
+        call json_get_required(json, obj, 'gauss_next', self%gauss_next)
+    end subroutine rng_load_state
 
 
     !----------------------------------------------------------------------------------------------
@@ -247,13 +289,12 @@ contains
         real(dp), intent(in) :: mean
         real(dp), intent(in) :: sigma
         real(dp), intent(out) :: rnum
-        logical, save :: flag = .false.
-        real(dp), save :: gpair(2) = 0.0_dp
+        real(dp) :: gpair(2)
         real(dp) :: rsq
 
-        if (flag) then
-            rnum = gpair(2)
-            flag = .false.
+        if (self%gauss_cached) then
+            rnum = self%gauss_next
+            self%gauss_cached = .false.
         else
             do
                 call self%uniform(gpair)
@@ -263,7 +304,8 @@ contains
             end do
             gpair = sqrt(-2.0_dp * log(rsq) / rsq) * gpair
             rnum = gpair(1)
-            flag = .true.
+            self%gauss_next = gpair(2)
+            self%gauss_cached = .true.
         end if
 
         rnum = mean + sigma * rnum

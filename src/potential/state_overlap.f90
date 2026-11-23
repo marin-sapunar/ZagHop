@@ -21,6 +21,8 @@ module state_overlap_mod
     private
     public :: state_overlap
     public :: request_id
+    public :: last_requested_id
+    public :: restore_last_id
 
 
     integer :: last_id = 0 !< Last id given by request_id.
@@ -37,6 +39,8 @@ module state_overlap_mod
         procedure :: clear
         procedure :: valid
         procedure :: matches
+        procedure :: save_state
+        procedure :: load_state
     end type state_overlap
 
 
@@ -60,6 +64,26 @@ contains
         id = last_id
         !$omp end atomic
     end function request_id
+
+
+    !> Last id given by request_id, saved in a backup.
+    integer function last_requested_id() result(id)
+        id = last_id
+    end function last_requested_id
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: restore_last_id
+    !> @brief Continue the ids after id, the last id given by request_id in a previous run.
+    !> @details
+    !! Called when a run continues from a backup, after all objects that request ids at setup
+    !! were created, so that the restored ids stay unique and new ids follow the previous run.
+    !----------------------------------------------------------------------------------------------
+    subroutine restore_last_id(id)
+        integer, intent(in) :: id
+
+        last_id = id
+    end subroutine restore_last_id
 
 
     !----------------------------------------------------------------------------------------------
@@ -117,6 +141,52 @@ contains
         if (.not. self%valid()) return
         matches = self%id_bra == id_bra .and. self%id_ket == id_ket .and. self%basis == basis
     end function matches
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: save_state
+    !> @brief Add the overlaps to a JSON object. Without overlaps, only the ids (0) are added.
+    !----------------------------------------------------------------------------------------------
+    subroutine save_state(self, json, obj)
+        use json_module, only : json_core, json_value
+        use json_util_mod, only : json_add_array
+        class(state_overlap), intent(in) :: self
+        type(json_core), intent(inout) :: json
+        type(json_value), pointer, intent(in) :: obj !< Object to which the overlaps are added.
+
+        call json%add(obj, 'id_bra', self%id_bra)
+        call json%add(obj, 'id_ket', self%id_ket)
+        if (.not. self%valid()) return
+        call json%add(obj, 'basis', self%basis)
+        call json_add_array(json, obj, 's', self%s)
+        call json_add_array(json, obj, 't', self%t)
+    end subroutine save_state
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: load_state
+    !> @brief Restore the overlaps saved by save_state.
+    !> @details
+    !! t is read as saved, not computed again from s, so it is the same to the last bit.
+    !----------------------------------------------------------------------------------------------
+    subroutine load_state(self, json, obj)
+        use json_module, only : json_core, json_value
+        use json_util_mod, only : json_get_required
+        class(state_overlap), intent(inout) :: self
+        type(json_core), intent(inout) :: json
+        type(json_value), pointer, intent(in) :: obj !< Object holding the overlaps.
+        integer :: id_bra, id_ket
+
+        call self%clear()
+        call json_get_required(json, obj, 'id_bra', id_bra)
+        call json_get_required(json, obj, 'id_ket', id_ket)
+        if (id_bra <= 0) return
+        self%id_bra = id_bra
+        self%id_ket = id_ket
+        call json_get_required(json, obj, 'basis', self%basis)
+        call json_get_required(json, obj, 's', self%s)
+        call json_get_required(json, obj, 't', self%t, shape(self%s))
+    end subroutine load_state
 
 
 end module state_overlap_mod

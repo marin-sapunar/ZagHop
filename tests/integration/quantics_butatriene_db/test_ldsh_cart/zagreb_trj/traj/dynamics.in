@@ -13,5 +13,6 @@ $dynamics
  max_toten_d = 999.0
  max_toten_d_step = 999.0
 $output
+ buinterval -1
  printerval = 5
 $end

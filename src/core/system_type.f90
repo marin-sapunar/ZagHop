@@ -29,8 +29,10 @@ module system_type_mod
     public :: trajectory_goto
     public :: trajectory_next
     public :: trajectory_write_final
-    public :: trajectory_write_backup
-    public :: trajectory_read_backup
+    public :: trajectory_save_state
+    public :: trajectory_load_state
+    public :: output_options
+    public :: output_file_name
     public :: ekin
 
     !----------------------------------------------------------------------------------------------
@@ -349,6 +351,106 @@ contains
     end subroutine trajectory_write_final
 
 
+    !---------------------------------------------------------------------------------------------
+    ! SUBROUTINE: trajectory_save_state
+    !> @brief Add the stored points of the trajectory to a JSON object, for a backup.
+    !> @details
+    !! The points are saved in time order, in the array 'points', with the position of the current
+    !! point (i_current). Each point holds its time and grid data, geometry, velocity, gradient
+    !! and MM data, and the states of its potential ('potential') and surface hopping method
+    !! ('method'). The atoms and options of the system are not saved; they come from the input.
+    !---------------------------------------------------------------------------------------------
+    subroutine trajectory_save_state(json, obj)
+        use json_module, only : json_core, json_value
+        use json_util_mod, only : json_add_array
+        type(json_core), intent(inout) :: json
+        type(json_value), pointer, intent(in) :: obj !< Object to which the points are added.
+        type(json_value), pointer :: arr, pt, sub
+        integer :: i
+
+        call json%add(obj, 'i_current', i_current)
+        call json%create_array(arr, 'points')
+        do i = 1, n_point
+            associate(t => trajectory_data(point_slot(i)))
+                call json%create_object(pt, '')
+                call json%add(pt, 'step', t%step)
+                call json%add(pt, 'time', t%time)
+                call json%add(pt, 'dt', t%dt)
+                call json%add(pt, 'on_grid', t%on_grid)
+                call json%add(pt, 'written', t%written)
+                call json_add_array(json, pt, 'geom', t%geom)
+                call json_add_array(json, pt, 'velo', t%velo)
+                call json_add_array(json, pt, 'grad', t%grad)
+                call json%add(pt, 'men', t%men)
+                call json%add(pt, 'pbcbox', t%pbcbox)
+                call json%create_object(sub, 'potential')
+                call t%pot%save_state(json, sub)
+                call json%add(pt, sub)
+                call json%create_object(sub, 'method')
+                call t%wf%save_state(json, sub)
+                call json%add(pt, sub)
+                call json%add(arr, pt)
+            end associate
+        end do
+        call json%add(obj, arr)
+    end subroutine trajectory_save_state
+
+
+    !---------------------------------------------------------------------------------------------
+    ! SUBROUTINE: trajectory_load_state
+    !> @brief Restore the stored points of the trajectory saved by trajectory_save_state.
+    !> @details
+    !! The current point must be set up from the input (atoms, potential and method), and serves
+    !! as the template of all loaded points, whose saved state then replaces that of the template.
+    !! Stops if there are more points than slots, or if the shape of the geometry differs.
+    !---------------------------------------------------------------------------------------------
+    subroutine trajectory_load_state(json, obj)
+        use json_module, only : json_core, json_value
+        use json_util_mod, only : json_get_required, json_get_child
+        type(json_core), intent(inout) :: json
+        type(json_value), pointer, intent(in) :: obj !< Object holding the points.
+        type(json_value), pointer :: arr, pt
+        type(system_type) :: template
+        real(dp), allocatable :: men(:), pbcbox(:)
+        integer :: i, n, cur
+
+        template = tr1
+        arr => json_get_child(json, obj, 'points')
+        n = json%count(arr)
+        call json_get_required(json, obj, 'i_current', cur)
+        if (n < 1 .or. n > memory .or. cur < 1 .or. cur > n) then
+            write(stderr, '(1x,a)') 'Error in system_type_mod, trajectory_load_state subroutine.'
+            write(stderr, '(3x,a,i0,a,i0,a,i0,a)') 'Backup has ', n, ' points (current: ', cur,  &
+            &   '), the trajectory can store ', memory, '.'
+            stop 1
+        end if
+        do i = 1, n
+            call json%get_child(arr, i, pt)
+            trajectory_data(i) = template
+            associate(t => trajectory_data(i))
+                call json_get_required(json, pt, 'step', t%step)
+                call json_get_required(json, pt, 'time', t%time)
+                call json_get_required(json, pt, 'dt', t%dt)
+                call json_get_required(json, pt, 'on_grid', t%on_grid)
+                call json_get_required(json, pt, 'written', t%written)
+                call json_get_required(json, pt, 'geom', t%geom, shape(template%geom))
+                call json_get_required(json, pt, 'velo', t%velo, shape(template%velo))
+                call json_get_required(json, pt, 'grad', t%grad, shape(template%grad))
+                call json_get_required(json, pt, 'men', men, 2)
+                t%men = men
+                call json_get_required(json, pt, 'pbcbox', pbcbox, 6)
+                t%pbcbox = pbcbox
+                call t%pot%load_state(json, json_get_child(json, pt, 'potential'))
+                call t%wf%load_state(json, json_get_child(json, pt, 'method'))
+            end associate
+        end do
+        point_slot(1:n) = [(i, i = 1, n)]
+        n_point = n
+        i_current = cur
+        call set_pointers()
+    end subroutine trajectory_load_state
+
+
     !----------------------------------------------------------------------------------------------
     ! SUBROUTINE: traj_open_files
     !
@@ -360,68 +462,82 @@ contains
         logical, intent(in) :: popt(:) !< Print options.
         integer, intent(out) :: punit(:) !< Units for output files.
         character(len=*), intent(in) :: res_dir ! Directory for writing results.
+        integer, allocatable :: iopt(:)
+        integer :: i
 
-        if (popt(1)) then
-            open(newunit=punit(1), file=res_dir//'/energy.dat', action='write', position='append')
-
-            if (t%mnatom > 0) then
-                open(newunit=punit(50), file=res_dir//'/mm.dat', action='write', position='append')
-            end if
-        end if
-
-        if (popt(2)) then
-            open(newunit=punit(2), file=res_dir//'/trajectory.xyz', action='write', position='append')
-        end if
-
-        if (popt(3)) then
-            open(newunit=punit(3), file=res_dir//'/geometry', action='write', position='append')
-        end if
-
-        if (popt(4)) then
-            open(newunit=punit(4), file=res_dir//'/velocity', action='write', position='append')
-        end if
-
-        if (popt(5)) then
-            open(newunit=punit(5), file=res_dir//'/gradient', action='write', position='append')
-        end if
-
-        if (popt(6)) then
-            open(newunit=punit(6), file=res_dir//'/cwf.dat', action='write', position='append')
-        end if
-        
-        if (popt(7)) then
-            open(newunit=punit(7), file=res_dir//'/prob', action='write', position='append')
-        end if
-        
-        if (popt(10)) then
-            open(newunit=punit(10), file=res_dir//'/oscill.dat', action='write', position='append')
-        end if
-
-        if (popt(20)) then
-            open(newunit=punit(20), file=res_dir//'/trans_ldiab', action='write', position='append')
-        end if
-
-        if (popt(21)) then
-            open(newunit=punit(21), file=res_dir//'/trans_diab', action='write', position='append')
-        end if
-
-        if (popt(22)) then
-            open(newunit=punit(22), file=res_dir//'/trans_adiab', action='write', position='append')
-        end if
-
-        if (popt(30)) then
-            open(newunit=punit(30), file=res_dir//'/cstate_ldiab', action='write', position='append')
-        end if
-
-        if (popt(31)) then
-            open(newunit=punit(31), file=res_dir//'/cstate_diab', action='write', position='append')
-        end if
-
-        if (popt(32)) then
-            open(newunit=punit(32), file=res_dir//'/cstate_adiab', action='write', position='append')
-        end if
-
+        iopt = output_options(t, popt)
+        do i = 1, size(iopt)
+            open(newunit=punit(iopt(i)), file=res_dir//'/'//output_file_name(iopt(i)),           &
+            &    action='write', position='append')
+        end do
     end subroutine traj_open_files
+
+
+    !----------------------------------------------------------------------------------------------
+    ! FUNCTION: output_options
+    !> @brief Indices of the output files opened by open_files for the print options popt.
+    !> @details
+    !! The MM energies (mm.dat, index 50) are written with the energies, if there are MM atoms.
+    !----------------------------------------------------------------------------------------------
+    function output_options(t, popt) result(iopt)
+        class(system_type), intent(in) :: t
+        logical, intent(in) :: popt(:) !< Print options.
+        integer, allocatable :: iopt(:)
+        integer :: i
+
+        allocate(iopt(0))
+        do i = 1, size(popt)
+            if (i == 50) cycle
+            if (popt(i) .and. output_file_name(i) /= '') iopt = [iopt, i]
+        end do
+        if (popt(1) .and. t%mnatom > 0) iopt = [iopt, 50]
+    end function output_options
+
+
+    !----------------------------------------------------------------------------------------------
+    ! FUNCTION: output_file_name
+    !> @brief Name of the output file with index i (in the results directory), or '' if there is
+    !! no file with this index.
+    !----------------------------------------------------------------------------------------------
+    pure function output_file_name(i) result(fname)
+        integer, intent(in) :: i
+        character(len=:), allocatable :: fname
+
+        select case(i)
+        case(1)
+            fname = 'energy.dat'
+        case(2)
+            fname = 'trajectory.xyz'
+        case(3)
+            fname = 'geometry'
+        case(4)
+            fname = 'velocity'
+        case(5)
+            fname = 'gradient'
+        case(6)
+            fname = 'cwf.dat'
+        case(7)
+            fname = 'prob'
+        case(10)
+            fname = 'oscill.dat'
+        case(20)
+            fname = 'trans_ldiab'
+        case(21)
+            fname = 'trans_diab'
+        case(22)
+            fname = 'trans_adiab'
+        case(30)
+            fname = 'cstate_ldiab'
+        case(31)
+            fname = 'cstate_diab'
+        case(32)
+            fname = 'cstate_adiab'
+        case(50)
+            fname = 'mm.dat'
+        case default
+            fname = ''
+        end select
+    end function output_file_name
 
 
 
@@ -537,173 +653,6 @@ contains
 1003 format (1x,a,2x,1000f18.10)
 1006 format (1x,1000e22.12)
     end subroutine traj_writestep
-
-
-    subroutine trajectory_write_backup(backup_file, t)
-        character(len=*), intent(in) :: backup_file
-        class(system_type), intent(in) :: t(:)
-        integer :: i, ounit
-
-!         open(newunit=ounit, file=backup_file, action='write')
-!         write(ounit, *) memory
-!         do i = 1, memory
-!             write(ounit, *) t(i)%step
-!             write(ounit, *) t(i)%substep
-!             write(ounit, *) t(i)%time
-!             write(ounit, *) t(i)%ndim
-!             write(ounit, *) t(i)%natom
-!             write(ounit, *) allocated(t(i)%sym)
-!             if (allocated(t(i)%sym)) write(ounit, *) t(i)%sym(:)
-!             write(ounit, *) allocated(t(i)%chrg)
-!             if (allocated(t(i)%chrg)) write(ounit, *) t(i)%chrg(:)
-!             write(ounit, *) allocated(t(i)%mass)
-!             if (allocated(t(i)%mass)) write(ounit, *) t(i)%mass(:)
-!             write(ounit, *) allocated(t(i)%geom)
-!             if (allocated(t(i)%geom)) write(ounit, *) t(i)%geom(:, :)
-!             write(ounit, *) allocated(t(i)%velo)
-!             if (allocated(t(i)%velo)) write(ounit, *) t(i)%velo(:, :)
-!             write(ounit, *) allocated(t(i)%grad)
-!             if (allocated(t(i)%grad)) write(ounit, *) t(i)%grad(:, :)
-!             write(ounit, *) t(i)%qnatom
-!             write(ounit, *) allocated(t(i)%qind)
-!             if (allocated(t(i)%qind)) write(ounit, *) t(i)%qind(:)
-!             write(ounit, *) t(i)%max_nstate
-!             write(ounit, *) t(i)%cstate
-!             write(ounit, *) allocated(t(i)%qe)
-!             if (allocated(t(i)%qe)) write(ounit, *) t(i)%qe(:)
-!             write(ounit, *) allocated(t(i)%qo)
-!             if (allocated(t(i)%qo)) write(ounit, *) t(i)%qo(:)
-!             write(ounit, *) t(i)%mnatom
-!             write(ounit, *) allocated(t(i)%mind)
-!             if (allocated(t(i)%mind)) write(ounit, *) t(i)%mind(:)
-!             write(ounit, *) t(i)%me(2)
-!             write(ounit, *) allocated(t(i)%cwf)
-!             if (allocated(t(i)%cwf)) write(ounit, *) t(i)%cwf(:)
-!             write(ounit, *) allocated(t(i)%prob)
-!             if (allocated(t(i)%prob)) write(ounit, *) t(i)%prob(:)
-!             write(ounit, *) allocated(t(i)%olap)
-!             if (allocated(t(i)%olap)) write(ounit, *) t(i)%olap(:, :)
-!             write(ounit, *) allocated(t(i)%nadv)
-!             if (allocated(t(i)%nadv)) write(ounit, *) t(i)%nadv(:, :, :)
-!             write(ounit, *) allocated(t(i)%sov)
-!             if (allocated(t(i)%sov)) write(ounit, *) t(i)%sov(:, :)
-! !            write(ounit, *) allocated(t(i)%spinv)
-! !            if (allocated(t(i)%spinv)) write(ounit, *) t(i)%spinv(:)
-!             write(ounit, *) t(i)%pbcbox
-!             write(ounit, *) allocated(t(i)%phase)
-!             if (allocated(t(i)%phase)) write(ounit, *) t(i)%phase
-!         end do
-!         close(ounit)
-    end subroutine trajectory_write_backup
-
-
-    subroutine trajectory_read_backup(backup_file, t)
-        character(len=*), intent(in) :: backup_file
-        class(system_type), intent(inout) :: t(:)
-        integer :: i, iunit
-        logical :: check
-
-!         open(newunit=iunit, file=backup_file, status='old', action='read')
-!         read(iunit, *) i
-!         if (i /= memory) stop 'Error. Bad memory parameter in system_var.'
-!         do i = 1, memory
-!             read(iunit, *) t(i)%step
-!             read(iunit, *) t(i)%substep
-!             read(iunit, *) t(i)%time
-!             read(iunit, *) t(i)%ndim
-!             read(iunit, *) t(i)%natom
-!             read(iunit, *) check
-!             if (check) then
-!                 allocate(t(i)%sym(t(i)%natom))
-!                 read(iunit, *) t(i)%sym(:)
-!             end if
-!             read(iunit, *) check
-!             if (check) then
-!                 allocate(t(i)%chrg(t(i)%natom))
-!                 read(iunit, *) t(i)%chrg(:)
-!             end if
-!             read(iunit, *) check
-!             if (check) then
-!                 allocate(t(i)%mass(t(i)%natom))
-!                 read(iunit, *) t(i)%mass(:)
-!             end if
-!             read(iunit, *) check
-!             if (check) then
-!                 allocate(t(i)%geom(t(i)%ndim, t(i)%natom))
-!                 read(iunit, *) t(i)%geom(:, :)
-!             end if
-!             read(iunit, *) check
-!             if (check) then
-!                 allocate(t(i)%velo(t(i)%ndim, t(i)%natom))
-!                 read(iunit, *) t(i)%velo(:, :)
-!             end if
-!             read(iunit, *) check
-!             if (check) then
-!                 allocate(t(i)%grad(t(i)%ndim, t(i)%natom))
-!                 read(iunit, *) t(i)%grad(:, :)
-!             end if
-!             read(iunit, *) t(i)%qnatom
-!             read(iunit, *) check
-!             if (check) then
-!                 allocate(t(i)%qind(t(i)%qnatom))
-!                 read(iunit, *) t(i)%qind(:)
-!             end if
-!             read(iunit, *) t(i)%max_nstate
-!             read(iunit, *) t(i)%cstate
-!             read(iunit, *) check
-!             if (check) then
-!                 allocate(t(i)%qe(t(i)%max_nstate))
-!                 read(iunit, *) t(i)%qe(:)
-!             end if
-!             read(iunit, *) check
-!             if (check) then
-!                 allocate(t(i)%qo(t(i)%max_nstate-1))
-!                 read(iunit, *) t(i)%qo(:)
-!             end if
-!             read(iunit, *) t(i)%mnatom
-!             read(iunit, *) check
-!             if (check) then
-!                 allocate(t(i)%mind(t(i)%mnatom))
-!                 read(iunit, *) t(i)%mind(:)
-!             end if
-!             read(iunit, *) t(i)%me(2)
-!             read(iunit, *) check
-!             if (check) then
-!                 allocate(t(i)%cwf(t(i)%max_nstate))
-!                 read(iunit, *) t(i)%cwf(:)
-!             end if
-!             read(iunit, *) check
-!             if (check) then
-!                 allocate(t(i)%prob(t(i)%max_nstate))
-!                 read(iunit, *) t(i)%prob(:)
-!             end if
-!             read(iunit, *) check
-!             if (check) then
-!                 allocate(t(i)%olap(t(i)%max_nstate, t(i)%max_nstate))
-!                 read(iunit, *) t(i)%olap(:,:)
-!             end if
-!             read(iunit, *) check
-!             if (check) then
-!                 allocate(t(i)%nadv(t(i)%ndim*t(i)%qnatom, t(i)%max_nstate, t(i)%max_nstate))
-!                 read(iunit, *) t(i)%nadv(:, :, :)
-!             end if
-!             if (check) then
-!                 allocate(t(i)%sov(t(i)%max_nstate, t(i)%max_nstate))
-!                 read(iunit, *) t(i)%sov(:, :)
-!             end if
-! !            if (check) then
-! !                allocate(t(i)%spinv(t(i)%max_nstate))
-! !                read(iunit, *) t(i)%spinv(:)
-! !            end if
-!             read(iunit, *) t(i)%pbcbox
-!             read(iunit, *) check
-!             if (check) then
-!                 allocate(t(i)%phase(t(i)%max_nstate))
-!                 read(iunit, *) t(i)%phase(:)
-!             end if
-!         end do
-!         close(iunit)
-    end subroutine trajectory_read_backup
 
 
     !----------------------------------------------------------------------------------------------

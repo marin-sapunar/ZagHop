@@ -7,6 +7,8 @@ module pot_test_mod
     !> Evaluator without a potential, used to test the spin manifold setup.
     type, extends(diabatic_evaluator) :: group_evaluator
     contains
+
+
         procedure :: update_geometry => group_update_geometry
         procedure :: eval_diab => group_eval_diab
     end type group_evaluator
@@ -194,7 +196,102 @@ program pot_test
         stop ret
     end if
 
+    ret = save_state_test()
+    if (ret /= 0) then
+        write(*,*) "Error in save_state_test."
+        stop ret
+    end if
+
     contains
+
+
+    !> A point saved with save_state and loaded into a new evaluator gives the same state, and the
+    !! next point evaluated with the loaded point as the previous one is the same as with the
+    !! original (phases, link and, for effective spin states, the signs by continuity).
+    !! - granucci-sst with all spin components.
+    !! - Signed rss effective states of granucci-st, whose couplings change sign between the
+    !!   points, so the sign references of the saved point decide the signs at the next point.
+    integer function save_state_test() result(ret)
+        use global_defs, only : dp
+        use string_mod, only : string
+        use model_1d_mod, only : model_1d_evaluator
+        use evaluator_effective_spin_mod, only : effective_spin_evaluator
+        type(model_1d_evaluator) :: sst, st
+        type(effective_spin_evaluator) :: eff
+
+        ret = 1
+        call sst%init([string('granucci-sst')])
+        if (.not. restart_same(sst, [9.0_dp, 9.5_dp, 10.0_dp])) return
+        ret = 2
+        call st%init([string('granucci-st'), string('r_sigma'), string('9.5')])
+        call eff%init(st, 'rss', signed=.true.)
+        if (.not. restart_same(eff, [9.0_dp, 10.0_dp, 10.5_dp])) return
+        ret = 0
+    end function save_state_test
+
+
+    !> Evaluate copies of template at x(1) and x(2), save the second point and load it into a new
+    !! copy. Compare the saved states, and the states at x(3) evaluated from the original and
+    !! from the loaded point, with the same id.
+    logical function restart_same(template, x) result(same)
+        use global_defs, only : dp
+        use json_module, only : json_core, json_value
+        use state_overlap_mod, only : last_requested_id, restore_last_id
+        use evaluator_base_mod, only : potential_evaluator
+        class(potential_evaluator), intent(in) :: template
+        real(dp), intent(in) :: x(3)
+        class(potential_evaluator), allocatable :: p1, p2, loaded, n1, n2
+        type(json_core) :: json
+        type(json_value), pointer :: root
+        character(len=:), allocatable :: text_saved, text_loaded, text_n1, text_n2
+        integer :: id0
+
+        same = .false.
+        allocate(p1, source=template)
+        allocate(p2, source=template)
+        allocate(loaded, source=template)
+        allocate(n1, source=template)
+        allocate(n2, source=template)
+        call p1%update_geometry(reshape([x(1)], [1, 1]), 'model')
+        call p1%eval()
+        call p2%update_geometry(reshape([x(2)], [1, 1]), 'model')
+        call p2%eval(p1)
+        text_saved = state_text(p2)
+
+        call json%initialize()
+        call json%deserialize(root, text_saved)
+        call loaded%load_state(json, root)
+        call json%destroy(root)
+        text_loaded = state_text(loaded)
+        if (text_loaded /= text_saved) return
+
+        id0 = last_requested_id()
+        call n1%update_geometry(reshape([x(3)], [1, 1]), 'model')
+        call n1%eval(p2)
+        text_n1 = state_text(n1)
+        call restore_last_id(id0)
+        call n2%update_geometry(reshape([x(3)], [1, 1]), 'model')
+        call n2%eval(loaded)
+        text_n2 = state_text(n2)
+        same = (text_n1 == text_n2)
+    end function restart_same
+
+
+    !> The state of a point, as JSON text.
+    function state_text(pot) result(text)
+        use json_module, only : json_core, json_value
+        use evaluator_base_mod, only : potential_evaluator
+        class(potential_evaluator), intent(in) :: pot
+        character(len=:), allocatable :: text
+        type(json_core) :: json
+        type(json_value), pointer :: root
+
+        call json%initialize()
+        call json%create_object(root, '')
+        call pot%save_state(json, root)
+        call json%serialize(root, text)
+        call json%destroy(root)
+    end function state_text
 
 
     !> A full Hamiltonian given with all components of each state consecutive (as in Quantics) is

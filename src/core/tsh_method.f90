@@ -28,6 +28,8 @@ module tsh_method_mod
     public :: request_none
     public :: request_goto
     public :: request_insert
+    public :: method_save_state
+    public :: method_load_state
 
 
     integer, parameter :: request_none = 0 !< Continue from the current point.
@@ -67,6 +69,8 @@ module tsh_method_mod
         procedure :: write_coefficients
         procedure :: select_state
         procedure :: rescale_velocity
+        procedure :: save_state => method_save_state
+        procedure :: load_state => method_load_state
     end type tsh_method
 
 
@@ -75,6 +79,8 @@ module tsh_method_mod
     contains
         procedure :: start => none_start
         procedure :: propagate => none_propagate
+        procedure :: save_state => none_save_state
+        procedure :: load_state => none_load_state
     end type tsh_none
 
 
@@ -397,6 +403,102 @@ contains
         self%t = t2
         self%request = tsh_request(previous_state=self%active_state, t_final=t2)
     end subroutine none_propagate
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: method_save_state
+    !> @brief Add the state of the method to a JSON object, for a backup.
+    !> @details
+    !! Only what changes during the dynamics is saved, in the object 'tsh': the active state, the
+    !! time and probabilities of the last processed point and the last request. The basis and the
+    !! number of states are added for checking. Options come from the input when the backup is
+    !! loaded. Extensions add their own object and call the subroutine of their parent first. The
+    !! random number generator is saved separately.
+    !----------------------------------------------------------------------------------------------
+    subroutine method_save_state(self, json, obj)
+        use json_module, only : json_core, json_value
+        class(tsh_method), intent(in) :: self
+        type(json_core), intent(inout) :: json
+        type(json_value), pointer, intent(in) :: obj !< Object to which the state is added.
+        type(json_value), pointer :: tsh, req
+
+        call json%create_object(tsh, 'tsh')
+        call json%add(tsh, 'basis', self%basis)
+        call json%add(tsh, 'n_state', self%n_state)
+        call json%add(tsh, 'active_state', self%active_state)
+        call json%add(tsh, 't', self%t)
+        call json%add(tsh, 'prob', self%prob)
+        call json%create_object(req, 'request')
+        call json%add(req, 'action', self%request%action)
+        call json%add(req, 'time', self%request%time)
+        call json%add(req, 'dt', self%request%dt)
+        call json%add(req, 'hop', self%request%hop)
+        call json%add(req, 'isc', self%request%isc)
+        call json%add(req, 'previous_state', self%request%previous_state)
+        call json%add(req, 't_final', self%request%t_final)
+        call json%add(tsh, req)
+        call json%add(obj, tsh)
+    end subroutine method_save_state
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: method_load_state
+    !> @brief Restore the state of the method saved by save_state.
+    !> @details
+    !! The method must be initialized from the same input as the saved one. Stops if the basis or
+    !! the number of states differ.
+    !----------------------------------------------------------------------------------------------
+    subroutine method_load_state(self, json, obj)
+        use json_module, only : json_core, json_value
+        use json_util_mod, only : json_get_required, json_get_child, json_check_value
+        class(tsh_method), intent(inout) :: self
+        type(json_core), intent(inout) :: json
+        type(json_value), pointer, intent(in) :: obj !< Object holding the state.
+        type(json_value), pointer :: tsh, req
+
+        tsh => json_get_child(json, obj, 'tsh')
+        call json_check_value(json, tsh, 'basis', self%basis)
+        call json_check_value(json, tsh, 'n_state', self%n_state)
+        call json_get_required(json, tsh, 'active_state', self%active_state)
+        call json_get_required(json, tsh, 't', self%t)
+        call json_get_required(json, tsh, 'prob', self%prob, self%n_state)
+        req => json_get_child(json, tsh, 'request')
+        call json_get_required(json, req, 'action', self%request%action)
+        call json_get_required(json, req, 'time', self%request%time)
+        call json_get_required(json, req, 'dt', self%request%dt)
+        call json_get_required(json, req, 'hop', self%request%hop)
+        call json_get_required(json, req, 'isc', self%request%isc)
+        call json_get_required(json, req, 'previous_state', self%request%previous_state)
+        call json_get_required(json, req, 't_final', self%request%t_final)
+    end subroutine method_load_state
+
+
+    !> State of the method without surface hopping, with an empty object 'none' marking the method.
+    subroutine none_save_state(self, json, obj)
+        use json_module, only : json_core, json_value
+        class(tsh_none), intent(in) :: self
+        type(json_core), intent(inout) :: json
+        type(json_value), pointer, intent(in) :: obj !< Object to which the state is added.
+        type(json_value), pointer :: none
+
+        call method_save_state(self, json, obj)
+        call json%create_object(none, 'none')
+        call json%add(obj, none)
+    end subroutine none_save_state
+
+
+    !> Restore the state saved by none_save_state. Stops if the backup is of another method.
+    subroutine none_load_state(self, json, obj)
+        use json_module, only : json_core, json_value
+        use json_util_mod, only : json_get_child
+        class(tsh_none), intent(inout) :: self
+        type(json_core), intent(inout) :: json
+        type(json_value), pointer, intent(in) :: obj !< Object holding the state.
+        type(json_value), pointer :: none
+
+        call method_load_state(self, json, obj)
+        none => json_get_child(json, obj, 'none')
+    end subroutine none_load_state
 
 
 end module tsh_method_mod

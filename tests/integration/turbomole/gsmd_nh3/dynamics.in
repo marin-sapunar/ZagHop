@@ -12,5 +12,6 @@ $dynamics
 $thermostat
  target_t = 300.0
 $output
+ buinterval -1
  noprint 2,4,5,11
 $end

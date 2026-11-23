@@ -28,6 +28,8 @@ module vc_evaluator_mod
         procedure :: get_reference_geometry => vc_get_reference_geometry
         procedure :: default_reference => vc_default_reference
         procedure :: get_oscill => vc_get_oscill
+        procedure :: save_state => vc_save_state
+        procedure :: load_state => vc_load_state
     end type vc_evaluator
 
 contains
@@ -237,5 +239,55 @@ contains
         oscill = 2.0_dp / 3.0_dp * edif * sum(dm_bas(:, istate, :)**2, dim=1)
     end function vc_get_oscill
 
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: vc_save_state
+    !> @brief Add the state of the evaluated point to a JSON object, with the geometry data of the
+    !! VC model in the object 'vc'.
+    !----------------------------------------------------------------------------------------------
+    subroutine vc_save_state(self, json, obj)
+        use json_module, only : json_core, json_value
+        use json_util_mod, only : json_add_array
+        class(vc_evaluator), intent(in) :: self
+        type(json_core), intent(inout) :: json
+        type(json_value), pointer, intent(in) :: obj !< Object to which the state is added.
+        type(json_value), pointer :: v
+
+        call diabatic_save_state(self, json, obj)
+        call json%create_object(v, 'vc')
+        call json%add(v, 'input_coordinates', self%input_coordinates)
+        call json%add(v, 'q', self%q)
+        if (allocated(self%cart_geom)) call json_add_array(json, v, 'cart_geom', self%cart_geom)
+        call json_add_array(json, v, 'frame_rot', self%frame_rot)
+        if (allocated(self%dm)) call json_add_array(json, v, 'dm', self%dm)
+        call json%add(obj, v)
+    end subroutine vc_save_state
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: vc_load_state
+    !> @brief Restore the state of an evaluated point saved by save_state.
+    !----------------------------------------------------------------------------------------------
+    subroutine vc_load_state(self, json, obj)
+        use json_module, only : json_core, json_value
+        use json_util_mod, only : json_get_required, json_get_child
+        class(vc_evaluator), intent(inout) :: self
+        type(json_core), intent(inout) :: json
+        type(json_value), pointer, intent(in) :: obj !< Object holding the state.
+        type(json_value), pointer :: v
+        real(dp), allocatable :: rot(:, :)
+
+        call diabatic_load_state(self, json, obj)
+        v => json_get_child(json, obj, 'vc')
+        call json_get_required(json, v, 'input_coordinates', self%input_coordinates)
+        call json_get_required(json, v, 'q', self%q, self%ndof)
+        if (allocated(self%cart_geom)) deallocate(self%cart_geom)
+        if (json%valid_path(v, 'cart_geom')) call json_get_required(json, v, 'cart_geom',         &
+        &                                                          self%cart_geom)
+        call json_get_required(json, v, 'frame_rot', rot, [3, 3])
+        self%frame_rot = rot
+        if (allocated(self%dm)) deallocate(self%dm)
+        if (json%valid_path(v, 'dm')) call json_get_required(json, v, 'dm', self%dm,               &
+        &                                                   [3, self%n_state, self%n_state])
+    end subroutine vc_load_state
 
 end module vc_evaluator_mod

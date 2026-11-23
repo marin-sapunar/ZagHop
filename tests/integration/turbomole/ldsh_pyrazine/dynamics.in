@@ -9,4 +9,6 @@ $surfhop ld-fssh
 $dynamics
  time = 6.0
  tstep = 0.5
+$output
+ buinterval -1
 $end

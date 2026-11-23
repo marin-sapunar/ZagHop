@@ -11,5 +11,6 @@ $dynamics
  time = 80.0
  tstep = 0.25
 $output
+ buinterval -1
   noprint 2,4-11
 $end

@@ -74,8 +74,11 @@ class TullyTest(ZagHopTest):
         """ Test LZSH on Tully model II, with hops at both avoided crossings.
 
         The output equals that of the old implementation (commit 27e1d1a) at all points of the
-        output grid."""
+        output grid. The trajectory is run up to 5 fs and restarted from its backup, before the
+        bisection of the first gap minimum, so the restart continues with the stored points of
+        the method."""
         self.run_traj()
+        self.restart_traj(30.0)
         self.assertEqual(self.stdout_count("Hop occurred"), 2)
         self.stdout_contains("Adding new substep: 2")
         self.assert_regular_grid(0.5)

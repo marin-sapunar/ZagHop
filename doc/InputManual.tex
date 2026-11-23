@@ -26,7 +26,7 @@ In the case of QM/MM dynamics, a second script is used to communicate to the MM 
 
 The geometry file (called "geom" by default) contains one line for each atom. Each line contains the atom symbol, atom mass, coordinates and type of atom. The type in the final column is either "q" (for QM atoms) or "m" (for MM atoms). The velocity file contains just the initial velocity vector for each atom.
 
-A stopped or finished trajectory can be restarted by adding the \$restart keyword to the input file. In this case, a backup file from a previous trajectory is required instead of the geometry and velocity files.
+A stopped or finished trajectory can be continued by adding the \$restart keyword to the input file. The trajectory then continues from the backup file (see bufile and buinterval), and gives the same results as an uninterrupted run. The geometry file is still read for the atoms of the system, but the geometry and velocities are taken from the backup, and the velocity file is not needed. The results directory of the previous run is required, and its output files are cut back to their state at the time of the backup before new data is appended. The input must otherwise be the same as for the previous run. Only options which do not change the dynamics up to the saved point may differ, such as max\_time to extend a finished trajectory; the potential, the surface hopping method, the number of states and the print options must stay the same. A trajectory which ended because of a condition other than max\_time (for example a target state with end\_state\_time 0, or a dynamics.stop file) continues for at least one step after the restart.
 
 %Method section
 \section*{Program options} \label{sec:options}
@@ -147,12 +147,15 @@ printerval \#	&
 	Data is written to output files every \# steps. \\
 
 bufile			&
-	\textbf{backup.dat} \newline
-	Name of backup file. The current state is read from this file when restarting the program using the \$restart keyword. \\
+	\textbf{backup.json} \newline
+	Name of the backup file (JSON). The trajectory continues from this file when the program is restarted with the \$restart keyword. Each backup replaces the previous one. \\
 	
 buinterval \#	&
-	\textbf{1} \newline
-	The backup file is written every \# steps. \\
+	\textbf{0} \newline
+	When the backup file is written: \newline
+	\tabitem [N > 0] Every N steps of the output grid, and when the trajectory ends. \newline
+	\tabitem [0] Only when the trajectory ends (max\_time, target state, dynamics.stop file, energy checks, ...). \newline
+	\tabitem [-1] Never. \\
 \end{tabularx}
 
 

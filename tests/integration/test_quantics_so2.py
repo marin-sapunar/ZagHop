@@ -19,8 +19,10 @@ class QuanticsSo2Test(QuanticsTest):
 
         Locally diabatic propagation does not depend on the ordering of the
         diabatic states, so the diabatic coefficients are also compared to
-        check the reordering of the triplet components."""
+        check the reordering of the triplet components. The trajectory is run
+        up to 50 fs and restarted from its backup."""
         self.run_traj()
+        self.restart_traj(100.0)
         self.compare_energy()
         self.compare_results("cstate_diab")
         self.compare_results("prob")

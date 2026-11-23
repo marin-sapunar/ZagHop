@@ -68,6 +68,8 @@ module quantics_interface_mod
         procedure :: eval_diab => quantics_eval_diab
         procedure :: default_reference => quantics_default_reference
         procedure :: check_atoms => quantics_check_atoms
+        procedure :: save_state => quantics_save_state
+        procedure :: load_state => quantics_load_state
     end type quantics_interface
 
 
@@ -484,6 +486,44 @@ contains
         close(ilog)
     end subroutine quantics_eval_diab
 
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: quantics_save_state
+    !> @brief Add the state of the evaluated point to a JSON object, with the coordinates of the
+    !! operator in the object 'quantics'.
+    !> @details
+    !! A DD database is not saved. Points added to it during the run are in the database files.
+    !----------------------------------------------------------------------------------------------
+    subroutine quantics_save_state(self, json, obj)
+        use json_module, only : json_core, json_value
+        class(quantics_interface), intent(in) :: self
+        type(json_core), intent(inout) :: json
+        type(json_value), pointer, intent(in) :: obj !< Object to which the state is added.
+        type(json_value), pointer :: qobj
+
+        call diabatic_save_state(self, json, obj)
+        call json%create_object(qobj, 'quantics')
+        call json%add(qobj, 'q', self%q)
+        call json%add(qobj, 'gpoint', self%gpoint)
+        call json%add(obj, qobj)
+    end subroutine quantics_save_state
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: quantics_load_state
+    !> @brief Restore the state of an evaluated point saved by save_state.
+    !----------------------------------------------------------------------------------------------
+    subroutine quantics_load_state(self, json, obj)
+        use json_module, only : json_core, json_value
+        use json_util_mod, only : json_get_required, json_get_child
+        class(quantics_interface), intent(inout) :: self
+        type(json_core), intent(inout) :: json
+        type(json_value), pointer, intent(in) :: obj !< Object holding the state.
+        type(json_value), pointer :: qobj
+
+        call diabatic_load_state(self, json, obj)
+        qobj => json_get_child(json, obj, 'quantics')
+        call json_get_required(json, qobj, 'q', self%q, self%ndof)
+        call json_get_required(json, qobj, 'gpoint', self%gpoint, size(self%gpoint))
+    end subroutine quantics_load_state
 
 end module quantics_interface_mod
-

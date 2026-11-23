@@ -30,7 +30,7 @@ module sh_lz_mod
     use global_defs
     use constants
     use tsh_method_mod, only : tsh_method, tsh_request, base_initialize => initialize,          &
-    &                          request_goto, request_insert
+    &                          request_goto, request_insert, method_save_state, method_load_state
     use evaluator_base_mod, only : potential_evaluator
     use random_mod, only : rng_type
     implicit none
@@ -81,6 +81,8 @@ module sh_lz_mod
         procedure :: start => lz_start
         procedure :: propagate => lz_propagate
         procedure :: max_points => lz_max_points
+        procedure :: save_state => lz_save_state
+        procedure :: load_state => lz_load_state
         procedure, private :: check_window
         procedure, private :: evaluate_window
         procedure, private :: check_isc
@@ -156,6 +158,117 @@ contains
         self%i_cur = 1
         self%request = tsh_request(t_final=t)
     end subroutine lz_start
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: lz_save_state
+    !> @brief Add the state of the method to a JSON object, with the stored points, the guard list
+    !! and the reference point of intersystem crossings in the object 'lz'.
+    !----------------------------------------------------------------------------------------------
+    subroutine lz_save_state(self, json, obj)
+        use json_module, only : json_core, json_value
+        use json_util_mod, only : json_add_array
+        class(tsh_lz), intent(in) :: self
+        type(json_core), intent(inout) :: json
+        type(json_value), pointer, intent(in) :: obj !< Object to which the state is added.
+        type(json_value), pointer :: lz, arr, elem
+        integer :: i
+
+        call method_save_state(self, json, obj)
+        call json%create_object(lz, 'lz')
+        call json%add(lz, 'i_cur', self%i_cur)
+        call json%add(lz, 't_window', self%t_window)
+        call json_add_array(json, lz, 'gap_2deriv', self%gap_2deriv)
+        call json%create_array(arr, 'point')
+        do i = 1, size(self%point)
+            call json%create_object(elem, '')
+            call save_point(elem, self%point(i))
+            call json%add(arr, elem)
+        end do
+        call json%add(lz, arr)
+        call json%create_array(arr, 'guard')
+        do i = 1, size(self%guard)
+            call json%create_object(elem, '')
+            call json%add(elem, 'time', self%guard(i)%time)
+            call json%add(elem, 'pair', self%guard(i)%pair)
+            call json%add(arr, elem)
+        end do
+        call json%add(lz, arr)
+        if (allocated(self%isc_ref%e)) then
+            call json%create_object(elem, 'isc_ref')
+            call save_point(elem, self%isc_ref)
+            call json%add(lz, elem)
+        end if
+        call json%add(obj, lz)
+
+    contains
+
+        subroutine save_point(elem, point)
+            type(json_value), pointer, intent(in) :: elem
+            type(lz_point), intent(in) :: point
+
+            call json%add(elem, 'time', point%time)
+            call json%add(elem, 'e', point%e)
+            call json_add_array(json, elem, 'soc2', point%soc2)
+        end subroutine save_point
+
+    end subroutine lz_save_state
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: lz_load_state
+    !> @brief Restore the state of the method saved by save_state.
+    !----------------------------------------------------------------------------------------------
+    subroutine lz_load_state(self, json, obj)
+        use json_module, only : json_core, json_value
+        use json_util_mod, only : json_get_required, json_get_child
+        class(tsh_lz), intent(inout) :: self
+        type(json_core), intent(inout) :: json
+        type(json_value), pointer, intent(in) :: obj !< Object holding the state.
+        type(json_value), pointer :: lz, arr, elem
+        integer, allocatable :: pair(:)
+        integer :: i, n
+
+        call method_load_state(self, json, obj)
+        lz => json_get_child(json, obj, 'lz')
+        call json_get_required(json, lz, 'i_cur', self%i_cur)
+        call json_get_required(json, lz, 't_window', self%t_window)
+        call json_get_required(json, lz, 'gap_2deriv', self%gap_2deriv, [3, self%n_state])
+        arr => json_get_child(json, lz, 'point')
+        n = json%count(arr)
+        if (allocated(self%point)) deallocate(self%point)
+        allocate(self%point(n))
+        do i = 1, n
+            call json%get_child(arr, i, elem)
+            call load_point(elem, self%point(i))
+        end do
+        arr => json_get_child(json, lz, 'guard')
+        n = json%count(arr)
+        if (allocated(self%guard)) deallocate(self%guard)
+        allocate(self%guard(n))
+        do i = 1, n
+            call json%get_child(arr, i, elem)
+            call json_get_required(json, elem, 'time', self%guard(i)%time)
+            call json_get_required(json, elem, 'pair', pair, 2)
+            self%guard(i)%pair = pair
+        end do
+        self%isc_ref = lz_point()
+        if (json%valid_path(lz, 'isc_ref')) then
+            call load_point(json_get_child(json, lz, 'isc_ref'), self%isc_ref)
+        end if
+
+    contains
+
+        subroutine load_point(elem, point)
+            type(json_value), pointer, intent(in) :: elem
+            type(lz_point), intent(out) :: point
+
+            call json_get_required(json, elem, 'time', point%time)
+            call json_get_required(json, elem, 'e', point%e, self%n_state)
+            call json_get_required(json, elem, 'soc2', point%soc2, [self%n_state, self%n_state])
+        end subroutine load_point
+
+    end subroutine lz_load_state
 
 
     !----------------------------------------------------------------------------------------------

@@ -46,6 +46,9 @@ project(ZagHop LANGUAGES Fortran)
   endif()
 
   add_library(zagutil STATIC ${UTIL_SOURCE})
+  target_link_libraries(zagutil PUBLIC jsonfortran)
+  target_include_directories(zagutil PUBLIC
+                             $<TARGET_PROPERTY:jsonfortran,BINARY_DIR>)
   add_library(zagpot STATIC ${POT_SOURCE})
   target_link_libraries(zagpot PRIVATE zagutil jsonfortran)
   target_include_directories(zagpot PRIVATE
@@ -159,7 +162,7 @@ project(ZagHop LANGUAGES Fortran)
   target_link_libraries(zaghop PRIVATE ${LINALG_LIBS})
   target_link_libraries(zagcore PUBLIC ${LINALG_LIBS})
   target_link_libraries(zagpot PRIVATE ${LINALG_LIBS})
-  target_link_libraries(zagutil ${LINALG_LIBS})
+  target_link_libraries(zagutil PUBLIC ${LINALG_LIBS})
 
   if(STATIC)
     target_link_libraries(zaghop PRIVATE "-static")
@@ -245,9 +248,12 @@ project(ZagHop LANGUAGES Fortran)
               --quiet --no-build-isolation
       COMMENT "Installing zagpy Python package (editable)"
     )
-    add_custom_command(TARGET zaghop POST_BUILD
+    # A target without outputs is always out of date, so the tests are copied on every build,
+    # also when only the test files changed.
+    add_custom_target(integration_tests ALL
       COMMAND ${CMAKE_COMMAND} -E copy_directory
-              ${CMAKE_SOURCE_DIR}/tests/integration ${CMAKE_BINARY_DIR}/tests)
+              ${CMAKE_SOURCE_DIR}/tests/integration ${CMAKE_BINARY_DIR}/tests
+      COMMENT "Copying integration tests")
 
     zaghop_add_python_tests(test_tully       TullyTest      Tully)
     zaghop_add_python_tests(test_granucci    GranucciTest   Granucci)

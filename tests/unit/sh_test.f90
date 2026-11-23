@@ -132,7 +132,142 @@ program sh_test
         stop ret
     end if
 
+    ret = save_state_test()
+    if (ret /= 0) then
+        write(*,*) "Error in save_state_test."
+        stop ret
+    end if
+
     contains
+
+
+    !----------------------------------------------------------------------------------------------
+    !> A method and its random number generator, saved and loaded into a new method initialized
+    !! with another generator, continue as the original:
+    !! - LZSH during a bisection, with a stored window, t_window and second derivatives of the
+    !!   gaps (the steps of lz_extra_minimum_test, ending with a gap minimum evaluated with a
+    !!   random number).
+    !! - LD-FSSH with coherences, over two more steps with random numbers.
+    !----------------------------------------------------------------------------------------------
+    integer function save_state_test() result(ret)
+        use global_defs, only : dp
+        use sh_test_mod, only : scripted_evaluator
+        use sh_lz_mod, only : tsh_lz
+        use sh_ld_mod, only : tsh_ld
+        use tsh_method_mod, only : tsh_method, request_insert
+        use random_mod, only : rng_type
+        use random_pcg_mod, only : rng_pcg_xsh_rr
+        type(scripted_evaluator) :: pot, pot1, pot2, pot3
+        type(tsh_lz) :: lz, lz_loaded
+        type(tsh_ld) :: ld, ld_loaded
+        class(rng_type), pointer :: rng, rng_loaded
+        character(len=:), allocatable :: text
+
+        allocate(rng_pcg_xsh_rr :: rng)
+        allocate(rng_pcg_xsh_rr :: rng_loaded)
+
+        ! LZSH, saved after a requested insertion.
+        ret = 1
+        call rng%init(1)
+        call rng_loaded%init(77)
+        call pot%setup([3], [1])
+        call lz%initialize(rng, pot, 2)
+        call lz_loaded%initialize(rng_loaded, pot, 2)
+        lz%prob_conv = 0.05_dp
+        lz%min_dt = 60.0_dp
+        lz%en_err = 1.0e-13_dp
+        lz_loaded%prob_conv = lz%prob_conv
+        lz_loaded%min_dt = lz%min_dt
+        lz_loaded%en_err = lz%en_err
+        call pot%set_energies([-0.30_dp, 0.0_dp, 0.40_dp])
+        call lz%start(0.0_dp, pot)
+        call pot%set_energies([-0.10_dp, 0.0_dp, 0.20_dp])
+        call lz%propagate(100.0_dp, pot)
+        call pot%set_energies([-0.20_dp, 0.0_dp, 0.30_dp])
+        call lz%propagate(200.0_dp, pot)
+        if (lz%request%action /= request_insert) return
+        text = state_text(lz, rng)
+        call load_text(lz_loaded, rng_loaded, text)
+        if (state_text(lz_loaded, rng_loaded) /= text) return
+        ret = 2
+        call pot%set_energies([-0.09_dp, 0.0_dp, 0.35_dp])
+        call lz%propagate(50.0_dp, pot)
+        call lz_loaded%propagate(50.0_dp, pot)
+        if (.not. lz%prob(3) > 0.0_dp) return
+        if (state_text(lz_loaded, rng_loaded) /= state_text(lz, rng)) return
+
+        ! LD-FSSH, saved after a step that mixes the states.
+        ret = 3
+        call rng%init(5)
+        call rng_loaded%init(78)
+        call pot1%setup([2], [1])
+        call ld%initialize(rng, pot1, 2)
+        call ld_loaded%initialize(rng_loaded, pot1, 2)
+        call pot1%set_hamiltonian(reshape([0.0_dp, 0.01_dp, 0.01_dp, 0.02_dp], [2, 2]))
+        call ld%start(0.0_dp, pot1)
+        pot2 = pot1
+        call pot2%set_hamiltonian(reshape([0.0_dp, 0.02_dp, 0.02_dp, 0.01_dp], [2, 2]), pot1)
+        call ld%propagate(10.0_dp, pot2)
+        if (.not. abs(ld%coeff(1)) > 0.01_dp) return
+        text = state_text(ld, rng)
+        call load_text(ld_loaded, rng_loaded, text)
+        if (state_text(ld_loaded, rng_loaded) /= text) return
+        ret = 4
+        pot3 = pot2
+        call pot3%set_hamiltonian(reshape([0.0_dp, 0.025_dp, 0.025_dp, 0.005_dp], [2, 2]), pot2)
+        call ld%propagate(20.0_dp, pot3)
+        call ld_loaded%propagate(20.0_dp, pot3)
+        pot2 = pot3
+        call pot3%set_hamiltonian(reshape([0.0_dp, 0.03_dp, 0.03_dp, 0.0_dp], [2, 2]), pot2)
+        call ld%propagate(30.0_dp, pot3)
+        call ld_loaded%propagate(30.0_dp, pot3)
+        if (state_text(ld_loaded, rng_loaded) /= state_text(ld, rng)) return
+        ret = 0
+    end function save_state_test
+
+
+    !> The state of a method and of its random number generator, as JSON text.
+    function state_text(method, rng) result(text)
+        use json_module, only : json_core, json_value
+        use tsh_method_mod, only : tsh_method
+        use random_mod, only : rng_type
+        class(tsh_method), intent(in) :: method
+        class(rng_type), intent(in) :: rng
+        character(len=:), allocatable :: text
+        type(json_core) :: json
+        type(json_value), pointer :: root, obj
+
+        call json%initialize()
+        call json%create_object(root, '')
+        call json%create_object(obj, 'method')
+        call method%save_state(json, obj)
+        call json%add(root, obj)
+        call json%create_object(obj, 'rng')
+        call rng%save_state(json, obj)
+        call json%add(root, obj)
+        call json%serialize(root, text)
+        call json%destroy(root)
+    end function state_text
+
+
+    !> Load the state of a method and of its random number generator from state_text.
+    subroutine load_text(method, rng, text)
+        use json_module, only : json_core, json_value
+        use json_util_mod, only : json_get_child
+        use tsh_method_mod, only : tsh_method
+        use random_mod, only : rng_type
+        class(tsh_method), intent(inout) :: method
+        class(rng_type), intent(inout) :: rng
+        character(len=*), intent(in) :: text
+        type(json_core) :: json
+        type(json_value), pointer :: root
+
+        call json%initialize()
+        call json%deserialize(root, text)
+        call method%load_state(json, json_get_child(json, root, 'method'))
+        call rng%load_state(json, json_get_child(json, root, 'rng'))
+        call json%destroy(root)
+    end subroutine load_text
 
 
     !----------------------------------------------------------------------------------------------

@@ -10,6 +10,8 @@ module evaluator_base_mod
     public :: set_spin_manifolds
     public :: add_state_layout
     public :: soc_group_tol
+    public :: evaluator_save_state
+    public :: evaluator_load_state
 
 
     real(dp), parameter :: soc_group_tol = 1.0e-10_dp !< Largest spin-orbit coupling within a group
@@ -84,6 +86,8 @@ module evaluator_base_mod
         procedure :: default_reference
         procedure :: print_summary
         procedure :: add_state_layout
+        procedure :: save_state => evaluator_save_state
+        procedure :: load_state => evaluator_load_state
         generic :: get_energy => get_energy_single, get_energy_all
     end type potential_evaluator
 
@@ -624,6 +628,59 @@ contains
         end do
         call json%add(obj, arr)
     end subroutine add_state_layout
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: evaluator_save_state
+    !> @brief Add the state of the evaluated point to a JSON object, for a backup.
+    !> @details
+    !! Only what depends on the point is saved: the quantities evaluated at it, its id and its
+    !! link to the previous point. The setup (model, spin manifolds, options) is built from the
+    !! input when the backup is loaded. Each type adds its own object to obj (here 'base', with
+    !! the numbers of states for checking), so a backup of another type of potential is detected
+    !! on loading. Extensions override this and call the subroutine of their parent first.
+    !----------------------------------------------------------------------------------------------
+    subroutine evaluator_save_state(self, json, obj)
+        use json_module, only : json_core, json_value
+        class(potential_evaluator), intent(in) :: self
+        type(json_core), intent(inout) :: json
+        type(json_value), pointer, intent(in) :: obj !< Object to which the state is added.
+        type(json_value), pointer :: base, link
+
+        call json%create_object(base, 'base')
+        call json%add(base, 'n_state', self%n_state)
+        call json%add(base, 'n_sf', self%n_sf)
+        call json%add(base, 'spin_states', self%spin_states)
+        call json%add(base, 'id', self%id)
+        call json%create_object(link, 'link')
+        call self%link%save_state(json, link)
+        call json%add(base, link)
+        call json%add(obj, base)
+    end subroutine evaluator_save_state
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: evaluator_load_state
+    !> @brief Restore the state of an evaluated point saved by save_state.
+    !> @details
+    !! The evaluator must be set up from the same input as the one that was saved. Stops if the
+    !! numbers of states differ.
+    !----------------------------------------------------------------------------------------------
+    subroutine evaluator_load_state(self, json, obj)
+        use json_module, only : json_core, json_value
+        use json_util_mod, only : json_get_required, json_get_child, json_check_value
+        class(potential_evaluator), intent(inout) :: self
+        type(json_core), intent(inout) :: json
+        type(json_value), pointer, intent(in) :: obj !< Object holding the state.
+        type(json_value), pointer :: base
+
+        base => json_get_child(json, obj, 'base')
+        call json_check_value(json, base, 'n_state', self%n_state)
+        call json_check_value(json, base, 'n_sf', self%n_sf)
+        call json_check_value(json, base, 'spin_states', self%spin_states)
+        call json_get_required(json, base, 'id', self%id)
+        call self%link%load_state(json, json_get_child(json, base, 'link'))
+    end subroutine evaluator_load_state
 
 
 end module evaluator_base_mod

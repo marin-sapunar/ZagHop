@@ -84,8 +84,10 @@ class VcSo2Test(ZagHopTest):
 
         The combination of the triplet components is computed at a given reference geometry.
         The spin-orbit couplings of the model are constant, so it is the same as at the default
-        reference."""
+        reference. The trajectory is run up to 59 fs and restarted from its backup, shortly
+        before a hop."""
         self.run_traj()
+        self.restart_traj(100.0)
         self.stdout_contains("Reading reference geometry file ref_geom.")
         self.stdout_contains("ISC probability evaluated")
         self.compare_energy()

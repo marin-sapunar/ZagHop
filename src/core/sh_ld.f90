@@ -10,7 +10,8 @@
 module sh_ld_mod
     use global_defs
     use tsh_method_mod, only : tsh_method, tsh_request, base_initialize => initialize,          &
-    &                          base_set_initial_state => set_initial_state
+    &                          base_set_initial_state => set_initial_state, method_save_state, &
+    &                          method_load_state
     use evaluator_base_mod, only : potential_evaluator
     use matrix_mod, only : mat_sy_exp
     use random_mod, only : rng_type
@@ -41,6 +42,8 @@ module sh_ld_mod
         procedure :: propagate => ld_propagate
         procedure :: decohere => ld_decohere
         procedure :: write_coefficients => ld_write_coefficients
+        procedure :: save_state => ld_save_state
+        procedure :: load_state => ld_load_state
     end type tsh_ld
 
 
@@ -216,6 +219,51 @@ contains
 
         write(unit, '(1x,1000e22.12)') real(self%coeff), aimag(self%coeff)
     end subroutine ld_write_coefficients
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: ld_save_state
+    !> @brief Add the state of the method to a JSON object, with the coefficients and the data of
+    !! the last processed point in the object 'ld'.
+    !----------------------------------------------------------------------------------------------
+    subroutine ld_save_state(self, json, obj)
+        use json_module, only : json_core, json_value
+        use json_util_mod, only : json_add_array
+        class(tsh_ld), intent(in) :: self
+        type(json_core), intent(inout) :: json
+        type(json_value), pointer, intent(in) :: obj !< Object to which the state is added.
+        type(json_value), pointer :: ld
+
+        call method_save_state(self, json, obj)
+        call json%create_object(ld, 'ld')
+        call json_add_array(json, ld, 'coeff', self%coeff)
+        if (allocated(self%h_t1)) call json_add_array(json, ld, 'h_t1', self%h_t1)
+        call json%add(ld, 'id_t1', self%id_t1)
+        call json%add(obj, ld)
+    end subroutine ld_save_state
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: ld_load_state
+    !> @brief Restore the state of the method saved by save_state.
+    !----------------------------------------------------------------------------------------------
+    subroutine ld_load_state(self, json, obj)
+        use json_module, only : json_core, json_value
+        use json_util_mod, only : json_get_required, json_get_child
+        class(tsh_ld), intent(inout) :: self
+        type(json_core), intent(inout) :: json
+        type(json_value), pointer, intent(in) :: obj !< Object holding the state.
+        type(json_value), pointer :: ld
+
+        call method_load_state(self, json, obj)
+        ld => json_get_child(json, obj, 'ld')
+        call json_get_required(json, ld, 'coeff', self%coeff, self%n_state)
+        if (allocated(self%h_t1)) deallocate(self%h_t1)
+        if (json%valid_path(ld, 'h_t1')) then
+            call json_get_required(json, ld, 'h_t1', self%h_t1, [self%n_state, self%n_state])
+        end if
+        call json_get_required(json, ld, 'id_t1', self%id_t1)
+    end subroutine ld_load_state
 
 
     !----------------------------------------------------------------------------------------------
