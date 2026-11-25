@@ -51,6 +51,7 @@ module json_util_mod
     interface json_check_value
         module procedure check_integer
         module procedure check_string
+        module procedure check_logical
     end interface json_check_value
 
 
@@ -343,6 +344,26 @@ contains
         &                        '" from the current setup.'
         stop 1
     end subroutine check_string
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: check_logical
+    !> @brief Stop unless the logical at path equals expected, the value of the current run.
+    !----------------------------------------------------------------------------------------------
+    subroutine check_logical(json, obj, path, expected)
+        type(json_core), intent(inout) :: json
+        type(json_value), pointer, intent(in) :: obj
+        character(len=*), intent(in) :: path
+        logical, intent(in) :: expected
+        logical :: val
+
+        call get_logical(json, obj, path, val)
+        if (val .eqv. expected) return
+        write(stderr, '(1x,a)') 'Error in json_util_mod.'
+        write(stderr, '(3x,3a,l1,a,l1,a)') 'Value "', path, '" is ', val, ', expected ', expected, &
+        &                                  ' from the current setup.'
+        stop 1
+    end subroutine check_logical
 
 
     !> Real vector from the array p.

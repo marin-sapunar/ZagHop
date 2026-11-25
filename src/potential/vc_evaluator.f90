@@ -43,7 +43,7 @@ contains
         self%input_coordinates = self%classical_coordinates
         self%cartesian_frame = 'fixed'
         ! Manifolds of singlets, doublets and triplets. The template lists every component.
-        call self%set_spin_manifolds(model%nstate, [1, 2, 3], 'components')
+        call self%set_model_states(model%nstate, [1, 2, 3], 'components')
         self%ndof = self%model%nmode
         allocate(self%q(self%ndof))
     end subroutine vc_initialize
@@ -198,7 +198,9 @@ contains
         end do
 
         if (self%model%dm(1)%max_order >= 0) then
-            if (.not. allocated(self%dm)) allocate(self%dm(3, self%n_state, self%n_state))
+            if (.not. allocated(self%dm)) then
+                allocate(self%dm(3, self%model_states%n_state, self%model_states%n_state))
+            end if
             self%dm(1, :, :) = self%model%dm(1)%eval(self%q)
             self%dm(2, :, :) = self%model%dm(2)%eval(self%q)
             self%dm(3, :, :) = self%model%dm(3)%eval(self%q)
@@ -206,35 +208,31 @@ contains
     end subroutine vc_eval_diab
 
     
+    !> Oscillator strengths of the transitions from state istate to all states of basis
+    !! ('diabatic' or 'adiabatic').
     function vc_get_oscill(self, basis, istate) result(oscill)
         class(vc_evaluator) :: self
         character(len=*), intent(in) :: basis
         integer, intent(in) :: istate
         real(dp), allocatable :: oscill(:)
-        integer :: jstate
+        integer :: i, n
         real(dp), allocatable :: edif(:)
         real(dp), allocatable :: dm_bas(:, :, :)
 
-        allocate(oscill(self%model%tot_ns), source=0.0_dp)
-        allocate(edif(self%model%tot_ns), source=0.0_dp)
-        dm_bas = self%dm
-        call self%change_basis(basis, dm_bas(1, :, :))
-        call self%change_basis(basis, dm_bas(2, :, :))
-        call self%change_basis(basis, dm_bas(3, :, :))
         select case(basis)
-        case('diabatic')
-            do jstate = 1, self%model%tot_ns
-                edif(jstate) = self%diab_w(jstate, jstate) - self%diab_w(istate, istate)
-            end do
-        case('adiabatic')
-            do jstate = 1, self%model%tot_ns
-                edif(jstate) = self%adiab_w(jstate, jstate) - self%adiab_w(istate, istate)
-            end do
+        case('diabatic', 'adiabatic')
         case default
             write(stderr, *) 'Error in vc_evaluator_mod, vc_get_oscill function.'
             write(stderr, *) '  Unknown basis: ', basis
             stop
         end select
+        n = self%basis_size(basis)
+        allocate(dm_bas(3, n, n))
+        do i = 1, 3
+            dm_bas(i, :, :) = self%in_basis(basis, self%dm(i, :, :))
+        end do
+        edif = self%get_energy(basis)
+        edif = edif - edif(istate)
 
         oscill = 2.0_dp / 3.0_dp * edif * sum(dm_bas(:, istate, :)**2, dim=1)
     end function vc_get_oscill
@@ -286,8 +284,10 @@ contains
         call json_get_required(json, v, 'frame_rot', rot, [3, 3])
         self%frame_rot = rot
         if (allocated(self%dm)) deallocate(self%dm)
-        if (json%valid_path(v, 'dm')) call json_get_required(json, v, 'dm', self%dm,               &
-        &                                                   [3, self%n_state, self%n_state])
+        if (json%valid_path(v, 'dm')) then
+            call json_get_required(json, v, 'dm', self%dm,                                        &
+            &                      [3, self%model_states%n_state, self%model_states%n_state])
+        end if
     end subroutine vc_load_state
 
 end module vc_evaluator_mod

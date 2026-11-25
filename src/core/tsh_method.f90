@@ -144,8 +144,11 @@ contains
     !! method, the state becomes the active state. Otherwise, the active state a is drawn with
     !! probability |T(i, a)|**2, where T is the transformation from basis to the basis of the
     !! method at the current point (the same weights as zagpy sample state). One random number is
-    !! drawn only in this case. With the 'spin_free' basis of the method, a diabatic state is
+    !! drawn only in this case. With the 'mch' basis of the method, a diabatic state is
     !! projected through its spin-free state.
+    !! If the dynamics runs on a subset of the states of the model, a diabatic state is only
+    !! partly in the states of the method basis. The weights are then divided by their sum (the
+    !! retained weight), and a state without weight in the states of the dynamics is an error.
     !! The potential must be evaluated at the initial point. Extensions that hold more than the
     !! active state override this subroutine and call it first.
     !----------------------------------------------------------------------------------------------
@@ -158,6 +161,8 @@ contains
         integer :: a
         real(dp), allocatable :: trans(:, :)
         real(dp), allocatable :: weight(:) !< Probability of each state of the method basis.
+        real(dp) :: retained !< Weight of the initial state in the states of the method basis.
+        real(dp), parameter :: weight_tol = 1.0e-12_dp !< Smallest retained weight.
         real(dp) :: cprob
         real(dp) :: rnum
         type(state_location) :: loc
@@ -190,21 +195,28 @@ contains
             return
         end if
 
-        if (self%basis == 'spin_free') then
+        if (self%basis == 'mch') then
             if (basis /= 'diabatic') then
                 write(stderr, *) 'Error in tsh_method_mod, set_initial_state subroutine.'
-                write(stderr, *) '  The spin_free basis is only given in the diabatic basis.'
+                write(stderr, *) '  The mch basis is only given in the diabatic basis.'
                 write(stderr, *) '  Basis of the initial state: ', basis
                 stop
             end if
-            loc = potential%locate_state(i)
+            loc = potential%model_states%locate_state(i)
             i = loc%sf
-            trans = potential%get_transformation('diabatic', 'spin_free')
+            trans = potential%get_transformation('diabatic', 'mch')
         else
             trans = potential%get_transformation(basis, self%basis)
         end if
         weight = trans(i, :)**2
-        weight = weight / sum(weight)
+        retained = sum(weight)
+        if (retained < weight_tol) then
+            write(stderr, *) 'Error in tsh_method_mod, set_initial_state subroutine.'
+            write(stderr, '(3x,a,i0,5a)') 'Initial state ', state, ' of the ', basis,             &
+            &   ' basis has no weight in the states of the ', self%basis, ' basis of the dynamics.'
+            stop
+        end if
+        weight = weight / retained
 
         call self%rng%uniform(rnum)
         a = findloc(weight > 0.0_dp, .true., dim=1, back=.true.) ! Guard against rounding.
@@ -222,6 +234,10 @@ contains
             write(stdout, *)
             write(stdout, '(1x,a,i0,6a)') 'Initial state ', state, ' of the ', basis, ' basis ',  &
             &                             'projected onto the ', self%basis, ' basis.'
+            if (abs(retained - 1.0_dp) > 1.0e-8_dp) then
+                write(stdout, '(3x,a,f10.6)') 'Weight retained in the states of the dynamics:',   &
+                &                             retained
+            end if
             write(stdout, '(3x,a,1000f10.6)') 'Weights:', weight
             write(stdout, '(3x,a,i0,a)') 'Initial active state: ', a, '.'
         end if

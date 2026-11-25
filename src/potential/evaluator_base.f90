@@ -1,36 +1,35 @@
+!--------------------------------------------------------------------------------------------------
+! MODULE: evaluator_base_mod
+!
+! DESCRIPTION:
+!> @brief Base class of all potentials.
+!> @details
+!! The states of a potential are given in three bases:
+!! - diabatic - For model systems, the basis in which the Hamiltonian is provided.
+!! - mch - Eigenstates of the spin-free Hamiltonian (molecular Coulomb Hamiltonian) within each
+!!   multiplicity. One state for each spin-free state.
+!! - adiabatic - Eigenstates of the full Hamiltonian (with spin-orbit coupling).
+!--------------------------------------------------------------------------------------------------
 module evaluator_base_mod
     use global_defs
     use state_overlap_mod, only : state_overlap, request_id
+    use state_layout_mod, only : state_layout, spin_manifold, state_location
     implicit none
 
     private
     public :: potential_evaluator
+    public :: state_layout
     public :: spin_manifold
     public :: state_location
-    public :: set_spin_manifolds
     public :: add_state_layout
     public :: soc_group_tol
+    public :: evaluator_set_model_states
     public :: evaluator_save_state
     public :: evaluator_load_state
 
 
     real(dp), parameter :: soc_group_tol = 1.0e-10_dp !< Largest spin-orbit coupling within a group
                                                       !! of states without a warning.
-
-
-    !> Spin-free states of one multiplicity.
-    !> @details
-    !! With spin_states = 'components', each spin component is a separate state, and the states of
-    !! the manifold form mult consecutive groups of n states, one group for each component. With
-    !! spin_states = 'effective_rss' or 'effective_mean', each spin-free state is a single state,
-    !! in a single group.
-    type :: spin_manifold
-        integer :: mult = 1 !< Multiplicity, 2S+1.
-        integer :: n = 0 !< Number of spin-free states.
-        integer :: n_comp = 1 !< Number of groups: mult for components, 1 for effective states.
-        integer :: sf0 = 0 !< First spin-free state of the manifold.
-        integer :: i0 = 0 !< First state of the first group of the manifold.
-    end type spin_manifold
 
 
     !> Base class of all potentials.
@@ -44,19 +43,24 @@ module evaluator_base_mod
     !! states of the two points. Each evaluation gets a new id, which identifies the point in
     !! link.
     type, abstract :: potential_evaluator
-        integer :: n_state = 0
-        integer :: n_sf = 0 !< Number of spin-free states.
-        type(spin_manifold), allocatable :: manifold(:)
-        character(len=:), allocatable :: spin_states !< 'components' or 'effective_*'.
+        type(state_layout) :: model_states !< States of the model of the potential (diabatic
+                                           !! basis).
+        type(state_layout) :: states !< States of the dynamics (adiabatic and mch bases): all
+                                     !! states of the model, or a subset of them.
+        integer, allocatable :: sel(:) !< MCH state of the model, with all spin components in the
+                                       !! order of model_states, selected for each state of
+                                       !! states.
+        integer, allocatable :: sel_mch(:) !< MCH state of the model for each mch state of the
+                                           !! dynamics.
+        integer, allocatable :: uns(:) !< MCH states of the model, with all spin components,
+                                       !! which are not selected.
         character(len=:), allocatable :: classical_coordinates !< Coordinates expected by
                                                                !! update_geometry.
-        integer :: n_source_states = 0 !< Number of states given by the source of the potential,
-                                       !! checked by set_spin_manifolds. 0 if not fixed.
         character(len=12) :: component_order = 'by_component' !< Order of the spin components in
         !! a full Hamiltonian given by the source of the potential:
         !! - by_component - All states of the first component, then of the second, ... (ZagHop).
         !! - by_state - All components of the first state, then of the second, ... (Quantics).
-        integer, allocatable :: state_map(:) !< Index in the source of each state (n_state).
+        integer, allocatable :: state_map(:) !< Index in the source of each state of the model.
         integer :: id = 0 !< Id of the evaluated point. 0 before the first evaluation.
         type(state_overlap) :: link !< Overlaps between the states of the previous point and of
                                    !! this point. Not set without a previous point.
@@ -74,14 +78,10 @@ module evaluator_base_mod
         procedure(get_gradient), deferred :: get_gradient
         procedure(get_nadv), deferred :: get_nadv
         procedure(get_soc2), deferred :: get_soc2
-        procedure :: set_spin_manifolds
+        procedure :: set_model_states => evaluator_set_model_states
+        procedure :: select_states
         procedure :: basis_size
-        procedure :: locate_state
         procedure :: diabatic_from_source
-        procedure :: expand
-        procedure :: sum_components
-        procedure :: to_rss_couplings
-        procedure :: max_soc_in_groups
         procedure :: get_reference_geometry
         procedure :: default_reference
         procedure :: print_summary
@@ -90,17 +90,6 @@ module evaluator_base_mod
         procedure :: load_state => evaluator_load_state
         generic :: get_energy => get_energy_single, get_energy_all
     end type potential_evaluator
-
-
-    !> Position of a state in the spin manifolds of a potential_evaluator.
-    type :: state_location
-        integer :: manifold = 0 !< Manifold containing the state.
-        integer :: mult = 0 !< Multiplicity of the state.
-        integer :: component = 0 !< Spin component (position of the group within the manifold).
-        integer :: index = 0 !< Index of the state within its group.
-        integer :: sf = 0 !< Spin-free state.
-        integer :: group = 0 !< Group containing the state, numbered in state order.
-    end type state_location
 
 
     abstract interface
@@ -206,7 +195,7 @@ module evaluator_base_mod
 
     abstract interface
         !> Squared magnitudes of the spin-orbit couplings between all states of a basis. In the
-        !! 'spin_free' basis, the squares are summed over the components of each pair of
+        !! 'mch' basis, the squares are summed over the components of each pair of
         !! spin-free states.
         function get_soc2(self, basis) result(s2)
             use global_defs, only : dp
@@ -277,88 +266,27 @@ contains
 
 
     !----------------------------------------------------------------------------------------------
-    ! SUBROUTINE: set_spin_manifolds
-    !> @brief Set the spin manifolds from the number of states of each multiplicity.
+    ! SUBROUTINE: evaluator_set_model_states
+    !> @brief Set the states of the model from the number of states of each multiplicity.
     !> @details
-    !! Each block i of nstate(i) states with multiplicity multiplicity(i) gives one manifold.
-    !! Blocks without states are skipped. Each multiplicity can be given only once, so couplings
-    !! between manifolds are always spin-orbit couplings.
-    !!
-    !! spin_states is one of:
-    !! - components - Each spin component is a separate state.
-    !! - effective_rss - Each spin-free state is a single state. Couplings between manifolds are
-    !!   the root-sum-square over the component pairs.
-    !! - effective_mean - As effective_rss, but the squared couplings between manifolds are the
-    !!   mean over the component pairs.
-    !!
-    !! If n_source_states is set, the number of states must match it. state_map is built from
-    !! component_order.
+    !! See state_layout for nstate, multiplicity and spin_states. state_map is built from
+    !! component_order. The dynamics runs on all states of the model, until select_states is
+    !! called. Evaluators whose source fixes the number of states override this to check it.
     !----------------------------------------------------------------------------------------------
-    subroutine set_spin_manifolds(self, nstate, multiplicity, spin_states)
+    subroutine evaluator_set_model_states(self, nstate, multiplicity, spin_states)
         class(potential_evaluator), intent(inout) :: self
         integer, intent(in) :: nstate(:) !< Number of spin-free states of each multiplicity.
         integer, intent(in) :: multiplicity(:) !< Multiplicity of each block of states.
         character(len=*), intent(in) :: spin_states
-        integer :: i, m, sf, ci, c, k
+        integer :: m, ci, c, k
 
-        select case(spin_states)
-        case('components', 'effective_rss', 'effective_mean')
-            self%spin_states = spin_states
-        case default
-            write(stderr, *) 'Error in evaluator_base_mod, set_spin_manifolds subroutine.'
-            write(stderr, *) '  Unrecognized spin_states: ', spin_states
-            write(stderr, *) '  Expected components, effective_rss or effective_mean.'
-            stop
-        end select
-
-        do i = 1, size(nstate)
-            if (nstate(i) == 0) cycle
-            if (multiplicity(i) < 1) then
-                write(stderr, *) 'Error in evaluator_base_mod, set_spin_manifolds subroutine.'
-                write(stderr, '(3x,a,i0,a)') 'Invalid multiplicity: ', multiplicity(i), '.'
-                stop
-            end if
-            if (any(multiplicity(:i-1) == multiplicity(i) .and. nstate(:i-1) > 0)) then
-                write(stderr, *) 'Error in evaluator_base_mod, set_spin_manifolds subroutine.'
-                write(stderr, '(3x,a,i0,a)') 'Multiplicity ', multiplicity(i), ' is given twice.'
-                write(stderr, *) '  Give all states of the same multiplicity in one block.'
-                stop
-            end if
-        end do
-
-        if (allocated(self%manifold)) deallocate(self%manifold)
-        allocate(self%manifold(count(nstate > 0)))
-        m = 0
-        sf = 1
-        ci = 1
-        do i = 1, size(nstate)
-            if (nstate(i) == 0) cycle
-            m = m + 1
-            self%manifold(m)%mult = multiplicity(i)
-            self%manifold(m)%n = nstate(i)
-            self%manifold(m)%n_comp = 1
-            if (self%spin_states == 'components') self%manifold(m)%n_comp = multiplicity(i)
-            self%manifold(m)%sf0 = sf
-            self%manifold(m)%i0 = ci
-            sf = sf + nstate(i)
-            ci = ci + nstate(i) * self%manifold(m)%n_comp
-        end do
-        self%n_sf = sf - 1
-        self%n_state = ci - 1
-
-        if (self%n_source_states > 0 .and. self%n_state /= self%n_source_states) then
-            write(stderr, *) 'Error in evaluator_base_mod, set_spin_manifolds subroutine.'
-            write(stderr, '(3x,a,i0,a)') 'Input nstate, multiplicity and spin_states give ',     &
-            &                            self%n_state, ' states.'
-            write(stderr, '(3x,a,i0,a)') 'The potential has ', self%n_source_states, ' states.'
-            stop
-        end if
+        call self%model_states%set(nstate, multiplicity, spin_states)
 
         ! Index in the source of each state. With one component, both orders are the same.
         if (allocated(self%state_map)) deallocate(self%state_map)
-        allocate(self%state_map(self%n_state))
-        do m = 1, size(self%manifold)
-            associate(mf => self%manifold(m))
+        allocate(self%state_map(self%model_states%n_state))
+        do m = 1, size(self%model_states%manifold)
+            associate(mf => self%model_states%manifold(m))
                 do c = 1, mf%n_comp
                     do k = 1, mf%n
                         ci = mf%i0 + (c - 1) * mf%n + k - 1
@@ -368,7 +296,7 @@ contains
                         case('by_state')
                             self%state_map(ci) = mf%i0 + (k - 1) * mf%n_comp + c - 1
                         case default
-                            write(stderr, *) 'Error in evaluator_base_mod, set_spin_manifolds ',  &
+                            write(stderr, *) 'Error in evaluator_base_mod, set_model_states ',    &
                             &                'subroutine.'
                             write(stderr, *) '  Unknown component_order: ', trim(self%component_order)
                             stop
@@ -377,56 +305,58 @@ contains
                 end do
             end associate
         end do
-    end subroutine set_spin_manifolds
+
+        self%states = self%model_states
+        call self%model_states%subset_index(self%states, self%sel, self%sel_mch, self%uns)
+    end subroutine evaluator_set_model_states
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: select_states
+    !> @brief Choose the states of the dynamics: the nstate(i) lowest MCH states of each
+    !! multiplicity of the model.
+    !> @details
+    !! The states of the model must be set. A multiplicity which is not given has no states in the
+    !! dynamics. Stops if the states are not a subset of the states of the model (see subset of
+    !! state_layout). Must be called before the first evaluation of the potential.
+    !----------------------------------------------------------------------------------------------
+    subroutine select_states(self, nstate, multiplicity)
+        class(potential_evaluator), intent(inout) :: self
+        integer, intent(in) :: nstate(:) !< Number of spin-free states of each multiplicity.
+        integer, intent(in) :: multiplicity(:) !< Multiplicity of each block of states.
+
+        if (.not. self%model_states%is_set()) then
+            write(stderr, *) 'Error in evaluator_base_mod, select_states subroutine.'
+            write(stderr, *) '  The states of the model are not set.'
+            stop
+        end if
+        self%states = self%model_states%subset(nstate, multiplicity)
+        call self%model_states%subset_index(self%states, self%sel, self%sel_mch, self%uns)
+    end subroutine select_states
 
 
     !----------------------------------------------------------------------------------------------
     ! FUNCTION: basis_size
     !> @brief Number of states of a basis.
     !> @details
-    !! The 'spin_free' basis has one state for each spin-free state. The other bases have one
-    !! state for each state of the potential.
+    !! The 'diabatic' basis has all states of the model. The 'mch' basis has one state for each
+    !! spin-free state of the dynamics, and the other bases one state for each state of the
+    !! dynamics.
     !----------------------------------------------------------------------------------------------
     pure function basis_size(self, basis) result(n)
         class(potential_evaluator), intent(in) :: self
         character(len=*), intent(in) :: basis
         integer :: n
 
-        if (basis == 'spin_free') then
-            n = self%n_sf
-        else
-            n = self%n_state
-        end if
+        select case(basis)
+        case('diabatic')
+            n = self%model_states%n_state
+        case('mch')
+            n = self%states%n_sf
+        case default
+            n = self%states%n_state
+        end select
     end function basis_size
-
-
-    !----------------------------------------------------------------------------------------------
-    ! FUNCTION: locate_state
-    !> @brief Manifold, multiplicity, spin component, index within the group, spin-free state and
-    !! group of a state.
-    !----------------------------------------------------------------------------------------------
-    pure function locate_state(self, state) result(loc)
-        class(potential_evaluator), intent(in) :: self
-        integer, intent(in) :: state
-        type(state_location) :: loc
-        integer :: m, k
-
-        if (state < 1 .or. state > self%n_state) then
-            error stop 'Error in evaluator_base_mod, locate_state function. State out of range.'
-        end if
-        loc%group = 0
-        do m = 1, size(self%manifold)
-            if (state < self%manifold(m)%i0 + self%manifold(m)%n * self%manifold(m)%n_comp) exit
-            loc%group = loc%group + self%manifold(m)%n_comp
-        end do
-        k = state - self%manifold(m)%i0
-        loc%manifold = m
-        loc%mult = self%manifold(m)%mult
-        loc%component = k / self%manifold(m)%n + 1
-        loc%index = mod(k, self%manifold(m)%n) + 1
-        loc%sf = self%manifold(m)%sf0 + loc%index - 1
-        loc%group = loc%group + loc%component
-    end function locate_state
 
 
     !----------------------------------------------------------------------------------------------
@@ -443,116 +373,12 @@ contains
 
         if (allocated(self%state_map)) then
             state = findloc(self%state_map, i_source, dim=1)
-        else if (i_source >= 1 .and. i_source <= self%n_state) then
+        else if (i_source >= 1 .and. i_source <= self%model_states%n_state) then
             state = i_source
         else
             state = 0
         end if
     end function diabatic_from_source
-
-
-    !----------------------------------------------------------------------------------------------
-    ! FUNCTION: expand
-    !> @brief Copy each manifold block of a matrix over the spin-free states onto every group of the
-    !! manifold.
-    !> @details
-    !! Elements between manifolds of the spin-free matrix are not copied, and the elements between
-    !! groups of the result are zero.
-    !----------------------------------------------------------------------------------------------
-    pure function expand(self, sf_mat) result(mat)
-        class(potential_evaluator), intent(in) :: self
-        real(dp), intent(in) :: sf_mat(:, :) !< Matrix over the spin-free states.
-        real(dp) :: mat(self%n_state, self%n_state)
-        integer :: m, c, i0, s0, n
-
-        mat = 0.0_dp
-        do m = 1, size(self%manifold)
-            n = self%manifold(m)%n
-            s0 = self%manifold(m)%sf0
-            do c = 1, self%manifold(m)%n_comp
-                i0 = self%manifold(m)%i0 + (c - 1) * n
-                mat(i0:i0+n-1, i0:i0+n-1) = sf_mat(s0:s0+n-1, s0:s0+n-1)
-            end do
-        end do
-    end function expand
-
-
-    !----------------------------------------------------------------------------------------------
-    ! FUNCTION: sum_components
-    !> @brief Sum a matrix over the states to a matrix over the spin-free states.
-    !> @details
-    !! Element (a, b) of the result is the sum of the elements (i, j) for all components i of
-    !! spin-free state a and all components j of spin-free state b.
-    !----------------------------------------------------------------------------------------------
-    pure function sum_components(self, mat) result(sf_mat)
-        class(potential_evaluator), intent(in) :: self
-        real(dp), intent(in) :: mat(:, :) !< Matrix over the states.
-        real(dp) :: sf_mat(self%n_sf, self%n_sf)
-        type(state_location) :: loc
-        integer :: sf(self%n_state)
-        integer :: i, j
-
-        do i = 1, self%n_state
-            loc = self%locate_state(i)
-            sf(i) = loc%sf
-        end do
-        sf_mat = 0.0_dp
-        do j = 1, self%n_state
-            do i = 1, self%n_state
-                sf_mat(sf(i), sf(j)) = sf_mat(sf(i), sf(j)) + mat(i, j)
-            end do
-        end do
-    end function sum_components
-
-
-    !----------------------------------------------------------------------------------------------
-    ! SUBROUTINE: to_rss_couplings
-    !> @brief Convert couplings between manifolds from the mean to the root-sum-square convention.
-    !> @details
-    !! The squared couplings between states of manifolds a and b are multiplied by
-    !! mult_a * mult_b, so the couplings by its square root.
-    !----------------------------------------------------------------------------------------------
-    pure subroutine to_rss_couplings(self, w)
-        class(potential_evaluator), intent(in) :: self
-        real(dp), intent(inout) :: w(:, :) !< Matrix over the states.
-        integer :: a, b, ia, ib, na, nb
-
-        do a = 1, size(self%manifold)
-            ia = self%manifold(a)%i0
-            na = self%manifold(a)%n * self%manifold(a)%n_comp
-            do b = 1, size(self%manifold)
-                if (a == b) cycle
-                ib = self%manifold(b)%i0
-                nb = self%manifold(b)%n * self%manifold(b)%n_comp
-                w(ia:ia+na-1, ib:ib+nb-1) = w(ia:ia+na-1, ib:ib+nb-1)                            &
-                &   * sqrt(real(self%manifold(a)%mult * self%manifold(b)%mult, dp))
-            end do
-        end do
-    end subroutine to_rss_couplings
-
-
-    !----------------------------------------------------------------------------------------------
-    ! FUNCTION: max_soc_in_groups
-    !> @brief Largest magnitude of the spin-orbit couplings between states of the same group.
-    !> @details
-    !! For a real Hamiltonian, these couplings are zero, and a nonzero value points to an input
-    !! error, such as components which are not ordered as assumed.
-    !----------------------------------------------------------------------------------------------
-    pure function max_soc_in_groups(self, soc) result(smax)
-        class(potential_evaluator), intent(in) :: self
-        real(dp), intent(in) :: soc(:, :) !< Spin-orbit couplings between the states.
-        real(dp) :: smax
-        integer :: m, c, i0, n
-
-        smax = 0.0_dp
-        do m = 1, size(self%manifold)
-            n = self%manifold(m)%n
-            do c = 1, self%manifold(m)%n_comp
-                i0 = self%manifold(m)%i0 + (c - 1) * n
-                smax = max(smax, maxval(abs(soc(i0:i0+n-1, i0:i0+n-1))))
-            end do
-        end do
-    end function max_soc_in_groups
 
 
     !----------------------------------------------------------------------------------------------
@@ -595,38 +421,28 @@ contains
     ! SUBROUTINE: add_state_layout
     !> @brief Add the layout of the states of the potential to a JSON object.
     !> @details
-    !! Adds spin_states, the number of states of each basis (n_state) and the spin manifolds. For
-    !! each manifold: multiplicity, n (spin-free states), n_comp (groups: the spin components, or
-    !! 1 for effective states), first_spin_free and first_state (1-based). State
-    !!     first_state + (c - 1) * n + k - 1
-    !! is component c of spin-free state first_spin_free + k - 1. Evaluators that are built from
-    !! another potential override this to describe it as well.
+    !! Adds the number of states of each basis (n_state), and spin_states and the spin manifolds
+    !! of the states of the dynamics (see add_to_json of state_layout). The object 'model' holds
+    !! spin_states and the spin manifolds of the states of the model, which are the states of the
+    !! diabatic basis. Evaluators that are built from another potential override this to describe
+    !! it as well.
     !----------------------------------------------------------------------------------------------
     subroutine add_state_layout(self, json, obj)
         use json_module, only : json_core, json_value
         class(potential_evaluator), intent(in) :: self
         type(json_core), intent(inout) :: json
         type(json_value), pointer, intent(in) :: obj !< Object to which the layout is added.
-        type(json_value), pointer :: nst, arr, mf
-        integer :: m
+        type(json_value), pointer :: nst, model
 
-        call json%add(obj, 'spin_states', self%spin_states)
         call json%create_object(nst, 'n_state')
         call json%add(nst, 'diabatic', self%basis_size('diabatic'))
         call json%add(nst, 'adiabatic', self%basis_size('adiabatic'))
-        call json%add(nst, 'spin_free', self%basis_size('spin_free'))
+        call json%add(nst, 'mch', self%basis_size('mch'))
         call json%add(obj, nst)
-        call json%create_array(arr, 'manifolds')
-        do m = 1, size(self%manifold)
-            call json%create_object(mf, '')
-            call json%add(mf, 'multiplicity', self%manifold(m)%mult)
-            call json%add(mf, 'n', self%manifold(m)%n)
-            call json%add(mf, 'n_comp', self%manifold(m)%n_comp)
-            call json%add(mf, 'first_spin_free', self%manifold(m)%sf0)
-            call json%add(mf, 'first_state', self%manifold(m)%i0)
-            call json%add(arr, mf)
-        end do
-        call json%add(obj, arr)
+        call self%states%add_to_json(json, obj)
+        call json%create_object(model, 'model')
+        call self%model_states%add_to_json(json, model)
+        call json%add(obj, model)
     end subroutine add_state_layout
 
 
@@ -637,7 +453,8 @@ contains
     !! Only what depends on the point is saved: the quantities evaluated at it, its id and its
     !! link to the previous point. The setup (model, spin manifolds, options) is built from the
     !! input when the backup is loaded. Each type adds its own object to obj (here 'base', with
-    !! the numbers of states for checking), so a backup of another type of potential is detected
+    !! the numbers of states of the dynamics and of the model for checking), so a backup of
+    !! another type of potential is detected
     !! on loading. Extensions override this and call the subroutine of their parent first.
     !----------------------------------------------------------------------------------------------
     subroutine evaluator_save_state(self, json, obj)
@@ -648,9 +465,11 @@ contains
         type(json_value), pointer :: base, link
 
         call json%create_object(base, 'base')
-        call json%add(base, 'n_state', self%n_state)
-        call json%add(base, 'n_sf', self%n_sf)
-        call json%add(base, 'spin_states', self%spin_states)
+        call json%add(base, 'n_state', self%states%n_state)
+        call json%add(base, 'n_sf', self%states%n_sf)
+        call json%add(base, 'n_model_state', self%model_states%n_state)
+        call json%add(base, 'n_model_sf', self%model_states%n_sf)
+        call json%add(base, 'spin_states', self%states%spin_states)
         call json%add(base, 'id', self%id)
         call json%create_object(link, 'link')
         call self%link%save_state(json, link)
@@ -675,9 +494,11 @@ contains
         type(json_value), pointer :: base
 
         base => json_get_child(json, obj, 'base')
-        call json_check_value(json, base, 'n_state', self%n_state)
-        call json_check_value(json, base, 'n_sf', self%n_sf)
-        call json_check_value(json, base, 'spin_states', self%spin_states)
+        call json_check_value(json, base, 'n_state', self%states%n_state)
+        call json_check_value(json, base, 'n_sf', self%states%n_sf)
+        call json_check_value(json, base, 'n_model_state', self%model_states%n_state)
+        call json_check_value(json, base, 'n_model_sf', self%model_states%n_sf)
+        call json_check_value(json, base, 'spin_states', self%states%spin_states)
         call json_get_required(json, base, 'id', self%id)
         call self%link%load_state(json, json_get_child(json, base, 'link'))
     end subroutine evaluator_load_state

@@ -68,6 +68,7 @@ module quantics_interface_mod
         procedure :: eval_diab => quantics_eval_diab
         procedure :: default_reference => quantics_default_reference
         procedure :: check_atoms => quantics_check_atoms
+        procedure :: set_model_states => quantics_set_model_states
         procedure :: save_state => quantics_save_state
         procedure :: load_state => quantics_load_state
     end type quantics_interface
@@ -128,6 +129,28 @@ contains
             end if
         end do
     end subroutine quantics_check_atoms
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: quantics_set_model_states
+    !> @brief Set the states of the model (see evaluator_set_model_states) and check that
+    !! their number matches the number of states of the operator.
+    !----------------------------------------------------------------------------------------------
+    subroutine quantics_set_model_states(self, nstate, multiplicity, spin_states)
+        class(quantics_interface), intent(inout) :: self
+        integer, intent(in) :: nstate(:) !< Number of spin-free states of each multiplicity.
+        integer, intent(in) :: multiplicity(:) !< Multiplicity of each block of states.
+        character(len=*), intent(in) :: spin_states
+
+        call evaluator_set_model_states(self, nstate, multiplicity, spin_states)
+        if (self%model_states%n_state /= nddstate) then
+            write(stderr, *) 'Error in quantics_mod, set_model_states subroutine.'
+            write(stderr, '(3x,a,i0,a)') 'Input nstate, multiplicity and spin_states give ',     &
+            &                            self%model_states%n_state, ' states.'
+            write(stderr, '(3x,a,i0,a)') 'The operator has ', nddstate, ' states.'
+            stop
+        end if
+    end subroutine quantics_set_model_states
 
 
     !----------------------------------------------------------------------------------------------
@@ -335,9 +358,8 @@ contains
         close(ilog)
         self%initialized = .true.
 
-        ! The multiplicities are not in the oper file. They are given to set_spin_manifolds from the
-        ! input, which checks them against the number of states of the operator.
-        self%n_source_states = nddstate
+        ! The multiplicities are not in the oper file. They are given to set_model_states from the
+        ! input, and checked against the number of states of the operator.
         self%component_order = 'by_state'
         self%ndof = nspfdof(1)
         allocate(self%q(self%ndof), source=0.0_dop)

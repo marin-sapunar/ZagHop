@@ -22,7 +22,7 @@
 !! slope of the gap over the step. A hop happens at the latest point, without going back to the
 !! crossing.
 !!
-!! The dynamics runs in the spin_free basis, the eigenstates of the spin-free Hamiltonian within
+!! The dynamics runs in the mch basis, the eigenstates of the spin-free Hamiltonian within
 !! each multiplicity, with one state for each spin-free state. Its spin components are not
 !! distinguished. For a single multiplicity this is the adiabatic basis.
 !--------------------------------------------------------------------------------------------------
@@ -96,7 +96,7 @@ contains
     ! SUBROUTINE: lz_initialize
     !> @brief Set default options and the spin manifold of each state.
     !> @details
-    !! The states are the spin-free states of the potential, in the spin_free basis.
+    !! The states are the spin-free states of the potential, in the mch basis.
     !----------------------------------------------------------------------------------------------
     subroutine lz_initialize(self, rng, potential, active_state)
         class(tsh_lz), intent(inout) :: self
@@ -105,13 +105,13 @@ contains
         integer, intent(in) :: active_state
         integer :: m, s0, n
 
-        self%basis = 'spin_free'
+        self%basis = 'mch'
         call base_initialize(self, rng, potential, active_state)
         self%min_dt = 0.05_dp / aut_fs
         allocate(self%group(self%n_state))
-        do m = 1, size(potential%manifold)
-            s0 = potential%manifold(m)%sf0
-            n = potential%manifold(m)%n
+        do m = 1, size(potential%states%manifold)
+            s0 = potential%states%manifold(m)%sf0
+            n = potential%states%manifold(m)%n
             self%group(s0:s0+n-1) = m
         end do
         allocate(self%gap_2deriv(3, self%n_state), source=0.0_dp)

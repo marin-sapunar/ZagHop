@@ -79,6 +79,47 @@ class VcSo2Test(ZagHopTest):
         self.compare_results("prob")
         self.compare_results("cstate_diab")
 
+    def test_ldsh_isc_nstate(self):
+        """ Test LD-FSSH on a subset of the states of the SO2 model (3 of 4 singlets, 2 of 3
+        triplets).
+
+        The adiabatic states are the eigenstates of the Hamiltonian in the selected MCH states,
+        9 states. The diabatic basis keeps the 13 states of the model, and the active state is
+        normalised in it. The total energy is conserved as well as with all states
+        (test_ldsh_isc_nm)."""
+        self.run_traj()
+        self.stdout_contains("Multiplicity 1: 3 of 4 states.")
+        self.stdout_contains("Multiplicity 3: 2 of 3 states.")
+        energy = self.load_results("energy.dat")
+        self.assertEqual(energy.shape[1], 4 + 9, "Not 9 states.")
+        self.assertEqual(self.load_results("prob").shape[1], 9, "Not 9 probabilities.")
+        cstate = self.load_results("cstate_diab")
+        self.assertEqual(cstate.shape[1], 13, "Not 13 diabatic states.")
+        self.assertTrue(np.allclose((cstate**2).sum(axis=1), 1.0), "Active state not normalised.")
+        drift = np.abs(energy[:, 2] - energy[0, 2]).max()
+        reference = self.load_reference("test_ldsh_isc_nm", "energy.dat")
+        self.assertLess(drift, np.abs(reference[:, 2] - reference[0, 2]).max(),
+                        "Total energy drift larger than with all states.")
+        self.compare_energy()
+        self.compare_results("prob")
+        self.compare_results("cstate_diab")
+
+    def test_lzsh_isc_eff_nstate(self):
+        """ Test LZSH on effective spin states with a subset of the states of the SO2 model.
+
+        The MCH states of a subset are those of the model, and the trajectory of
+        test_lzsh_isc_eff_nm stays in the selected states (3 singlets and 2 triplets), so its
+        reference is reproduced. The trajectory is restarted from its backup at 59 fs."""
+        self.run_traj()
+        self.restart_traj(100.0)
+        self.stdout_contains("ISC probability evaluated")
+        energy = self.load_results("energy.dat")
+        self.assertEqual(energy.shape[1], 4 + 5, "Not 5 states.")
+        reference = self.load_reference("test_lzsh_isc_eff_nm", "energy.dat")
+        self.assertTrue(np.allclose(energy, reference[:, [0, 1, 2, 3, 4, 5, 6, 8, 9]]),
+                        "Difference from the energies of the full model.")
+        self.compare_energy()
+
     def test_lzsh_isc_eff_nm(self):
         """ Test LZSH on effective spin states built from the SO2 model (projection).
 

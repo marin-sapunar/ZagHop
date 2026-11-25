@@ -25,9 +25,9 @@ contains
         character(len=*), intent(in), optional :: spin_states
 
         if (present(spin_states)) then
-            call self%set_spin_manifolds(nstate, multiplicity, spin_states)
+            call self%set_model_states(nstate, multiplicity, spin_states)
         else
-            call self%set_spin_manifolds(nstate, multiplicity, 'components')
+            call self%set_model_states(nstate, multiplicity, 'components')
         end if
         self%ndof = 1
         call self%allocate_hamiltonian()
@@ -39,7 +39,7 @@ contains
         integer :: i
 
         self%sf_w = 0.0_dp
-        do i = 1, self%n_sf
+        do i = 1, self%model_states%n_sf
             self%sf_w(i, i) = energy(i)
         end do
         call self%eval()
@@ -93,6 +93,18 @@ program sh_test
     ret = ld_link_test()
     if (ret /= 0) then
         write(*,*) "Error in ld_link_test."
+        stop ret
+    end if
+
+    ret = ld_subset_test()
+    if (ret /= 0) then
+        write(*,*) "Error in ld_subset_test."
+        stop ret
+    end if
+
+    ret = initial_state_subset_test()
+    if (ret /= 0) then
+        write(*,*) "Error in initial_state_subset_test."
         stop ret
     end if
 
@@ -317,9 +329,111 @@ program sh_test
 
 
     !----------------------------------------------------------------------------------------------
+    !> LD-FSSH on the two lowest of three states. The overlaps between the adiabatic states of two
+    !! points are not orthogonal. The propagation uses their orthogonalisation, and the norm of
+    !! the coefficients is conserved.
+    !----------------------------------------------------------------------------------------------
+    integer function ld_subset_test() result(ret)
+        use global_defs, only : dp
+        use sh_test_mod, only : scripted_evaluator
+        use sh_ld_mod, only : tsh_ld
+        use matrix_mod, only : mat_sy_exp, unit_mat
+        use random_mod, only : rng_type
+        use random_pcg_mod, only : rng_pcg_xsh_rr
+        type(scripted_evaluator) :: pot1, pot2
+        type(tsh_ld) :: ld
+        class(rng_type), pointer :: rng
+        real(dp), parameter :: dt = 10.0_dp, tol = 1.0e-12_dp
+        real(dp) :: h(2, 2), s(2, 2), t(2, 2)
+        complex(dp) :: c(2)
+
+        allocate(rng_pcg_xsh_rr :: rng)
+        call rng%init(1)
+        call pot1%setup([3], [1])
+        call pot1%select_states([2], [1])
+        call ld%initialize(rng, pot1, 2)
+        ret = 1
+        if (ld%n_state /= 2 .or. size(ld%coeff) /= 2) return
+        call pot1%set_hamiltonian(reshape([0.0_dp, 0.01_dp, 0.0_dp, 0.01_dp, 0.02_dp, 0.01_dp,   &
+        &                                  0.0_dp, 0.01_dp, 0.04_dp], [3, 3]))
+        call ld%start(0.0_dp, pot1)
+
+        ! The second state mixes with the third, which is not a state of the dynamics.
+        ret = 2
+        pot2 = pot1
+        call pot2%set_hamiltonian(reshape([0.0_dp, 0.02_dp, 0.0_dp, 0.02_dp, 0.01_dp, 0.03_dp,   &
+        &                                  0.0_dp, 0.03_dp, 0.04_dp], [3, 3]), pot1)
+        if (.not. pot2%link%matches(pot1%id, pot2%id, 'adiabatic')) return
+        s = pot2%link%s
+        t = pot2%link%t
+        if (maxval(abs(matmul(transpose(s), s) - unit_mat(2))) < 1.0e-3_dp) return
+        if (any(abs(matmul(transpose(t), t) - unit_mat(2)) > tol)) return
+
+        ret = 3
+        call ld%propagate(dt, pot2)
+        h = 0.5_dp * (pot1%get_Hamiltonian('adiabatic')                                          &
+        &   + matmul(t, matmul(pot2%get_Hamiltonian('adiabatic'), transpose(t))))
+        c = matmul(transpose(t), matmul(mat_sy_exp(h, cmplx(0.0_dp, -dt, kind=dp)),              &
+        &   [cmplx(0.0_dp, 0.0_dp, kind=dp), cmplx(1.0_dp, 0.0_dp, kind=dp)]))
+        if (any(abs(ld%coeff - c) > tol)) return
+        if (abs(sum(abs(ld%coeff)**2) - 1.0_dp) > tol) return
+        ret = 0
+    end function ld_subset_test
+
+
+    !----------------------------------------------------------------------------------------------
+    !> Initial diabatic state with the dynamics on the two lowest of three states. Diabatic state 1
+    !! is the lowest adiabatic state. States 2 and 3 are mixed, and only their lower combination
+    !! is a state of the dynamics, so diabatic state 3 is only partly in the states of the
+    !! dynamics: its weights are divided by their sum, and adiabatic state 2 is always chosen.
+    !----------------------------------------------------------------------------------------------
+    integer function initial_state_subset_test() result(ret)
+        use global_defs, only : dp
+        use sh_test_mod, only : scripted_evaluator
+        use sh_ld_mod, only : tsh_ld
+        use random_mod, only : rng_type
+        use random_pcg_mod, only : rng_pcg_xsh_rr
+        type(scripted_evaluator) :: pot
+        type(tsh_ld) :: ld
+        class(rng_type), pointer :: rng
+        real(dp), allocatable :: u(:, :)
+        integer :: i
+
+        allocate(rng_pcg_xsh_rr :: rng)
+        call rng%init(1)
+        call pot%setup([3], [1])
+        call pot%select_states([2], [1])
+        call ld%initialize(rng, pot, 1)
+        call pot%set_hamiltonian(reshape([0.0_dp, 0.0_dp, 0.0_dp, 0.0_dp, 0.1_dp, 0.05_dp,       &
+        &                                 0.0_dp, 0.05_dp, 0.2_dp], [3, 3]))
+        ret = 1
+        u = pot%get_transformation('diabatic', 'adiabatic')
+        if (any(shape(u) /= [3, 2])) return
+        if (abs(u(3, 1)) > 1.0e-12_dp .or. abs(u(3, 2)) < 0.1_dp .or. abs(u(3, 2)) > 0.9_dp) return
+
+        ret = 2
+        do i = 1, 20
+            call ld%set_initial_state(pot, 3, 'diabatic')
+            if (ld%active_state /= 2) return
+            if (ld%coeff(1) /= cmplx(0.0_dp, 0.0_dp, kind=dp)) return
+            if (ld%coeff(2) /= cmplx(1.0_dp, 0.0_dp, kind=dp)) return
+        end do
+        ret = 3
+        call ld%set_initial_state(pot, 1, 'diabatic')
+        if (ld%active_state /= 1) return
+        ret = 0
+    end function initial_state_subset_test
+
+
+    !----------------------------------------------------------------------------------------------
     !> Cases which should stop with an error:
     !! - ld_wrong_link - LD-FSSH propagates to a point whose link starts at another evaluation
     !!   than the last point of the method (here at the same geometry, as after a step back).
+    !! - initial_no_weight - The initial diabatic state has no weight in the states of the
+    !!   dynamics (the two lowest of three uncoupled states).
+    !! The case subset_crossing does not stop, but gives a warning: the second and third of three
+    !! uncoupled states cross between two points, so the second state of the dynamics (the two
+    !! lowest states) has no overlap with the states of the previous point.
     !----------------------------------------------------------------------------------------------
     subroutine sh_error(case_name)
         use global_defs, only : dp
@@ -346,6 +460,22 @@ program sh_test
             call pot2%set_hamiltonian(reshape([0.0_dp, 0.02_dp, 0.02_dp, 0.01_dp], [2, 2]),     &
             &                         pot1b)
             call ld%propagate(10.0_dp, pot2)
+        case('initial_no_weight')
+            allocate(rng_pcg_xsh_rr :: rng)
+            call rng%init(1)
+            call pot1%setup([3], [1])
+            call pot1%select_states([2], [1])
+            call ld%initialize(rng, pot1, 1)
+            call pot1%set_energies([0.0_dp, 0.1_dp, 0.2_dp])
+            call ld%set_initial_state(pot1, 3, 'diabatic')
+        case('subset_crossing')
+            call pot1%setup([3], [1])
+            call pot1%select_states([2], [1])
+            call pot1%set_hamiltonian(reshape([0.0_dp, 0.0_dp, 0.0_dp, 0.0_dp, 0.1_dp, 0.0_dp,   &
+            &                                  0.0_dp, 0.0_dp, 0.2_dp], [3, 3]))
+            pot2 = pot1
+            call pot2%set_hamiltonian(reshape([0.0_dp, 0.0_dp, 0.0_dp, 0.0_dp, 0.2_dp, 0.0_dp,   &
+            &                                  0.0_dp, 0.0_dp, 0.1_dp], [3, 3]), pot1)
         case default
             write(*, *) 'Unknown case: ', case_name
         end select
@@ -687,10 +817,10 @@ program sh_test
         call lz%initialize(rng, pot, active)
         lz%en_err = 1.0e-13_dp
 
-        call pot%set_soc(st_soc(pot%n_state, h))
+        call pot%set_soc(st_soc(pot%model_states%n_state, h))
         call pot%set_energies([0.0_dp, 0.01_dp])
         call lz%start(0.0_dp, pot)
-        call pot%set_soc(st_soc(pot%n_state, 2 * h))
+        call pot%set_soc(st_soc(pot%model_states%n_state, 2 * h))
         call pot%set_energies([0.0_dp, -0.03_dp])
         call lz%propagate(100.0_dp, pot)
         prob = lz%prob(3 - active)

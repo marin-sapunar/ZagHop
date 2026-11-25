@@ -64,9 +64,22 @@ Section \$system contains information about the dimensions of the system and the
 \$system
 
 \begin{tabularx}{\textwidth}{ m{2.5cm} X }
-nstate \#		&
-    \textbf{0} \newline
-    Number of states in the QM system.  \\
+nstate \# [\# ...]		&
+    \textbf{all states of the potential} \newline
+    Number of states of the dynamics: the number of spin-free states of each multiplicity given by the multiplicity keyword, for example "nstate = 2 1" with "multiplicity = 1 3" for two singlets and one triplet. \newline
+    For potentials which define their own states (vibronic coupling templates and model potentials), nstate selects a subset of them: the lowest nstate eigenstates of the spin-free Hamiltonian (MCH states) of each multiplicity. A multiplicity which is not given has no states in the dynamics. Requesting more states than the potential has is an error. The potential is still evaluated with all of its states. The adiabatic states are the eigenstates of the Hamiltonian, including the spin-orbit couplings, within the selected MCH states, as in on-the-fly dynamics with a limited number of states. They are not eigenstates of the full model, and the overlaps between the adiabatic states of two steps are not an orthogonal matrix. A warning is printed when their smallest singular value is below 0.9, which happens when the highest selected state crosses a state which is not selected. The diabatic basis always has all states of the potential. \newline
+    For Quantics operators, nstate and multiplicity describe all states of the operator and have to match it. A subset is not available.  \\
+
+multiplicity \# [\# ...]		&
+    \textbf{1} \newline
+    Multiplicity ($2S+1$) of each block of states given by nstate. Each multiplicity can be given once.  \\
+
+truncated\_gradient		&
+    \textbf{exact} \newline
+    Gradients and nonadiabatic coupling vectors of the adiabatic states when the dynamics runs on a subset of the states of the potential (nstate) with spin-orbit couplings. Possible options: \newline
+	\tabitem [exact] Derivatives of the energies of the dynamics. They include the term from the change of the selected MCH states with the geometry (spin-orbit couplings between selected and unselected MCH states times their nonadiabatic couplings). The total energy is conserved. \newline
+	\tabitem [hellmann\_feynman] Without this term, $\mathbf{U}^T (\partial \mathbf{H} / \partial x) \mathbf{U}$ for the adiabatic states $\mathbf{U}$. This is the approximation of on-the-fly dynamics, where the states which are not selected are not known. \newline
+	The option has no effect with all states, without spin-orbit couplings or in the mch basis (LZSH).  \\
 
 istate \#		&
     \textbf{nstate} \newline
@@ -76,10 +89,10 @@ istate \#		&
 istate\_basis	&
     \textbf{method} \newline
     Basis of istate. Possible options: \newline
-	\tabitem [method] The basis of the surface hopping method (adiabatic for FSSH, spin-free for LZSH, sh\_basis for \$surfhop off). istate is the initial active state. \newline
+	\tabitem [method] The basis of the surface hopping method (adiabatic for FSSH, mch for LZSH, sh\_basis for \$surfhop off). istate is the initial active state. \newline
 	\tabitem [diabatic] Diabatic states, numbered in the order of the source of the potential (for Quantics, all spin components of a state are consecutive; for vibronic coupling templates and model potentials, the ZagHop order). \newline
-	\tabitem [adiabatic] Eigenstates of the full Hamiltonian. \newline
-	If istate\_basis is not the basis of the method, istate is projected onto the states of the method basis at the initial geometry, and the initial active state $a$ is drawn with probability $|\langle i | a \rangle|^2$ (as in zagpy sample state). For LZSH, a diabatic state is projected through its spin-free state. With effective spin states, a diabatic spin component of the source is mapped to its effective state. Not used on restart.  \\
+	\tabitem [adiabatic] Eigenstates of the Hamiltonian with spin-orbit couplings, within the states of the dynamics. \newline
+	If istate\_basis is not the basis of the method, istate is projected onto the states of the method basis at the initial geometry, and the initial active state $a$ is drawn with probability $|\langle i | a \rangle|^2$ (as in zagpy sample state). For LZSH, a diabatic state is projected through its spin-free state. With effective spin states, a diabatic spin component of the source is mapped to its effective state. If the dynamics runs on a subset of the states of the potential (nstate), a diabatic state is only partly in the states of the dynamics: the probabilities are divided by their sum, which is printed, and a state without weight in the states of the dynamics is an error. Not used on restart.  \\
 
 geometry 		&
     \textbf{geom} \newline
@@ -140,7 +153,12 @@ results\_dir &
 	\tabitem [6]   cwf.dat, wave function coefficients. \newline
 	\tabitem [7]   overlap, overlap matrix for each step. \newline
 	\tabitem [10]  oscill.dat, QM oscillator strengths. \newline
-	\tabitem [11]  qm\_traj.xyz, XYZ file containing only QM atoms. \\
+	\tabitem [11]  qm\_traj.xyz, XYZ file containing only QM atoms. \newline
+	\tabitem [20]  trans\_ldiab, the orthogonalised overlaps between the adiabatic states of the previous and of the current step. \newline
+	\tabitem [21]  trans\_diab, the adiabatic states in the diabatic basis. One line for each adiabatic state, with its coefficients in all diabatic states of the potential, also when the dynamics runs on a subset of the states (nstate). \newline
+	\tabitem [22]  trans\_adiab, the adiabatic states in the adiabatic basis (unit matrix). \newline
+	\tabitem [30]  cstate\_ldiab, [31] cstate\_diab, [32] cstate\_adiab: the active state in the same bases. cstate\_diab has all diabatic states of the potential and is normalised. \newline
+	The file states.json in the results directory gives the number of states of each basis and the multiplicities of the states of the dynamics and of all states of the potential (model). \\
 
 printerval \#	&
 	\textbf{1} \newline
@@ -226,9 +244,9 @@ Possible methods: \newline
 sh\_basis	&
 	\textbf{adiabatic}	\newline
 	Off only. Basis of the state on which the dynamics are performed. The initial state (istate) is a state of this basis. Possible options: \newline
-	\tabitem [adiabatic] Eigenstates of the full Hamiltonian. \newline
-	\tabitem [diabatic] Diabatic states of the potential. \newline
-	\tabitem [spin\_free] Eigenstates of the spin-free Hamiltonian within each multiplicity, one state for each spin-free state. \\
+	\tabitem [adiabatic] Eigenstates of the Hamiltonian with spin-orbit couplings, within the states of the dynamics (the diagonal representation of SHARC). \newline
+	\tabitem [diabatic] Diabatic states of the potential. All states of the potential, also when the dynamics runs on a subset of the states (nstate). \newline
+	\tabitem [mch] Eigenstates of the spin-free Hamiltonian (molecular Coulomb Hamiltonian, MCH) within each multiplicity, one state for each spin-free state of the dynamics. Unlike in the MCH representation of SHARC, the spin components of a multiplet are not separate states. This basis was called spin\_free in earlier versions. \\
 
 tdse\_steps \#	&
 	\textbf{1}	\newline

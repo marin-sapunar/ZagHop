@@ -26,6 +26,9 @@
 !!
 !! Geometries, coordinate conversion, frames and atoms are delegated to the source. The source
 !! only evaluates its Hamiltonian (eval_hamiltonian). Its bases are never built.
+!!
+!! The model is always built from all states of the source. If the dynamics of the source runs
+!! on a subset of its states, the dynamics of the model runs on the same subset.
 !--------------------------------------------------------------------------------------------------
 module evaluator_effective_spin_mod
     use global_defs
@@ -50,8 +53,8 @@ module evaluator_effective_spin_mod
         character(len=:), allocatable :: soc_model !< 'projection', 'rss', 'rms' or 'sq3'.
         logical :: signed = .true. !< Signs of rss, rms and sq3 by continuity, or all +1.
         real(dp) :: u(3) = 0.0_dp !< Combination of the triplet components.
-        real(dp), allocatable :: proj(:, :) !< Isometry P from the model states to the states of
-                                            !! the source (source%n_state, n_sf).
+        real(dp), allocatable :: proj(:, :) !< Isometry P from the states of the model to the
+                                            !! states of the source, for all states of both.
         integer :: ms = 0 !< Manifold of the singlets (0 without singlets).
         integer :: mt = 0 !< Manifold of the triplets.
         real(dp) :: ref_fraction = 1.0_dp !< Retained fraction at the reference geometry.
@@ -132,28 +135,32 @@ contains
         end select
 
         ! Spin manifolds of the source.
-        if (.not. allocated(self%source%manifold)) then
+        if (.not. self%source%model_states%is_set()) then
             call init_error('The spin manifolds of the potential are not set.')
         end if
-        if (self%source%spin_states /= 'components') then
+        if (self%source%model_states%spin_states /= 'components') then
             call init_error('Effective spin states need a potential with spin_states = '//        &
             &               'components.')
         end if
-        if (any(self%source%manifold%mult /= 1 .and. self%source%manifold%mult /= 3)) then
+        if (any(self%source%model_states%manifold%mult /= 1 .and.                                &
+        &       self%source%model_states%manifold%mult /= 3)) then
             call init_error('Effective spin states are only implemented for singlets and '//      &
             &               'triplets.')
         end if
-        do m = 1, size(self%source%manifold)
-            if (self%source%manifold(m)%mult == 1) self%ms = m
-            if (self%source%manifold(m)%mult == 3) self%mt = m
+        do m = 1, size(self%source%model_states%manifold)
+            if (self%source%model_states%manifold(m)%mult == 1) self%ms = m
+            if (self%source%model_states%manifold(m)%mult == 3) self%mt = m
         end do
         if (self%mt == 0) call init_error('Effective spin states need triplet states.')
 
-        ! The model has the manifolds of the source, with one state for each spin-free state.
+        ! The model has the manifolds of the source, with one state for each spin-free state,
+        ! and the dynamics runs on the same spin-free states as that of the source.
         self%classical_coordinates = self%source%classical_coordinates
         self%ndof = self%source%ndof
-        call self%set_spin_manifolds(self%source%manifold%n, self%source%manifold%mult,           &
-        &                            'effective_rss')
+        call self%set_model_states(self%source%model_states%manifold%n,                           &
+        &                          self%source%model_states%manifold%mult, 'effective_rss')
+        call self%select_states(self%source%states%manifold%n, self%source%states%manifold%mult)
+        self%exact_gradient = self%source%exact_gradient
         ! The source checks the couplings within its groups, in its own layout.
         self%soc_checked = .true.
 
@@ -195,9 +202,10 @@ contains
         end if
 
         ! Isometry from the states of the model to the states of the source.
-        allocate(self%proj(self%source%n_state, self%n_sf), source=0.0_dp)
-        do m = 1, size(self%source%manifold)
-            associate(mf => self%source%manifold(m))
+        allocate(self%proj(self%source%model_states%n_state, self%model_states%n_sf),             &
+        &        source=0.0_dp)
+        do m = 1, size(self%source%model_states%manifold)
+            associate(mf => self%source%model_states%manifold(m))
                 do c = 1, mf%n_comp
                     do k = 1, mf%n
                         if (mf%n_comp == 1) then
@@ -360,8 +368,8 @@ contains
         self%soc_w = 0.0_dp
         self%soc_dw = 0.0_dp
         if (self%ms == 0) return
-        i0 = self%manifold(self%ms)%i0
-        k0 = self%manifold(self%mt)%i0
+        i0 = self%model_states%manifold(self%ms)%i0
+        k0 = self%model_states%manifold(self%mt)%i0
         do k = 1, size(h, 3)
             do i = 1, size(h, 2)
                 self%soc_w(i0 + i - 1, k0 + k - 1) = s(i, k) * r(i, k)
@@ -431,13 +439,13 @@ contains
         real(dp), allocatable :: h(:, :, :)
         integer :: ns, nt, s0, t0, k, c
 
-        nt = self%source%manifold(self%mt)%n
-        t0 = self%source%manifold(self%mt)%i0
+        nt = self%source%model_states%manifold(self%mt)%n
+        t0 = self%source%model_states%manifold(self%mt)%i0
         ns = 0
         s0 = 1
         if (self%ms > 0) then
-            ns = self%source%manifold(self%ms)%n
-            s0 = self%source%manifold(self%ms)%i0
+            ns = self%source%model_states%manifold(self%ms)%n
+            s0 = self%source%model_states%manifold(self%ms)%i0
         end if
         allocate(h(3, ns, nt))
         do k = 1, nt
@@ -555,7 +563,7 @@ contains
 
         state = self%source%diabatic_from_source(i_source)
         if (state > 0) then
-            loc = self%source%locate_state(state)
+            loc = self%source%model_states%locate_state(state)
             state = loc%sf
         end if
     end function effective_diabatic_from_source

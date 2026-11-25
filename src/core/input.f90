@@ -21,6 +21,7 @@ module input_mod
     use vc_evaluator_mod, only : vc_evaluator
     use evaluator_effective_spin_mod, only : effective_spin_evaluator
     use evaluator_base_mod, only : potential_evaluator
+    use evaluator_diabatic_mod, only : diabatic_evaluator
     use tsh_method_mod, only : tsh_none
     use sh_ld_mod, only : tsh_ld
     use sh_lz_mod, only : tsh_lz
@@ -255,7 +256,7 @@ contains
         call readf%close()
 
         ! Modify options based on type of calculation.
-        if (tr1%pot%n_state == 1) ctrl%print(10) = .false.
+        if (tr1%pot%basis_size('adiabatic') == 1) ctrl%print(10) = .false.
         if (ctrl%print(10)) ctrl%oscill = .true.
         if (ctrl%print(8)) ctrl%adt = .true.
         ! Without hopping there are no coefficients or probabilities to print. LZSH has no
@@ -269,8 +270,8 @@ contains
             ! LZSH keeps the points of a gap minimum while it inserts points between them.
             n_point = max(memory, wf%max_points(ctrl%dt_0) + 1)
         end select
-        ! The spin_free basis is only given in the diabatic basis.
-        if (tr1%wf%basis == 'spin_free') then
+        ! The mch basis is only given in the diabatic basis.
+        if (tr1%wf%basis == 'mch') then
             ctrl%print(30) = .false.
             ctrl%print(32) = .false.
         end if
@@ -641,14 +642,18 @@ contains
     !----------------------------------------------------------------------------------------------
     subroutine read_system(readf)
         type(reader), intent(inout) :: readf
-        integer :: i
+        integer :: i, m
         integer :: n_state_group
+        integer :: n_sel !< Selected states of a multiplicity.
+        logical :: nstate_given
         integer, allocatable :: nstate(:)
         integer, allocatable :: multiplicity(:)
         character(len=:), allocatable :: cartesian_frame
         character(len=:), allocatable :: spin_states
+        character(len=:), allocatable :: truncated_gradient
 
         n_state_group = 0
+        nstate_given = .false.
         call readf%rewind()
         call readf%go_to_keyword('$system')
         do
@@ -657,6 +662,7 @@ contains
             call readf%parseline(' =')
             select case(readf%args(1)%s)  
             case('nstate')
+                nstate_given = .true.
                 if (n_state_group == 0) then
                     n_state_group = readf%narg - 1
                     allocate(nstate(n_state_group))
@@ -726,6 +732,19 @@ contains
                 cartesian_frame = tolower(readf%args(2)%s)
             case('spin_states')
                 spin_states = tolower(readf%args(2)%s)
+            case('truncated_gradient')
+                if (readf%narg < 2) then
+                    call errstop('read_system', 'truncated_gradient keyword requires a value.')
+                end if
+                truncated_gradient = tolower(readf%args(2)%s)
+                select case(truncated_gradient)
+                case('exact', 'hellmann_feynman')
+                case default
+                    write(stderr, *) 'Error in Input module, read_system subroutine.'
+                    write(stderr, *) '  Unrecognized truncated_gradient value: ', truncated_gradient
+                    write(stderr, *) '  Expected exact or hellmann_feynman.'
+                    stop
+                end select
             case('effective_spin_states')
                 if (readf%narg < 2) then
                     call errstop('read_system', 'effective_spin_states keyword requires a value.')
@@ -780,17 +799,19 @@ contains
             call tr1%pot%set_cartesian_frame(cartesian_frame)
         end if
 
-        ! Model interfaces determine their own spin manifolds during initialization. A given
-        ! spin_states must then agree with them, unless all states are singlets.
-        if (allocated(tr1%pot%manifold)) then
-            if (allocated(spin_states) .and. any(tr1%pot%manifold%mult > 1)) then
-                if (spin_states /= tr1%pot%spin_states) then
+        ! Model interfaces determine the states of their model during initialization. A given
+        ! spin_states must then agree with them, unless all states are singlets, and nstate
+        ! selects the states of the dynamics (by default all states of the model).
+        if (tr1%pot%model_states%is_set()) then
+            if (allocated(spin_states) .and. any(tr1%pot%model_states%manifold%mult > 1)) then
+                if (spin_states /= tr1%pot%model_states%spin_states) then
                     write(stderr, *) 'Error in Input module, read_system subroutine.'
                     write(stderr, *) '  The potential sets its own spin states. Only ',           &
-                    &                'spin_states = '//tr1%pot%spin_states//' is possible.'
+                    &   'spin_states = '//tr1%pot%model_states%spin_states//' is possible.'
                     stop
                 end if
             end if
+            if (nstate_given) call tr1%pot%select_states(nstate, multiplicity)
         else
             if (.not. allocated(spin_states)) then
                 if (any(multiplicity > 1 .and. nstate > 0)) then
@@ -806,7 +827,28 @@ contains
                 end if
                 spin_states = 'components'
             end if
-            call tr1%pot%set_spin_manifolds(nstate, multiplicity, spin_states)
+            call tr1%pot%set_model_states(nstate, multiplicity, spin_states)
+        end if
+
+        if (allocated(truncated_gradient)) then
+            select type(pot => tr1%pot)
+            class is (diabatic_evaluator)
+                pot%exact_gradient = (truncated_gradient == 'exact')
+            end select
+        end if
+
+        if (stdp1 .and. tr1%pot%states%n_state /= tr1%pot%model_states%n_state) then
+            write(stdout, *)
+            write(stdout, '(1x,a)') 'Dynamics on a subset of the states of the model:'
+            do i = 1, size(tr1%pot%model_states%manifold)
+                associate(mf => tr1%pot%model_states%manifold(i))
+                    m = findloc(tr1%pot%states%manifold%mult, mf%mult, dim=1)
+                    n_sel = 0
+                    if (m > 0) n_sel = tr1%pot%states%manifold(m)%n
+                    write(stdout, '(3x,a,i0,a,i0,a,i0,a)') 'Multiplicity ', mf%mult, ': ',        &
+                    &   n_sel, ' of ', mf%n, ' states.'
+                end associate
+            end do
         end if
     end subroutine read_system
 
@@ -833,7 +875,7 @@ contains
             end if
             return
         end if
-        if (all(tr1%pot%manifold%mult == 1)) then
+        if (all(tr1%pot%states%manifold%mult == 1)) then
             write(stderr, *) 'Warning in Input module, set_effective_spin_states subroutine.'
             write(stderr, *) '  All states are singlets. Ignoring effective_spin_states.'
             return
@@ -1076,7 +1118,7 @@ contains
             if (readf%narg > 1) method = readf%args(2)%s
         end if
         ! Hopping needs at least two states.
-        if (tr1%pot%n_state == 1) method = 'off'
+        if (tr1%pot%basis_size('adiabatic') == 1) method = 'off'
 
         select case(method)
         case('off')
@@ -1118,7 +1160,8 @@ contains
                 write(stderr, '(3x,a,f8.6,a)') 'Retained fraction of the couplings at the '//    &
                 &                              'reference geometry: ', pot%ref_fraction, '.'
             class default
-                if (pot%spin_states /= 'components' .and. any(pot%manifold%mult > 1)) then
+                if (pot%states%spin_states /= 'components' .and.                                 &
+                &   any(pot%states%manifold%mult > 1)) then
                     write(stderr, *) 'Warning in Input module, read_surfhop subroutine.'
                     write(stderr, *) '  LD-FSSH with effective spin states. The spin-adiabatic ', &
                     &                'states are built from the effective couplings, which is only'
@@ -1227,12 +1270,12 @@ contains
                 select type(wf => tr1%wf)
                 type is (tsh_none)
                     select case(tolower(readf%args(2)%s))
-                    case('adiabatic', 'diabatic', 'spin_free')
+                    case('adiabatic', 'diabatic', 'mch')
                         wf%basis = tolower(readf%args(2)%s)
                     case default
                         write(stderr, *) 'Error in Input module, read_surfhop_options subroutine.'
                         write(stderr, *) '  Unrecognized sh_basis option. Expected adiabatic, ',  &
-                        &                'diabatic or spin_free.'
+                        &                'diabatic or mch.'
                         write(stderr, '(2x,a)') readf%line
                         stop
                     end select

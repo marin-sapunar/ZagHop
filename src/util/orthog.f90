@@ -60,12 +60,14 @@ contains
     !> @brief Lowdin (symmetric) orthogonalization of a set of column vectors.
     !> @details
     !! Input is a real matrix with dimensions n x m matrix containing m vectors of dimension n.
-    !! The vectors are orthogonalized (in place) using singular value decomposition.
+    !! The vectors are orthogonalized (in place) using singular value decomposition. If sigma is
+    !! given, the singular values of the input matrix (in descending order) are returned.
     !----------------------------------------------------------------------------------------------
-    subroutine orthog_lowdin(mat)
+    subroutine orthog_lowdin(mat, sigma)
         use linalg_wrapper_mod, only : gesvd, gemm
         real(dp), intent(inout) :: mat(:, :) !< Column vectors.
-        real(dp), allocatable :: s(:) !< Singular values (not used.)
+        real(dp), allocatable, intent(out), optional :: sigma(:) !< Singular values of mat.
+        real(dp), allocatable :: s(:) !< Singular values.
         real(dp), allocatable :: vt(:, :) !< Transposed V matrix.
         real(dp), allocatable :: u(:, :) !< U matrix.
         integer :: m, n !< Array size.
@@ -83,6 +85,7 @@ contains
 
         ! Overwrite input matrix with orthogonized matrix U.Vt.
         call gemm(u, vt, mat)
+        if (present(sigma)) sigma = s
     end subroutine orthog_lowdin
 
 

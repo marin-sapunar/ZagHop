@@ -618,7 +618,7 @@ contains
         if (popt(21)) then
            write(punit(21), *) '# t= ', time_fs, 'fs, state=', t%wf%active_state
            wrk = t%pot%get_transformation('diabatic', 'adiabatic')
-           do i = 1, t%wf%n_state
+           do i = 1, size(wrk, 2)
                write(punit(21), 1006) wrk(:, i)
            end do
        end if
@@ -626,7 +626,7 @@ contains
         if (popt(22)) then
             write(punit(22), *) '# t= ', time_fs, 'fs, state=', t%wf%active_state
             wrk = t%pot%get_transformation('adiabatic', 'adiabatic')
-            do i = 1, t%wf%n_state
+            do i = 1, size(wrk, 2)
                 write(punit(22), 1006) wrk(:, i)
             end do
         end if
@@ -696,14 +696,14 @@ contains
     !> @brief Write the layout of the electronic states to the file states.json.
     !> @details
     !! The file gives the format version, the basis of the dynamics (dynamics_basis), in which the
-    !! cst and qe columns of energy.dat are given, and the layout of the states of the potential
-    !! (see add_state_layout of the potential).
+    !! cst and qe columns of energy.dat are given, and the layout of the states of the dynamics
+    !! and of the model of the potential (see add_state_layout of the potential).
     !----------------------------------------------------------------------------------------------
     subroutine traj_write_state_layout(t, res_dir)
         use json_module, only : json_core, json_value
         class(system_type), intent(in) :: t
         character(len=*), intent(in) :: res_dir !< Directory for writing results.
-        integer, parameter :: format_version = 1
+        integer, parameter :: format_version = 2
         type(json_core) :: json
         type(json_value), pointer :: root
 

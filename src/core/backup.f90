@@ -37,7 +37,7 @@ module backup_mod
     public :: read_backup
 
 
-    integer, parameter :: format_version = 1 !< Version of the backup file format.
+    integer, parameter :: format_version = 2 !< Version of the backup file format.
 
 
 contains

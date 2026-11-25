@@ -115,7 +115,10 @@ contains
     !! T is the Lowdin orthogonalised overlap matrix S_KL = <psi_K(t)|psi_L(t2)> between the
     !! adiabatic states at the start and end of the step (Granucci et al., eqs. 15, B5 and B6),
     !! from the link of the potential (a state_overlap). The link must be between the last
-    !! processed point and the current one; otherwise the program stops.
+    !! processed point and the current one; otherwise the program stops. S is orthogonal when the
+    !! dynamics runs on all states of a model potential. On a subset of the states, the adiabatic
+    !! states of the two points do not span the same space and S is not orthogonal. T is
+    !! orthogonal in both cases, so the norm of the coefficients is conserved.
     !----------------------------------------------------------------------------------------------
     subroutine ld_propagate(self, t2, potential)
         class(tsh_ld), intent(inout) :: self

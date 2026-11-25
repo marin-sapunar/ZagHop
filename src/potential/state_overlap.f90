@@ -12,7 +12,10 @@
 !! change of the states afterwards, such as a change of sign, makes them invalid.
 !!
 !! t is the Lowdin (symmetric) orthogonalisation of the columns of s, the orthogonal matrix
-!! closest to s. For orthonormal states spanning the same space, s is already orthogonal.
+!! closest to s. For orthonormal states spanning the same space, s is already orthogonal. For
+!! states which span only a part of the space (a subset of the states of a model, or the states
+!! computed on the fly), s is not orthogonal, and its smallest singular value measures how much
+!! of the space of the bra states is left in the ket states.
 !--------------------------------------------------------------------------------------------------
 module state_overlap_mod
     use global_defs
@@ -91,22 +94,26 @@ contains
     !> @brief Set the overlaps between two sets of states and their Lowdin orthogonalisation.
     !> @details
     !! orthog_lowdin computes t from the singular value decomposition s = U Sigma V^t as U V^t,
-    !! which equals s (s^t s)^(-1/2) for nonsingular s.
+    !! which equals s (s^t s)^(-1/2) for nonsingular s. The smallest singular value is returned in
+    !! sigma_min.
     !----------------------------------------------------------------------------------------------
-    subroutine set(self, id_bra, id_ket, basis, s)
+    subroutine set(self, id_bra, id_ket, basis, s, sigma_min)
         use orthog_mod, only : orthog_lowdin
         class(state_overlap), intent(inout) :: self
         integer, intent(in) :: id_bra !< Id of the bra states.
         integer, intent(in) :: id_ket !< Id of the ket states.
         character(len=*), intent(in) :: basis !< Basis of both sets of states.
         real(dp), intent(in) :: s(:, :) !< Overlaps <bra_i|ket_j>.
+        real(dp), intent(out), optional :: sigma_min !< Smallest singular value of s.
+        real(dp), allocatable :: sigma(:)
 
         self%id_bra = id_bra
         self%id_ket = id_ket
         self%basis = basis
         self%s = s
         self%t = s
-        call orthog_lowdin(self%t)
+        call orthog_lowdin(self%t, sigma)
+        if (present(sigma_min)) sigma_min = minval(sigma)
     end subroutine set
 
 

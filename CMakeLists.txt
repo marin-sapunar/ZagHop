@@ -213,6 +213,12 @@ project(ZagHop LANGUAGES Fortran)
   add_test(NAME pot_unit_test_model_parameter COMMAND pot_test model_parameter)
   set_tests_properties(pot_unit_test_model_parameter PROPERTIES
     PASS_REGULAR_EXPRESSION "Unrecognized parameter of model granucci-st: sigma")
+  add_test(NAME pot_unit_test_subset_too_many COMMAND pot_test subset_too_many)
+  set_tests_properties(pot_unit_test_subset_too_many PROPERTIES
+    PASS_REGULAR_EXPRESSION "3 states of multiplicity 1 requested, 2 available")
+  add_test(NAME pot_unit_test_subset_multiplicity COMMAND pot_test subset_multiplicity)
+  set_tests_properties(pot_unit_test_subset_multiplicity PROPERTIES
+    PASS_REGULAR_EXPRESSION "There are no states of multiplicity 2")
 
   add_executable(sh_test tests/unit/sh_test.f90)
   target_link_libraries(sh_test zagcore)
@@ -221,6 +227,13 @@ project(ZagHop LANGUAGES Fortran)
   add_test(NAME sh_unit_test_ld_wrong_link COMMAND sh_test ld_wrong_link)
   set_tests_properties(sh_unit_test_ld_wrong_link PROPERTIES
     PASS_REGULAR_EXPRESSION "do not link the last point")
+  add_test(NAME sh_unit_test_initial_no_weight COMMAND sh_test initial_no_weight)
+  set_tests_properties(sh_unit_test_initial_no_weight PROPERTIES
+    PASS_REGULAR_EXPRESSION "has no weight in the states of the adiabatic basis")
+  # A warning, not an error.
+  add_test(NAME sh_unit_test_subset_crossing COMMAND sh_test subset_crossing)
+  set_tests_properties(sh_unit_test_subset_crossing PROPERTIES
+    PASS_REGULAR_EXPRESSION "Smallest singular value of the overlaps")
 
   # Register each test_* method of a Python unittest class as a separate ctest test.
   function(zaghop_add_python_tests module class prefix)

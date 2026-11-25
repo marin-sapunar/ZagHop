@@ -105,13 +105,13 @@ contains
         select case(self%name)
         case('granucci-st')
             ! One singlet and the three components of one triplet.
-            call self%set_spin_manifolds([1, 1], [1, 3], 'components')
+            call self%set_model_states([1, 1], [1, 3], 'components')
         case('granucci-sst')
             ! Two singlets and the three components of one triplet.
-            call self%set_spin_manifolds([2, 1], [1, 3], 'components')
+            call self%set_model_states([2, 1], [1, 3], 'components')
         case default
             ! Two singlet states, without spin-orbit coupling.
-            call self%set_spin_manifolds([2], [1], 'components')
+            call self%set_model_states([2], [1], 'components')
         end select
     end subroutine model_init
 
