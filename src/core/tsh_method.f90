@@ -346,12 +346,6 @@ contains
         frustrated = .false.
         if (stdp2) write(stdout, '(5x,a)') 'Ensuring energy conservation.'
 
-        pgrd = reshape(potential%get_gradient(self%basis, pst), shape(pgrd))
-        cgrd = reshape(potential%get_gradient(self%basis, self%active_state), shape(cgrd))
-        if (opt_mc == 3) then
-            nadv = potential%get_nadv(self%basis, pst, self%active_state)
-        end if
-
         ! Work with temporary arrays and use mass-weighted coordinates.
         m = spread(mass(amask), 1, size(velo, 1))
         mvel = velo(:, amask) * sqrt(m)
@@ -362,8 +356,11 @@ contains
         case(1) ! Rescale along velocity vector.
             rescale_dir = mvel
         case(2) ! Rescale along gradient difference vector.
+            pgrd = reshape(potential%get_gradient(self%basis, pst), shape(pgrd))
+            cgrd = reshape(potential%get_gradient(self%basis, self%active_state), shape(cgrd))
             rescale_dir = (pgrd - cgrd) / sqrt(m)
         case(3) ! Rescale along nonadiabatic coupling vector.
+            nadv = potential%get_nadv(self%basis, pst, self%active_state)
             rescale_dir = reshape(nadv, shape(mvel)) / sqrt(m)
         end select
 
