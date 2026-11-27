@@ -1,0 +1,19 @@
+$system
+ ndim = 1
+ classical_coordinates = normal_modes
+ nstate =    4
+ istate =    4
+$surfhop ld-fssh
+ nadvec  linear                                                                 
+ velocity nadvec                                                                
+ tdse_steps 10                                                                 
+$dynamics                                                                       
+ tstep = 0.05
+ max_time =   50.0
+$output                                                                         
+ printerval = 10
+ noprint  2,4,5,7,8,10,11
+$method
+ qm "eval_point vibronic_coupling"
+ seed 2
+$end

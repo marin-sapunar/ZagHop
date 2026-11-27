@@ -18,6 +18,8 @@ module evaluator_base_mod
 
     private
     public :: potential_evaluator
+    public :: eval_request
+    public :: new_request
     public :: state_layout
     public :: spin_manifold
     public :: state_location
@@ -30,6 +32,18 @@ module evaluator_base_mod
 
     real(dp), parameter :: soc_group_tol = 1.0e-10_dp !< Largest spin-orbit coupling within a group
                                                       !! of states without a warning.
+
+
+    !> Derivatives that an evaluation of the potential must provide, besides the energies.
+    !> @details
+    !! Model potentials compute all derivatives at every point and ignore requests. Potentials
+    !! computed by external programs compute only what is requested.
+    type :: eval_request
+        character(len=:), allocatable :: basis !< Basis of the states.
+        integer, allocatable :: gradient(:) !< States whose gradients are needed.
+        integer, allocatable :: nadv(:, :) !< Pairs of states (2, n_pair) whose nonadiabatic
+                                           !! coupling vectors are needed.
+    end type eval_request
 
 
     !> Base class of all potentials.
@@ -64,10 +78,13 @@ module evaluator_base_mod
         integer :: id = 0 !< Id of the evaluated point. 0 before the first evaluation.
         type(state_overlap) :: link !< Overlaps between the states of the previous point and of
                                    !! this point. Not set without a previous point.
+        type(eval_request) :: request !< Derivatives needed from the next evaluation.
     contains
         procedure(eval), deferred :: eval
         procedure(update_geometry), deferred :: update_geometry
         procedure :: new_point
+        procedure :: set_request
+        procedure :: complete
         procedure :: get_derivative_target_coord
         procedure :: set_cartesian_frame
         procedure :: check_atoms
@@ -224,6 +241,55 @@ contains
         self%id = request_id()
         call self%link%clear()
     end subroutine new_point
+
+
+    !----------------------------------------------------------------------------------------------
+    ! FUNCTION: new_request
+    !> @brief Request for the gradients of some states and the nonadiabatic coupling vectors
+    !! between some pairs of states of a basis.
+    !----------------------------------------------------------------------------------------------
+    pure function new_request(basis, gradient, nadv) result(req)
+        character(len=*), intent(in) :: basis !< Basis of the states.
+        integer, intent(in), optional :: gradient(:) !< States whose gradients are needed.
+        integer, intent(in), optional :: nadv(:, :) !< Pairs of states (2, n_pair).
+        type(eval_request) :: req
+
+        req%basis = basis
+        if (present(gradient)) then
+            req%gradient = gradient
+        else
+            allocate(req%gradient(0))
+        end if
+        if (present(nadv)) then
+            req%nadv = nadv
+        else
+            allocate(req%nadv(2, 0))
+        end if
+    end function new_request
+
+
+    !> Set the derivatives that the next evaluation must provide (see eval_request).
+    subroutine set_request(self, req)
+        class(potential_evaluator), intent(inout) :: self
+        type(eval_request), intent(in) :: req
+
+        self%request = req
+    end subroutine set_request
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: complete
+    !> @brief Make the requested derivatives available at the evaluated point.
+    !> @details
+    !! Used when more derivatives are needed at a point after its evaluation, for example the
+    !! gradient of a new active state after a hop. Nothing is done in the base class, for
+    !! potentials which compute all derivatives at every point. Potentials computed by external
+    !! programs override this to compute the derivatives which are missing.
+    !----------------------------------------------------------------------------------------------
+    subroutine complete(self, req)
+        class(potential_evaluator), intent(inout) :: self
+        type(eval_request), intent(in) :: req
+    end subroutine complete
 
 
     !----------------------------------------------------------------------------------------------

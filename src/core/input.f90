@@ -22,6 +22,7 @@ module input_mod
     use evaluator_effective_spin_mod, only : effective_spin_evaluator
     use evaluator_base_mod, only : potential_evaluator
     use evaluator_diabatic_mod, only : diabatic_evaluator
+    use external_json_mod, only : external_json_evaluator
     use tsh_method_mod, only : tsh_none
     use sh_ld_mod, only : tsh_ld
     use sh_lz_mod, only : tsh_lz
@@ -226,6 +227,10 @@ contains
             write(stdout, '(1x,a,a,a)') 'Reading geometry file ', geominp, '.'
         end if
         call read_geom()
+        select type(p => tr1%pot)
+        type is (external_json_evaluator)
+            call p%set_atoms(tr1%sym)
+        end select
         if (ctrl%restart) then
             tr1%velo = 0.0_dp
         else
@@ -275,6 +280,17 @@ contains
             ctrl%print(30) = .false.
             ctrl%print(32) = .false.
         end if
+        ! An external program gives no diabatic basis.
+        select type(p => tr1%pot)
+        type is (external_json_evaluator)
+            if (ctrl%print(21) .or. ctrl%print(31) .or. ctrl%istate_basis == 'diabatic') then
+                write(stderr, *) 'Error in Input module, read_input subroutine.'
+                write(stderr, *) '  The diabatic basis is not available for potentials computed ', &
+                &                'by an external program (qm keyword).'
+                write(stderr, *) '  Remove print options 21 and 31 and istate_basis diabatic.'
+                stop
+            end if
+        end select
         call allocate_trajectory_data(n_point)
         if (ctrl%orientlvl < 0 .or. ctrl%orientlvl > 2) then
             write(stderr, *) 'Error in Input module, read_input subroutine.'
@@ -549,9 +565,6 @@ contains
     subroutine read_method(readf)
         use model_1d_mod, only : model_1d_evaluator
         type(reader), intent(inout) :: readf
-        logical :: qlib
-
-        qlib = .false.
 
         if (.not. allocated(ctrl%qprog)) ctrl%qprog = ''
         if (.not. allocated(ctrl%mprog)) ctrl%mprog = ''
@@ -565,7 +578,16 @@ contains
             call readf%parseline(' =')
             select case(readf%args(1)%s)
             case('qm')
+                if (allocated(tr1%pot)) call both_potentials()
+                if (readf%narg /= 2) then
+                    call errstop('read_method', 'One argument expected after the qm keyword.')
+                end if
                 ctrl%qprog = readf%args(2)%s
+                allocate(external_json_evaluator :: tr1%pot)
+                select type(p => tr1%pot)
+                type is (external_json_evaluator)
+                    call p%init(ctrl%qprog)
+                end select
                 if (stdp3) then
                     write(stdout, '(5x,a)') '"'//ctrl%qprog//&
                     &                       '" will be used for QM calculations.'
@@ -583,7 +605,7 @@ contains
                     &                       '" will be used for overlap calculations.'
                 end if
             case('qlib')
-                qlib = .true.
+                if (allocated(tr1%pot)) call both_potentials()
                 select case(readf%args(2)%s)
                 case('quantics')
 #ifdef QUANTICS
@@ -624,11 +646,20 @@ contains
             end select
         end do
 
-        if ((qlib) .and. (ctrl%qprog /= '')) then
+        if (.not. allocated(tr1%pot)) then
             write(stderr, *) 'Error in Input module, read_method subroutine.'
-            write(stderr, *) '  Both qlib and qm keywords given in input.'
+            write(stderr, *) '  No potential given. Expected the qm or qlib keyword.'
             stop
         end if
+
+    contains
+
+        subroutine both_potentials()
+            write(stderr, *) 'Error in Input module, read_method subroutine.'
+            write(stderr, *) '  More than one qlib or qm keyword given in input.'
+            stop
+        end subroutine both_potentials
+
     end subroutine read_method
 
 

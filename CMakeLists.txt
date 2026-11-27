@@ -39,7 +39,7 @@ project(ZagHop LANGUAGES Fortran)
   list(FILTER CORE_SOURCE EXCLUDE REGEX "main\\.f90$")
   file(GLOB UTIL_SOURCE "src/util/*f90")
   file(GLOB POT_SOURCE "src/potential/*f90")
-  list(FILTER POT_SOURCE EXCLUDE REGEX "run_vc\\.f90$")
+  list(FILTER POT_SOURCE EXCLUDE REGEX "eval_point\\.f90$")
   list(FILTER POT_SOURCE EXCLUDE REGEX "quantics\\.f90$")
   if(QUANTICS)
       set(CORE_SOURCE ${CORE_SOURCE} "src/potential/quantics.f90")
@@ -62,10 +62,10 @@ project(ZagHop LANGUAGES Fortran)
   add_executable(zaghop "src/core/main.f90")
   target_link_libraries(zaghop PRIVATE zagcore)
 
-  add_executable(run_vc "src/potential/run_vc.f90")
-  target_link_libraries(run_vc PRIVATE zagpot)
-  target_link_libraries(run_vc PRIVATE zagutil)
-  target_link_libraries(run_vc PRIVATE ${LINALG_LIBS})
+  add_executable(eval_point "src/potential/eval_point.f90")
+  target_link_libraries(eval_point PRIVATE zagpot)
+  target_link_libraries(eval_point PRIVATE zagutil)
+  target_link_libraries(eval_point PRIVATE ${LINALG_LIBS})
 
 ################################################################################
 # Compiler specific options:                                                   #
@@ -219,6 +219,20 @@ project(ZagHop LANGUAGES Fortran)
   add_test(NAME pot_unit_test_subset_multiplicity COMMAND pot_test subset_multiplicity)
   set_tests_properties(pot_unit_test_subset_multiplicity PROPERTIES
     PASS_REGULAR_EXPRESSION "There are no states of multiplicity 2")
+  # External program (external_json evaluator).
+  foreach(_case IN ITEMS no_response exit point_id missing_gradient not_computed)
+    add_test(NAME pot_unit_test_external_${_case} COMMAND pot_test external_${_case})
+  endforeach()
+  set_tests_properties(pot_unit_test_external_no_response PROPERTIES
+    PASS_REGULAR_EXPRESSION "qm_out.json not found after running: true")
+  set_tests_properties(pot_unit_test_external_exit PROPERTIES
+    PASS_REGULAR_EXPRESSION "External program failed: false")
+  set_tests_properties(pot_unit_test_external_point_id PROPERTIES
+    PASS_REGULAR_EXPRESSION "qm_out.json: response for point [0-9]+, expected point [0-9]+")
+  set_tests_properties(pot_unit_test_external_missing_gradient PROPERTIES
+    PASS_REGULAR_EXPRESSION "Missing gradient of a requested state")
+  set_tests_properties(pot_unit_test_external_not_computed PROPERTIES
+    PASS_REGULAR_EXPRESSION "Gradient of state 2 was not computed at this point")
 
   add_executable(sh_test tests/unit/sh_test.f90)
   target_link_libraries(sh_test zagcore)

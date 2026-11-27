@@ -25,7 +25,8 @@ program zaghop
     ! Import subroutines
     use timing_mod, only : timer
     use input_mod, only : read_input, command_line_interface, set_defaults
-    use interface_mod
+    use interface_mod, only : run_mm
+    use evaluator_base_mod, only : new_request
     use file_mod, only : check_is_dir
     use nuclear_dyn_mod
     use backup_mod, only : write_backup, read_backup
@@ -93,12 +94,12 @@ program zaghop
         end if
         if (stdp1) write(stdout, '(a)') ' Running initial QM calculation: '
         if (stdp1) call stepclock%start()
-        call run_qm(tr1, .false.)
+        call evaluate_point()
         ! A state of another basis is projected onto the basis of the method at the initial
         ! point, and the gradient is taken again for the chosen state.
         if (ctrl%istate_basis /= 'method') then
             call tr1%wf%set_initial_state(tr1%pot, ctrl%istate, ctrl%istate_basis)
-            call run_qm(tr1, .true.)
+            call active_gradient()
         end if
         call tr1%wf%start(tr1%time, tr1%pot)
         if (stdp1) call stepclock%print(stdout, '  QM run time:')
@@ -134,7 +135,7 @@ program zaghop
         if (ctrl%mm) call run_mm(tr1)
         if (stdp2) write(stdout, *) '  Running QM calculation.'
         ! After trajectory_next, tr2 is the previous point, distinct from tr1.
-        call run_qm(tr1, .false., tr2)
+        call evaluate_point(tr2)
 
         ! Get new velocity.
         call dyn_updatevelo(tr1%dt, tr1%mass, tr1%geom, tr2%grad, tr1%grad, tr2%velo,         &
@@ -238,6 +239,9 @@ contains
         class(tsh_method), allocatable :: wf
         type(tsh_request) :: request
         logical :: frustrated
+        integer :: opt_mc !< Type of momentum correction for the hop.
+        integer :: opt_fh !< Behaviour at a frustrated hop.
+        integer :: pst !< Previous state.
 
         call tr1%wf%decohere(tr1%qkine(), tr1%dt, tr1%pot)
         call tr1%wf%propagate(tr1%time, tr1%pot)
@@ -259,23 +263,71 @@ contains
                 write(stdout, '(5x,a,i0)') 'Current state: ', tr1%wf%active_state
                 write(stdout, '(5x,a)') 'Running QM gradient calculation for new state.'
             end if
-            call run_qm(tr1, .true.)
             if (request%isc) then
                 ! Frustrated intersystem crossings are rejected without reversing the velocity.
-                call tr1%wf%rescale_velocity(ctrl%isc_vrescale, 1, tr1%qind,                     &
-                &                            request%previous_state, tr1%pot, tr1%mass,          &
-                &                            tr1%velo, frustrated)
+                opt_mc = ctrl%isc_vrescale
+                opt_fh = 1
             else
-                call tr1%wf%rescale_velocity(ctrl%vrescale, ctrl%fhop, tr1%qind,                  &
-                &                            request%previous_state, tr1%pot, tr1%mass,          &
-                &                            tr1%velo, frustrated)
+                opt_mc = ctrl%vrescale
+                opt_fh = ctrl%fhop
             end if
-            if (frustrated) call tr1%wf%hop_rejected()
-            tr1%grad(:, tr1%qind) = reshape(                                                     &
-            &   tr1%pot%get_gradient(tr1%wf%basis, tr1%wf%active_state),                         &
-            &   [size(tr1%grad, 1), size(tr1%qind)])
+            ! The gradient of the new state and the derivatives for the rescaling direction (see
+            ! rescale_velocity), in one calculation for potentials which compute them on request.
+            pst = request%previous_state
+            select case(opt_mc)
+            case(2)
+                call tr1%pot%complete(new_request(tr1%wf%basis,                                   &
+                &                                 gradient=[tr1%wf%active_state, pst]))
+            case(3)
+                call tr1%pot%complete(new_request(tr1%wf%basis, gradient=[tr1%wf%active_state],  &
+                &                                 nadv=reshape([pst, tr1%wf%active_state], [2, 1])))
+            end select
+            call active_gradient()
+            call tr1%wf%rescale_velocity(opt_mc, opt_fh, tr1%qind, pst, tr1%pot, tr1%mass,        &
+            &                            tr1%velo, frustrated)
+            if (frustrated) then
+                call tr1%wf%hop_rejected()
+                call active_gradient()
+            end if
         end if
     end subroutine hopping
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: evaluate_point
+    !> @brief Evaluate the potential at the current geometry and set the gradient of the active
+    !! state.
+    !> @details
+    !! prev is the previous point of the trajectory, if there is one (see eval of the potential).
+    !! The gradient of the active state is requested from the evaluation.
+    !----------------------------------------------------------------------------------------------
+    subroutine evaluate_point(prev)
+        type(system_type), intent(in), optional :: prev
+
+        call tr1%pot%update_geometry(tr1%geom, tr1%classical_coordinates)
+        call tr1%pot%set_request(new_request(tr1%wf%basis, gradient=[tr1%wf%active_state]))
+        if (present(prev)) then
+            call tr1%pot%eval(prev%pot)
+        else
+            call tr1%pot%eval()
+        end if
+        call active_gradient()
+    end subroutine evaluate_point
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: active_gradient
+    !> @brief Set the gradient of the system from the gradient of the active state.
+    !> @details
+    !! The gradient is computed first if the potential doesn't have it yet (for example, after a
+    !! hop).
+    !----------------------------------------------------------------------------------------------
+    subroutine active_gradient()
+        call tr1%pot%complete(new_request(tr1%wf%basis, gradient=[tr1%wf%active_state]))
+        tr1%grad(:, tr1%qind) = reshape(                                                         &
+        &   tr1%pot%get_gradient(tr1%wf%basis, tr1%wf%active_state),                             &
+        &   [size(tr1%grad, 1), size(tr1%qind)])
+    end subroutine active_gradient
 
 
     !----------------------------------------------------------------------------------------------

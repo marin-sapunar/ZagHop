@@ -85,6 +85,39 @@ class TullyTest(ZagHopTest):
         self.compare_energy()
         self.compare_results("geometry")
 
+    def assert_hops_computed(self):
+        """ Assert that each hop ran one more calculation of the external program. """
+        hops = self.stdout_count("Change of state")
+        self.assertGreater(hops, 0, "No hop.")
+        self.assertEqual(self.stdout_count("Running external program (same_point)"), hops)
+
+    def test_ldsh_external(self):
+        """ test_ldsh with the potential computed by eval_point (qm keyword).
+
+        The gradient of the new state and the coupling vector for the velocity rescaling come from
+        one more calculation at the point of the hop."""
+        self.run_traj()
+        self.assert_hops_computed()
+        self.compare_energy()
+
+    def test_lzsh_external(self):
+        """ test_lzsh with the potential computed by eval_point (qm keyword). """
+        self.run_traj()
+        self.assert_hops_computed()
+        self.compare_energy()
+        self.compare_results("geometry")
+
+    def test_lzsh_bisect_external(self):
+        """ test_lzsh_bisect with the potential computed by eval_point (qm keyword).
+
+        Points are inserted between stored points, so the previous point of a calculation is not
+        the point of the calculation before it."""
+        self.run_traj()
+        self.stdout_contains("Adding new substep")
+        self.assert_hops_computed()
+        self.compare_energy()
+        self.compare_results("geometry")
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

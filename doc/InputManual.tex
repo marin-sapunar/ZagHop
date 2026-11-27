@@ -37,7 +37,7 @@ Section \$method contains paths to the driver programs for running the calculati
 \begin{tabularx}{\textwidth}{ m{2.5cm} X }
 qm				&
 	\textbf{No default.} \newline
-	Command line call for QM calculation driver.  \\
+	Command which runs the external program that computes the potential (see section \ref{sec:interface}). A command with arguments is given in quotes, which are removed. Example: qm "eval\_point vibronic\_coupling LVC.template". Only singlet states (multiplicity 1) are available, and there is no diabatic basis (print options 21 and 31 and istate\_basis diabatic are not available). Either qm or qlib is required.  \\
 
 mm				&
 	\textbf{No default.} \newline
@@ -322,24 +322,36 @@ stop\_s0s1\_ci &
 
 
 \section*{QM interface} \label{sec:interface}
-The ZagHop dynamics program communicates with electronic structure packages via a file based interface. At every step the program creates three files:
-\begin{tabularx}{\textwidth}{ m{2.5cm} X }
-cstep		& Containing a single integer for the current step in the dynamics. \\
-qm\_state	& Containing two integers, the currently populated state (for which the gradient needs to be calculated) and the total number of states. \\
-qm\_geom	& Containing natom lines with the current geometry of the QM system.
+With the qm keyword, ZagHop runs an external program at every point of the trajectory, in the directory of the trajectory, and communicates with it through two JSON files. ZagHop writes the request qm\_in.json, removes qm\_out.json, runs the command and reads the response qm\_out.json. The program keeps nothing between calls: the overlaps between the states of consecutive points are computed by ZagHop from the wave functions returned by the program, and the signs of the states are matched to those of the previous point. A failed command (nonzero exit status), a missing response or a missing requested quantity stops the trajectory, leaving both files in the directory.
+
+All quantities are in atomic units and states are numbered from 1 within each multiplicity. Geometries, gradients and nonadiabatic coupling vectors are arrays with one inner array per atom (or per coordinate of other coordinate systems, e.g. [[q1], [q2], ...] for normal modes): v[atom][dim]. The request contains:
+\begin{tabularx}{\textwidth}{ m{3cm} X }
+	protocol, version & "zaghop" and 1. \\
+	point\_id & Id of the point. The response must contain the same id. \\
+	calculation & "new\_point", or "same\_point" for more quantities at the geometry of the last new point (for example the gradient of the new state after a hop). The program must give the same states as in the new point calculation. \\
+	coordinates & Coordinate system of the geometry (classical\_coordinates of the \$system section, by default "cartesian"). \\
+	atoms, geometry & Atom symbols (labels of the geometry file) and the geometry. \\
+	states & [\{"multiplicity": 1, "nstate": n\}]. \\
+	request & "gradients": [\{"multiplicity", "state"\}], "nacv": [\{"multiplicity", "states": [i, j]\}], "wave\_function" (true or false) and "properties" (names of extra quantities, not used by ZagHop).
 \end{tabularx}
-After this, the script given in the "qm" keyword of the \$method section is called. This script should use the information from the files above to run an electronic structure calculation and parse its output to create the following files which will be read by ZagHop and used to propagate the trajectory:
-\begin{tabularx}{\textwidth}{ m{2.5cm} X }
-	qm\_energy	& Containing the total energies of all states of the QM system. \\
-	qm\_grad	& Containing natom lines with the gradient of the currently populated state for the current geometry of the QM system. \\
-	qm\_oscill	& If print option 10 is activated, this file should contain the oscillator strengths for the excited states of the QM system.
+The response contains:
+\begin{tabularx}{\textwidth}{ m{3cm} X }
+	protocol, version, point\_id & As in the request. \\
+	states & [\{"multiplicity", "energies"\}], the energies of the n states. \\
+	gradients & [\{"multiplicity", "state", "gradient"\}] for each requested state. \\
+	nacv & [\{"multiplicity", "states": [i, j], "vector"\}], the nonadiabatic coupling vector $\langle i | \partial j / \partial R \rangle$ for each requested pair. \\
+	wave\_function & If requested, [\{"multiplicity", "format", ...\}]. Format "vectors": "c", the coefficients of the states in an orthonormal basis which is the same at all points, c[basis][state]. The overlaps of the states of two points are $C_1^T C_2$. \\
+	properties & An object with the requested extra quantities.
 \end{tabularx}
 
-A python script with drivers for Turbomole and Bagel is included in the package. As an example, dynamics using the Turbomole ADC(2) method would usually have the following line in the dynamics input file:
+The program eval\_point answers these requests for the model potentials of the qlib keyword, as a test of the interface and for single point calculations:
 \begin{quote}
-	qm "run.py tm\_adc2 \$QMDIR"
+	eval\_point vibronic\_coupling [template] \newline
+	eval\_point model $<$name$>$ [parameter value ...]
 \end{quote}
-where \$QMDIR is an environment variable pointing to a directory where the Turbomole calculation will run (and which contains the required inputs).
+The wave functions are the adiabatic states in the diabatic states of the model. The extra properties are "oscillator\_strengths" (from the first state, for vibronic coupling models with dipole moments), "diabatic\_transformation" (t[diabatic][adiabatic]) and "diabatic\_hamiltonian". zagpy sample state reads the energies, oscillator strengths and diabatic transformation from the qm\_out.json files of eval\_point.
+
+The Python drivers for electronic structure programs in the interface directory do not use this protocol yet.
 
 
 

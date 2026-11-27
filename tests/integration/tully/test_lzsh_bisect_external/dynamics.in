@@ -1,0 +1,20 @@
+$method
+ seed 123456
+ qm "eval_point model tully-i"
+ qm_en_error = 1.0e-13
+$system
+ geometry geom
+ ndim = 1
+ classical_coordinates = model
+ nstate = 2
+ istate = 1
+$surfhop lz
+ lz_prob_conv = 0.01
+ velocity=nadvec
+$dynamics
+ time = 80.0
+ tstep = 2.0
+$output
+ buinterval -1
+  noprint 2,4-11
+$end

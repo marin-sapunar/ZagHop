@@ -197,6 +197,7 @@ contains
     !----------------------------------------------------------------------------------------------
     subroutine eval_states(self, prev)
         use matrix_mod, only : unitary_transform
+        use state_overlap_mod, only : match_phase
         class(diabatic_evaluator), intent(inout) :: self
         class(diabatic_evaluator), intent(in), optional :: prev !< Evaluated previous point.
         integer :: imode, m, s0, n, i
@@ -716,33 +717,6 @@ contains
 
 
     !----------------------------------------------------------------------------------------------
-    ! SUBROUTINE: match_phase
-    !> @brief Match the phases of the vectors in ket to those in bra (phasematch_assigned_rotation).
-    !> @details
-    !! The overlaps bra^T ket between the vectors, after the phases of ket are matched, are
-    !! returned in olap.
-    !----------------------------------------------------------------------------------------------
-    subroutine match_phase(bra, ket, olap)
-        real(dp), intent(in) :: bra(:, :)
-        real(dp), intent(inout) :: ket(:, :)
-        real(dp), allocatable, intent(out), optional :: olap(:, :) !< bra^T ket.
-        integer :: i
-        real(dp), allocatable :: overlap(:, :)
-        integer, allocatable :: phase(:)
-
-        overlap = matmul(transpose(bra), ket)
-        allocate(phase(size(ket, 2)))
-        call phasematch_assigned_rotation(overlap, phase)
-        do i = 1, size(ket, 2)
-            if (phase(i) == -1) then
-                ket(:, i) = -ket(:, i)
-            end if
-        end do
-        if (present(olap)) call move_alloc(overlap, olap)
-    end subroutine match_phase
-
-
-    !----------------------------------------------------------------------------------------------
     ! SUBROUTINE: fix_sign
     !> @brief Choose the sign of each vector so that its component with the largest magnitude is
     !! positive.
@@ -800,63 +774,6 @@ contains
         end select
     end function in_basis
 
-
-
-    !----------------------------------------------------------------------------------------------
-    ! SUBROUTINE: phasematch_assigned_rotation
-    !
-    !> @brief Match phase of assigned states while avoiding reflections.
-    !> @details 
-    !! Each adiabatic state in the current step is matched with a single state in the previous
-    !! step and its' phase is matched with the previous step. To ensure that the wave functions
-    !! can be smoothly varied from the previous to the current step, a check is performed to make
-    !! sure that the overlap matrix has the (approximate) form of a rotation matrix by making sure
-    !! that the determinant is positive (for a pure rotation, the determinant is exactly 1, for a
-    !! combination of rotation and reflection, the determinant is -1).
-    !
-    !> @note Instead of only checking that the full matrix is a rotation, the subroutine ensures 
-    !! that each set of states which exchanged positions forms a rotation. (For example, if two
-    !! trivial crossings occur in a single step, the overall matrix is a rotation if all assigned 
-    !! overlaps are positive. However, it makes more sense to make sure the submatrix for each pair
-    !! is individually a rotation (each pair will have 1 positive and 1 negative phase).
-    !----------------------------------------------------------------------------------------------
-    subroutine phasematch_assigned_rotation(olap, phase)
-        use assignment_problem_mod
-        use matrix_mod, only: mat_ge_det
-        use ivec_mod
-        real(dp), intent(inout) :: olap(:, :)
-        integer, intent(out) :: phase(:)
-        integer, allocatable :: cmatch(:)
-        integer, allocatable :: rmatch(:)
-        type(ivec), allocatable :: loops(:)
-        integer :: st, i
-
-        phase = 1
-
-        ! Match states of current and previous step.
-        call assignment_problem(-olap**2, rmatch, cmatch)
-
-        ! Match phase based on assignment.
-        do st = 1, minval(shape(olap))
-            if (olap(rmatch(st), cmatch(st)) < 0) then
-                olap(:, cmatch(st)) = -olap(:, cmatch(st))
-                phase(cmatch(st)) = -1
-            end if
-        end do
-
-        ! Check which sets of states swapped positions.
-        call getloops(cmatch, loops)
-        do i = 1, size(loops)
-            ! Phase of states that didn't change position is already matched.
-            if (size(loops(i)%c) == 1) cycle
-            ! For sets of states that interchanged positions, make sure that the subsection of the
-            ! overlap matrix spaning these states is a rotation matrix.
-            if (mat_ge_det(olap(loops(i)%c, loops(i)%c)) < 0.0_dp) then
-                olap(:, loops(i)%c(1)) = -olap(:, loops(i)%c(1))
-                phase(loops(i)%c(1)) = -phase(loops(i)%c(1))
-            end if
-        end do
-    end subroutine phasematch_assigned_rotation
 
     !----------------------------------------------------------------------------------------------
     ! SUBROUTINE: diabatic_save_state

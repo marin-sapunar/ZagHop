@@ -1,0 +1,20 @@
+$method
+ seed 50
+ qm "eval_point model tully-i"
+$system
+ geometry geom
+ ndim = 1
+ classical_coordinates = model
+ nstate = 2
+ istate = 1
+$surfhop ld-fssh
+ decoherence off
+ velocity nadvec
+ adt
+$dynamics
+ time = 80.0
+ tstep = 0.25
+$output
+ buinterval -1
+  noprint 2,4-11
+$end

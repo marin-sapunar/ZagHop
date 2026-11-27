@@ -113,7 +113,11 @@ program pot_test
     ! With an argument, run a case which should stop with an error.
     if (command_argument_count() > 0) then
         call get_command_argument(1, arg)
-        call effective_error(trim(arg))
+        if (index(arg, 'external_') == 1) then
+            call external_error(trim(arg))
+        else
+            call effective_error(trim(arg))
+        end if
         write(*, *) 'No error.'
         stop 1
     end if
@@ -223,6 +227,12 @@ program pot_test
     ret = save_state_test()
     if (ret /= 0) then
         write(*,*) "Error in save_state_test."
+        stop ret
+    end if
+
+    ret = external_json_test()
+    if (ret /= 0) then
+        write(*,*) "Error in external_json_test."
         stop ret
     end if
 
@@ -1599,6 +1609,254 @@ program pot_test
         end select
         call eff%init(src, 'projection')
     end subroutine effective_error
+
+
+    !----------------------------------------------------------------------------------------------
+    ! FUNCTION: external_json_test
+    !> @brief The external_json evaluator with scripted responses of a program.
+    !> @details
+    !! Three states of two atoms. The program is 'cp' of a response written by the test.
+    !! - Point A: energies, the requested gradient, wave functions, no link.
+    !! - Point B (a copy of A): state 2 returned with the opposite sign. The sign is matched to
+    !!   A, so link%s has a positive diagonal and the coupling of 1 and 2 changes sign.
+    !! - complete on B: a missing gradient, and the coupling of 2 and 3 from a recalculation in
+    !!   which state 3 has the opposite sign; the stored states keep their signs and the coupling
+    !!   gets the sign of the stored states.
+    !! - save_state/load_state of B into a new evaluator.
+    !----------------------------------------------------------------------------------------------
+    integer function external_json_test() result(ret)
+        use global_defs, only : dp
+        use evaluator_base_mod, only : new_request
+        use external_json_mod, only : external_json_evaluator
+        use state_overlap_mod, only : last_requested_id
+        use json_module, only : json_core, json_value
+        type(external_json_evaluator) :: a, b, c
+        real(dp) :: geom(3, 2), g1(3, 2), g2(3, 2), v12(3, 2), v23(3, 2), r(3, 3), raw(3, 3)
+        real(dp) :: e(3)
+        type(json_core) :: json
+        type(json_value), pointer :: root
+        real(dp), parameter :: tol = 1.0e-12_dp
+        real(dp) :: th
+
+        geom = reshape([0.0_dp, 0.0_dp, 0.0_dp, 0.0_dp, 0.0_dp, 1.4_dp], [3, 2])
+        g1 = reshape([0.1_dp, 0.2_dp, 0.3_dp, -0.1_dp, -0.2_dp, -0.3_dp], [3, 2])
+        g2 = 2.0_dp * g1 + 0.05_dp
+        v12 = reshape([1.0_dp, 0.0_dp, 2.0_dp, -1.0_dp, 0.5_dp, -2.0_dp], [3, 2])
+        v23 = 3.0_dp * v12 - 0.1_dp
+        e = [-1.0_dp, -0.8_dp, -0.7_dp]
+        call setup_external(a, 'cp ext_scripted.json qm_out.json')
+
+        ! Point A.
+        ret = 1
+        call write_scripted(last_requested_id() + 1, e, 1, g1, reshape([0], [2, 0]), v12,       &
+        &                   unit3())
+        call a%update_geometry(geom, 'cartesian')
+        call a%set_request(new_request('adiabatic', gradient=[1]))
+        call a%eval()
+        if (a%link%valid()) return
+        if (any(abs(a%get_energy('adiabatic') - e) > tol)) return
+        if (any(abs(a%get_gradient('adiabatic', 1) - reshape(g1, [6])) > tol)) return
+        if (a%have_grad(2) .or. any(a%have_nadv)) return
+        if (any(abs(a%get_Hamiltonian('mch') - diag3(e)) > tol)) return
+
+        ! Point B: a small rotation of the states, with state 2 of the opposite sign.
+        ret = 2
+        th = 0.05_dp
+        r = unit3()
+        r(1, 1) = cos(th)
+        r(2, 1) = sin(th)
+        r(1, 2) = -sin(th)
+        r(2, 2) = cos(th)
+        raw = r
+        raw(:, 2) = -raw(:, 2)
+        b = a
+        call write_scripted(last_requested_id() + 1, e + 0.01_dp, 2, g2,                         &
+        &                   reshape([1, 2], [2, 1]), v12, raw)
+        call b%update_geometry(geom + 0.01_dp, 'cartesian')
+        call b%set_request(new_request('adiabatic', gradient=[2], nadv=reshape([1, 2], [2, 1])))
+        call b%eval(a)
+        if (.not. b%link%matches(a%id, b%id, 'adiabatic')) return
+        if (any(abs(b%link%s - r) > tol)) return
+        if (any(abs(b%wf - r) > tol)) return
+        if (any(abs(b%get_nadv('adiabatic', 1, 2) + reshape(v12, [6])) > tol)) return
+        if (any(abs(b%get_nadv('adiabatic', 2, 1) - reshape(v12, [6])) > tol)) return
+        if (b%have_grad(1) .or. .not. b%have_grad(2)) return
+
+        ! complete: gradient of state 1, and the coupling of states 2 and 3 from a recalculation
+        ! in which state 3 has the opposite sign.
+        ret = 3
+        raw = r
+        raw(:, 3) = -raw(:, 3)
+        call write_scripted(b%id, e + 0.01_dp, 1, g1, reshape([2, 3], [2, 1]), v23, raw)
+        call b%complete(new_request('adiabatic', gradient=[1, 2], nadv=reshape([2, 3], [2, 1])))
+        if (any(abs(b%wf - r) > tol)) return
+        if (any(abs(b%get_gradient('adiabatic', 1) - reshape(g1, [6])) > tol)) return
+        if (any(abs(b%get_gradient('adiabatic', 2) - reshape(g2, [6])) > tol)) return
+        if (any(abs(b%get_nadv('adiabatic', 2, 3) + reshape(v23, [6])) > tol)) return
+        if (any(abs(b%get_nadv('adiabatic', 1, 2) + reshape(v12, [6])) > tol)) return
+        ! Nothing missing: no calculation (the scripted response is for another point).
+        call write_scripted(b%id + 100, e, 1, g1, reshape([0], [2, 0]), v12, r)
+        call b%complete(new_request('mch', gradient=[2], nadv=reshape([3, 2], [2, 1])))
+
+        ! Save and load.
+        ret = 4
+        call json%initialize()
+        call json%create_object(root, '')
+        call b%save_state(json, root)
+        call setup_external(c, 'false')
+        call c%load_state(json, root)
+        call json%destroy(root)
+        if (c%id /= b%id .or. .not. c%link%matches(a%id, b%id, 'adiabatic')) return
+        if (any(c%link%t /= b%link%t) .or. any(c%wf /= b%wf)) return
+        if (any(c%energy /= b%energy) .or. any(c%grad /= b%grad) .or. any(c%nadv /= b%nadv)) return
+        if (any(c%have_grad .neqv. b%have_grad) .or. any(c%have_nadv .neqv. b%have_nadv)) return
+        if (any(c%geometry /= b%geometry) .or. c%coordinates /= b%coordinates) return
+        ret = 0
+    end function external_json_test
+
+
+    !> External evaluator of three singlets of two atoms, run with command.
+    subroutine setup_external(ext, command)
+        use external_json_mod, only : external_json_evaluator
+        type(external_json_evaluator), intent(inout) :: ext
+        character(len=*), intent(in) :: command
+
+        call ext%init(command)
+        call ext%set_model_states([3], [1], 'components')
+        call ext%set_atoms([character(len=2) :: 'H', 'H'])
+    end subroutine setup_external
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: write_scripted
+    !> @brief Write a response for point id to ext_scripted.json, with the energies, the gradient
+    !! of one state (none if grad_state is 0), the coupling vector of each pair of nacv_pair (all
+    !! equal to nacv) and the wave functions wf.
+    !----------------------------------------------------------------------------------------------
+    subroutine write_scripted(id, energy, grad_state, grad, nacv_pair, nacv, wf)
+        use global_defs, only : dp
+        use json_module, only : json_core, json_value
+        use json_util_mod, only : json_add_array
+        integer, intent(in) :: id
+        real(dp), intent(in) :: energy(:)
+        integer, intent(in) :: grad_state
+        real(dp), intent(in) :: grad(:, :) !< (3, natom)
+        integer, intent(in) :: nacv_pair(:, :)
+        real(dp), intent(in) :: nacv(:, :) !< (3, natom)
+        real(dp), intent(in) :: wf(:, :)
+        type(json_core) :: json
+        type(json_value), pointer :: root, arr, obj
+        integer :: k
+
+        call json%initialize()
+        call json%create_object(root, '')
+        call json%add(root, 'protocol', 'zaghop')
+        call json%add(root, 'version', 1)
+        call json%add(root, 'point_id', id)
+        call json%create_array(arr, 'states')
+        call json%create_object(obj, '')
+        call json%add(obj, 'multiplicity', 1)
+        call json%add(obj, 'energies', energy)
+        call json%add(arr, obj)
+        call json%add(root, arr)
+        call json%create_array(arr, 'gradients')
+        if (grad_state > 0) then
+            call json%create_object(obj, '')
+            call json%add(obj, 'multiplicity', 1)
+            call json%add(obj, 'state', grad_state)
+            call json_add_array(json, obj, 'gradient', transpose(grad))
+            call json%add(arr, obj)
+        end if
+        call json%add(root, arr)
+        call json%create_array(arr, 'nacv')
+        do k = 1, size(nacv_pair, 2)
+            call json%create_object(obj, '')
+            call json%add(obj, 'multiplicity', 1)
+            call json%add(obj, 'states', nacv_pair(:, k))
+            call json_add_array(json, obj, 'vector', transpose(nacv))
+            call json%add(arr, obj)
+        end do
+        call json%add(root, arr)
+        call json%create_array(arr, 'wave_function')
+        call json%create_object(obj, '')
+        call json%add(obj, 'multiplicity', 1)
+        call json%add(obj, 'format', 'vectors')
+        call json_add_array(json, obj, 'c', wf)
+        call json%add(arr, obj)
+        call json%add(root, arr)
+        call json%print(root, 'ext_scripted.json')
+        call json%destroy(root)
+    end subroutine write_scripted
+
+
+    pure function unit3() result(u)
+        use global_defs, only : dp
+        real(dp) :: u(3, 3)
+        integer :: i
+
+        u = 0.0_dp
+        do i = 1, 3
+            u(i, i) = 1.0_dp
+        end do
+    end function unit3
+
+
+    pure function diag3(v) result(d)
+        use global_defs, only : dp
+        real(dp), intent(in) :: v(3)
+        real(dp) :: d(3, 3)
+        integer :: i
+
+        d = 0.0_dp
+        do i = 1, 3
+            d(i, i) = v(i)
+        end do
+    end function diag3
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: external_error
+    !> @brief Cases of the external_json evaluator which should stop with an error.
+    !----------------------------------------------------------------------------------------------
+    subroutine external_error(case)
+        use global_defs, only : dp
+        use evaluator_base_mod, only : new_request
+        use external_json_mod, only : external_json_evaluator
+        use state_overlap_mod, only : last_requested_id
+        character(len=*), intent(in) :: case
+        type(external_json_evaluator) :: ext
+        real(dp) :: geom(3, 2), g(3, 2)
+        real(dp), allocatable :: grad(:)
+
+        geom = 0.0_dp
+        geom(3, 2) = 1.4_dp
+        g = 0.1_dp
+        select case(case)
+        case('external_no_response')
+            call setup_external(ext, 'true')
+        case('external_exit')
+            call setup_external(ext, 'false')
+        case('external_point_id')
+            call setup_external(ext, 'cp ext_scripted.json qm_out.json')
+            call write_scripted(last_requested_id() + 2, [0.0_dp, 0.1_dp, 0.2_dp], 1, g,         &
+            &                   reshape([0], [2, 0]), g, unit3())
+        case('external_missing_gradient')
+            call setup_external(ext, 'cp ext_scripted.json qm_out.json')
+            call write_scripted(last_requested_id() + 1, [0.0_dp, 0.1_dp, 0.2_dp], 2, g,         &
+            &                   reshape([0], [2, 0]), g, unit3())
+        case('external_not_computed')
+            call setup_external(ext, 'cp ext_scripted.json qm_out.json')
+            call write_scripted(last_requested_id() + 1, [0.0_dp, 0.1_dp, 0.2_dp], 1, g,         &
+            &                   reshape([0], [2, 0]), g, unit3())
+        case default
+            write(*, *) 'Unknown case: ', case
+            return
+        end select
+        call ext%update_geometry(geom, 'cartesian')
+        call ext%set_request(new_request('adiabatic', gradient=[1]))
+        call ext%eval()
+        grad = ext%get_gradient('adiabatic', 2)
+    end subroutine external_error
 
 
     !> Couplings h0(c, i, k) of singlet i and component c of triplet k, their derivatives

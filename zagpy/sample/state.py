@@ -1,12 +1,12 @@
 """ Select points/states for starting FSSH dynamics. """
+import json
 import os
 import shutil
 import numpy as np
 from zagpy.units import eV
 
 
-EN_FILE = 'qm_en.dat'
-ADT_FILE = 'qm_adt.dat'
+OUT_FILE = 'qm_out.json'
 
 
 def add_subparser(subparsers):
@@ -29,25 +29,56 @@ def add_subparser(subparsers):
     parser.add_argument("--target-dir", type=str, default='start_trajs',
                         help="Directory to save selected points/states.")
     parser.add_argument("dirs", nargs="+", type=str,
-                        help="Path to directories with single point calculations.")
+                        help="Path to directories with single point calculations (each with "
+                        f"the {OUT_FILE} response of eval_point).")
     parser.set_defaults(func=run)
+
+
+def read_point(cdir):
+    """ Read the response of eval_point for a single point.
+
+    Returns the energies of the singlet states, the oscillator strengths from the first state
+    (None if not in the response) and the diabatic transformation (None if not in the
+    response), with element [d, a] the coefficient of diabatic state d in adiabatic state a."""
+    with open(os.path.join(cdir, OUT_FILE), encoding="utf-8") as infile:
+        data = json.load(infile)
+    energies = None
+    for block in data["states"]:
+        if block["multiplicity"] == 1:
+            energies = np.array(block["energies"])
+    if energies is None:
+        raise ValueError(f"{cdir}/{OUT_FILE} has no singlet energies.")
+    props = data.get("properties", {})
+    oscill = props.get("oscillator_strengths")
+    adt = props.get("diabatic_transformation")
+    return (energies,
+            None if oscill is None else np.array(oscill),
+            None if adt is None else np.array(adt))
 
 
 def run(args):
     """ Execute state selection with the given parsed arguments. """
     ex_en = []
     oscill = []
+    adt = []
     for cdir in args.dirs:
         if not os.path.isdir(cdir):
             print(f"Error: {cdir} is not a valid directory.")
             return
-        en_data = np.loadtxt(os.path.join(cdir, EN_FILE))
-        ex_en.append(en_data[:, 1] - en_data[0, 1])
+        en_data, osc_data, adt_data = read_point(cdir)
+        ex_en.append(en_data - en_data[0])
         if args.weight_oscill:
-            if en_data.shape[1] < 3:
-                print(f"Error: {cdir}/{EN_FILE} has no oscillator strength column.")
+            if osc_data is None:
+                print(f"Error: {cdir}/{OUT_FILE} has no oscillator strengths "
+                      "(property oscillator_strengths of the request).")
                 return
-            oscill.append(en_data[:, 2])
+            oscill.append(osc_data)
+        if args.diabatic_state is not None:
+            if adt_data is None:
+                print(f"Error: {cdir}/{OUT_FILE} has no diabatic transformation "
+                      "(property diabatic_transformation of the request).")
+                return
+            adt.append(adt_data)
     ex_en = np.array(ex_en) * eV
 
     cmask = np.ones_like(ex_en, dtype=bool)
@@ -61,9 +92,7 @@ def run(args):
         weights = weights * np.array(oscill)
 
     if args.diabatic_state is not None:
-        adt = []
-        for cdir in args.dirs:
-            adt.append(np.loadtxt(os.path.join(cdir, ADT_FILE)))
+        # Weight of each adiabatic state: its squared overlap with the diabatic state.
         adt = np.array(adt)
         weights = weights * adt[:, args.diabatic_state - 1, :]**2
 
