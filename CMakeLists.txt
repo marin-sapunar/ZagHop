@@ -286,6 +286,7 @@ project(ZagHop LANGUAGES Fortran)
     zaghop_add_python_tests(test_granucci    GranucciTest   Granucci)
     zaghop_add_python_tests(test_vc_pyrazine VcPyrazineTest VC:Pyrazine)
     zaghop_add_python_tests(test_vc_so2      VcSo2Test      VC:SO2)
+    zaghop_add_python_tests(test_zagpy       ZagpyTest      zagpy)
     if(QUANTICS)
       # The tests run Quantics to generate the restart, dvr and oper files.
       set(_quantics_env

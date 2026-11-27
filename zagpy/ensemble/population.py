@@ -4,6 +4,7 @@ import os
 import sys
 import numpy as np
 import scipy.stats
+from zagpy.rng import add_seed_argument, make_rng
 
 
 def add_subparser(subparsers):
@@ -62,6 +63,7 @@ def add_subparser(subparsers):
         default="pop",
         metavar="NAME",
         help="Base name for the output files.")
+    add_seed_argument(parser)
     parser.set_defaults(func=run)
 
 
@@ -160,7 +162,8 @@ def run(args):
 
     population = np.nanmean(cpop, axis=0)
     if args.bootstrap:
-        conf = scipy.stats.bootstrap([cpop], np.nanmean, vectorized=True, batch=100, n_resamples=50)
+        conf = scipy.stats.bootstrap([cpop], np.nanmean, vectorized=True, batch=100,
+                                     n_resamples=50, rng=make_rng(args.seed))
         lbound = conf.confidence_interval.low
         ubound = conf.confidence_interval.high
     else:

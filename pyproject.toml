@@ -9,7 +9,7 @@ description = "ZagHop utilities for sampling and electronic structure interfaces
 requires-python = ">=3.10"
 dependencies = [
     "numpy",
-    "scipy",
+    "scipy>=1.15",
     "matplotlib"
 ]
 

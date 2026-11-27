@@ -3,6 +3,7 @@ import json
 import os
 import shutil
 import numpy as np
+from zagpy.rng import add_seed_argument, make_rng
 from zagpy.units import eV
 
 
@@ -30,7 +31,9 @@ def add_subparser(subparsers):
                         help="Directory to save selected points/states.")
     parser.add_argument("dirs", nargs="+", type=str,
                         help="Path to directories with single point calculations (each with "
-                        f"the {OUT_FILE} response of eval_point).")
+                        f"the {OUT_FILE} response of eval_point). They are sorted by name "
+                        "before the selection, so it doesn't depend on their order.")
+    add_seed_argument(parser)
     parser.set_defaults(func=run)
 
 
@@ -58,10 +61,13 @@ def read_point(cdir):
 
 def run(args):
     """ Execute state selection with the given parsed arguments. """
+    # Sorted, so that the selection for a given seed depends only on the set of directories,
+    # not on the order of the arguments (shell glob expansion).
+    dirs = sorted(args.dirs)
     ex_en = []
     oscill = []
     adt = []
-    for cdir in args.dirs:
+    for cdir in dirs:
         if not os.path.isdir(cdir):
             print(f"Error: {cdir} is not a valid directory.")
             return
@@ -106,7 +112,7 @@ def run(args):
         if wmax > 0:
             weights = weights / wmax
 
-    rng = np.random.default_rng()
+    rng = make_rng(args.seed)
     cmask = np.logical_and(cmask, rng.random(ex_en.shape) < weights)
 
     selected = []
@@ -122,7 +128,7 @@ def run(args):
         return
 
     for i, j in selected:
-        tdir = os.path.join(args.target_dir, f"{args.dirs[i]}_{j:02d}")
-        shutil.copytree(args.dirs[i], tdir)
+        tdir = os.path.join(args.target_dir, f"{dirs[i]}_{j:02d}")
+        shutil.copytree(dirs[i], tdir)
         with open(os.path.join(tdir, 'istate'), 'w') as wfile:
             wfile.write(f'{j}\n')

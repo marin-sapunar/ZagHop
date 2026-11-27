@@ -2,6 +2,7 @@
 import os
 import numpy as np
 from zagpy.normalmode import NormalModes
+from zagpy.rng import add_seed_argument, make_rng
 from zagpy.units import boltzmann_au, dalton
 
 
@@ -80,6 +81,7 @@ def add_subparser(subparsers):
                 (mass and frequency scaled) normal mode coordinates.
                 'mw_normal_mode' writes mass-weighted normal mode
                 coordinates (unit mass).""")
+    add_seed_argument(parser)
     parser.set_defaults(func=run)
 
 
@@ -101,7 +103,8 @@ def run(args):
     else:
         raise ValueError("Unsupported input format.")
 
-    sample = sample_wigner(nm.freq, args.temperature, args.npoint)
+    rng = make_rng(args.seed)
+    sample = sample_wigner(nm.freq, args.temperature, args.npoint, rng)
     cwd = os.getcwd()
     for i in range(args.npoint):
         os.mkdir("point" + str(i + 1).zfill(len(str(args.npoint))))
@@ -128,20 +131,21 @@ def run(args):
         os.chdir(cwd)
 
 
-def sample_wigner(omega, T, npoint):
-    """ Takes normal mode frequencies, temperature and number of points and
-        returns arrays containing normal mode displacements and velocities
-        sampled from Harmonic Wigner distribution """
-    sample_q = np.zeros((len(omega), npoint))
-    sample_v = np.zeros((len(omega), npoint))
+def sample_wigner(omega, T, npoint, rng):
+    """ Takes normal mode frequencies, temperature, number of points and a numpy Generator and
+        returns arrays (npoint, n_mode) containing normal mode displacements and velocities
+        sampled from Harmonic Wigner distribution.
+
+        The random numbers are drawn point by point, so the first N points are the same for
+        any npoint >= N with the same generator state. """
+    omega = np.asarray(omega)
     T_au = T * boltzmann_au
-    for i, o in enumerate(omega):
-        sigma_q = thermal_wigner_q(o, T_au)
-        sigma_v = thermal_wigner_v(o, T_au)
-        rng = np.random.default_rng()
-        sample_q[i] = rng.normal(scale=sigma_q, size=npoint) * np.sqrt(o)
-        sample_v[i] = rng.normal(scale=sigma_v, size=npoint) * np.sqrt(o)
-    return sample_q.T, sample_v.T
+    sigma_q = np.array([thermal_wigner_q(o, T_au) for o in omega])
+    sigma_v = np.array([thermal_wigner_v(o, T_au) for o in omega])
+    z = rng.standard_normal((npoint, 2, len(omega)))
+    sample_q = z[:, 0] * sigma_q * np.sqrt(omega)
+    sample_v = z[:, 1] * sigma_v * np.sqrt(omega)
+    return sample_q, sample_v
 
 
 def thermal_wigner_q(omega, T):
