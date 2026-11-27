@@ -192,62 +192,60 @@ project(ZagHop LANGUAGES Fortran)
   target_link_libraries(linalg_test zagutil ${LINALG_LIBS})
   add_test(NAME linalg_unit_test COMMAND linalg_test)
 
+  # Register a unit test executable as a single ctest test (tests/unit/run_cases.cmake). The
+  # executable runs once without arguments and passes with exit status 0, then once for each
+  # CASE <argument> <regex>, which passes if its output matches the regular expression (cases
+  # which stop with an error or print a warning). The runs are sequential, in the working
+  # directory unit_tests/<name> of the build directory. A regex can't contain ';'.
+  function(zaghop_add_unit_test name exe)
+    set(_dir ${CMAKE_BINARY_DIR}/unit_tests/${name})
+    file(MAKE_DIRECTORY ${_dir})
+    set(_defs "")
+    set(_n 0)
+    set(_args ${ARGN})
+    while(_args)
+      unset(_regex)
+      list(POP_FRONT _args _key _arg _regex)
+      if(NOT _key STREQUAL "CASE" OR NOT DEFINED _regex)
+        message(FATAL_ERROR "zaghop_add_unit_test(${name}): expected CASE <argument> <regex>.")
+      endif()
+      math(EXPR _n "${_n} + 1")
+      list(APPEND _defs "-DCASE_${_n}_ARG=${_arg}" "-DCASE_${_n}_REGEX=${_regex}")
+    endwhile()
+    add_test(NAME ${name}
+      COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:${exe}> -DN_CASE=${_n} ${_defs}
+              -P ${CMAKE_SOURCE_DIR}/tests/unit/run_cases.cmake
+      WORKING_DIRECTORY ${_dir})
+  endfunction()
+
   add_executable(pot_test tests/unit/pot_test.f90)
   target_link_libraries(pot_test zagpot zagutil jsonfortran ${LINALG_LIBS})
   target_include_directories(pot_test PRIVATE
                              $<TARGET_PROPERTY:jsonfortran,BINARY_DIR>)
-  add_test(NAME pot_unit_test COMMAND pot_test)
-  # Cases which should stop with an error.
-  add_test(NAME pot_unit_test_effective_doublet COMMAND pot_test doublet)
-  set_tests_properties(pot_unit_test_effective_doublet PROPERTIES
-    PASS_REGULAR_EXPRESSION "only implemented for singlets and triplets")
-  add_test(NAME pot_unit_test_effective_source COMMAND pot_test effective)
-  set_tests_properties(pot_unit_test_effective_source PROPERTIES
-    PASS_REGULAR_EXPRESSION "need a potential with spin_states = components")
-  add_test(NAME pot_unit_test_effective_no_coupling COMMAND pot_test no_coupling)
-  set_tests_properties(pot_unit_test_effective_no_coupling PROPERTIES
-    PASS_REGULAR_EXPRESSION "No singlet-triplet spin-orbit coupling at the reference")
-  add_test(NAME pot_unit_test_effective_unsigned_projection COMMAND pot_test unsigned_projection)
-  set_tests_properties(pot_unit_test_effective_unsigned_projection PROPERTIES
-    PASS_REGULAR_EXPRESSION "The projection model is always signed")
-  add_test(NAME pot_unit_test_model_parameter COMMAND pot_test model_parameter)
-  set_tests_properties(pot_unit_test_model_parameter PROPERTIES
-    PASS_REGULAR_EXPRESSION "Unrecognized parameter of model granucci-st: sigma")
-  add_test(NAME pot_unit_test_subset_too_many COMMAND pot_test subset_too_many)
-  set_tests_properties(pot_unit_test_subset_too_many PROPERTIES
-    PASS_REGULAR_EXPRESSION "3 states of multiplicity 1 requested, 2 available")
-  add_test(NAME pot_unit_test_subset_multiplicity COMMAND pot_test subset_multiplicity)
-  set_tests_properties(pot_unit_test_subset_multiplicity PROPERTIES
-    PASS_REGULAR_EXPRESSION "There are no states of multiplicity 2")
-  # External program (external_json evaluator).
-  foreach(_case IN ITEMS no_response exit point_id missing_gradient not_computed)
-    add_test(NAME pot_unit_test_external_${_case} COMMAND pot_test external_${_case})
-  endforeach()
-  set_tests_properties(pot_unit_test_external_no_response PROPERTIES
-    PASS_REGULAR_EXPRESSION "qm_out.json not found after running: true")
-  set_tests_properties(pot_unit_test_external_exit PROPERTIES
-    PASS_REGULAR_EXPRESSION "External program failed: false")
-  set_tests_properties(pot_unit_test_external_point_id PROPERTIES
-    PASS_REGULAR_EXPRESSION "qm_out.json: response for point [0-9]+, expected point [0-9]+")
-  set_tests_properties(pot_unit_test_external_missing_gradient PROPERTIES
-    PASS_REGULAR_EXPRESSION "Missing gradient of a requested state")
-  set_tests_properties(pot_unit_test_external_not_computed PROPERTIES
-    PASS_REGULAR_EXPRESSION "Gradient of state 2 was not computed at this point")
+  zaghop_add_unit_test(pot_unit_test pot_test
+    # Cases which should stop with an error.
+    CASE doublet "only implemented for singlets and triplets"
+    CASE effective "need a potential with spin_states = components"
+    CASE no_coupling "No singlet-triplet spin-orbit coupling at the reference"
+    CASE unsigned_projection "The projection model is always signed"
+    CASE model_parameter "Unrecognized parameter of model granucci-st: sigma"
+    CASE subset_too_many "3 states of multiplicity 1 requested, 2 available"
+    CASE subset_multiplicity "There are no states of multiplicity 2"
+    # External program (external_json evaluator).
+    CASE external_no_response "qm_out.json not found after running: true"
+    CASE external_exit "External program failed: false"
+    CASE external_point_id "qm_out.json: response for point [0-9]+, expected point [0-9]+"
+    CASE external_missing_gradient "Missing gradient of a requested state"
+    CASE external_not_computed "Gradient of state 2 was not computed at this point")
 
   add_executable(sh_test tests/unit/sh_test.f90)
   target_link_libraries(sh_test zagcore)
-  add_test(NAME sh_unit_test COMMAND sh_test)
-  # Cases which should stop with an error.
-  add_test(NAME sh_unit_test_ld_wrong_link COMMAND sh_test ld_wrong_link)
-  set_tests_properties(sh_unit_test_ld_wrong_link PROPERTIES
-    PASS_REGULAR_EXPRESSION "do not link the last point")
-  add_test(NAME sh_unit_test_initial_no_weight COMMAND sh_test initial_no_weight)
-  set_tests_properties(sh_unit_test_initial_no_weight PROPERTIES
-    PASS_REGULAR_EXPRESSION "has no weight in the states of the adiabatic basis")
-  # A warning, not an error.
-  add_test(NAME sh_unit_test_subset_crossing COMMAND sh_test subset_crossing)
-  set_tests_properties(sh_unit_test_subset_crossing PROPERTIES
-    PASS_REGULAR_EXPRESSION "Smallest singular value of the overlaps")
+  zaghop_add_unit_test(sh_unit_test sh_test
+    # Cases which should stop with an error.
+    CASE ld_wrong_link "do not link the last point"
+    CASE initial_no_weight "has no weight in the states of the adiabatic basis"
+    # A warning, not an error.
+    CASE subset_crossing "Smallest singular value of the overlaps")
 
   # Register each test_* method of a Python unittest class as a separate ctest test.
   function(zaghop_add_python_tests module class prefix)
