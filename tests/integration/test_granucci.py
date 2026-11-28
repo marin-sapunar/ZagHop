@@ -69,10 +69,29 @@ class GranucciTest(ZagHopTest):
     def test_lzsh_st_components(self):
         """ Test LZSH on granucci-st with all components, with an S -> T hop.
 
-        With r_sigma = 8, the coupling is constant around the crossing."""
+        With r_sigma = 8, the coupling is constant around the crossing. LZSH runs in the mch_sf
+        basis, with one state for the singlet and one for the triplet: the active state in the
+        diabatic multiplets (cstate_diab) and in the states of the previous point
+        (cstate_ldiab) has two columns, and states.json gives the number of states of each
+        basis."""
         self.run_traj()
         self.stdout_contains("Intersystem crossing from state 1 to state 2")
         self.compare_energy()
+        states = self.load_states()
+        self.assertEqual(states["format_version"], 3)
+        self.assertEqual(states["dynamics_basis"], "mch_sf")
+        self.assertEqual(states["n_state"], {"diabatic": 4, "adiabatic": 4, "mch": 4,
+                                             "diabatic_sf": 2, "mch_sf": 2})
+        active = self.load_results("energy.dat")[:, 1].astype(int)
+        cstate = self.load_results("cstate_diab")
+        self.assertEqual(cstate.shape, (len(active), 2), "Shape of cstate_diab.")
+        self.assertTrue(np.allclose(np.abs(cstate[np.arange(len(active)), active - 1]), 1.0),
+                        "The active state is not its diabatic multiplet.")
+        ldiab = self.load_results("cstate_ldiab")
+        self.assertEqual(ldiab.shape[1], 2, "Not 2 columns in cstate_ldiab.")
+        self.assertTrue(np.allclose((ldiab**2).sum(axis=1), 1.0), "cstate_ldiab not normalised.")
+        self.compare_results("cstate_diab")
+        self.compare_results("cstate_ldiab")
 
     def test_lzsh_st_projection(self):
         """ Test LZSH on the projection model of granucci-st, which is that of all components."""

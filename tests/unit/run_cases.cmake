@@ -2,7 +2,9 @@
 # CMakeLists.txt):
 #   cmake -DEXE=<path> -DN_CASE=<n> -DCASE_1_ARG=<arg> -DCASE_1_REGEX=<regex> ... -P run_cases.cmake
 #
-# EXE runs once without arguments and passes with exit status 0. Then it runs once with each
+# EXE runs once without arguments and passes with exit status 0 and the line "All tests passed."
+# in its output, which it writes after its last test (a test which stops in the tested code
+# ends the program early, also with exit status 0). Then it runs once with each
 # argument CASE_<i>_ARG (i = 1..N_CASE) and passes if its output (standard output and error)
 # matches the regular expression CASE_<i>_REGEX, whatever its exit status (as ctest's
 # PASS_REGULAR_EXPRESSION). Every run is reported; the output of a failed run is printed, and
@@ -13,8 +15,11 @@ get_filename_component(_name "${EXE}" NAME)
 set(_failed "")
 
 execute_process(COMMAND "${EXE}" RESULT_VARIABLE _res OUTPUT_VARIABLE _out ERROR_VARIABLE _out)
-if(_res STREQUAL "0")
+if(_res STREQUAL "0" AND _out MATCHES "All tests passed\\.")
   message("PASS  ${_name}")
+elseif(_res STREQUAL "0")
+  message("FAIL  ${_name}: stopped before the last test\n${_out}")
+  list(APPEND _failed "${_name}")
 else()
   message("FAIL  ${_name}: exit status ${_res}\n${_out}")
   list(APPEND _failed "${_name}")

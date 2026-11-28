@@ -186,7 +186,7 @@ program eval_point
         call json%create_object(obj, '')
         call json%add(obj, 'multiplicity', 1)
         call json%add(obj, 'format', 'vectors')
-        call json_add_array(json, obj, 'c', pot%adiab_trans)
+        call json_add_array(json, obj, 'c', pot%get_transformation('diabatic', 'adiabatic'))
         call json%add(arr, obj)
         call json%add(res, arr)
     end if
@@ -205,7 +205,8 @@ program eval_point
                 call fail('Oscillator strengths are only available for vibronic coupling models.')
             end select
         case('diabatic_transformation')
-            call json_add_array(json, obj, 'diabatic_transformation', pot%adiab_trans)
+            call json_add_array(json, obj, 'diabatic_transformation',                            &
+            &                   pot%get_transformation('diabatic', 'adiabatic'))
         case('diabatic_hamiltonian')
             call json_add_array(json, obj, 'diabatic_hamiltonian', pot%diab_w)
         case default

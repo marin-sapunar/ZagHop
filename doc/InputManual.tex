@@ -79,7 +79,7 @@ truncated\_gradient		&
     Gradients and nonadiabatic coupling vectors of the adiabatic states when the dynamics runs on a subset of the states of the potential (nstate) with spin-orbit couplings. Possible options: \newline
 	\tabitem [exact] Derivatives of the energies of the dynamics. They include the term from the change of the selected MCH states with the geometry (spin-orbit couplings between selected and unselected MCH states times their nonadiabatic couplings). The total energy is conserved. \newline
 	\tabitem [hellmann\_feynman] Without this term, $\mathbf{U}^T (\partial \mathbf{H} / \partial x) \mathbf{U}$ for the adiabatic states $\mathbf{U}$. This is the approximation of on-the-fly dynamics, where the states which are not selected are not known. \newline
-	The option has no effect with all states, without spin-orbit couplings or in the mch basis (LZSH).  \\
+	The option has no effect with all states, without spin-orbit couplings or in the mch and mch\_sf bases (LZSH).  \\
 
 istate \#		&
     \textbf{nstate} \newline
@@ -89,10 +89,10 @@ istate \#		&
 istate\_basis	&
     \textbf{method} \newline
     Basis of istate. Possible options: \newline
-	\tabitem [method] The basis of the surface hopping method (adiabatic for FSSH, mch for LZSH, sh\_basis for \$surfhop off). istate is the initial active state. \newline
+	\tabitem [method] The basis of the surface hopping method (adiabatic for FSSH, mch\_sf for LZSH, sh\_basis for \$surfhop off). istate is the initial active state. \newline
 	\tabitem [diabatic] Diabatic states, numbered in the order of the source of the potential (for Quantics, all spin components of a state are consecutive; for vibronic coupling templates and model potentials, the ZagHop order). \newline
 	\tabitem [adiabatic] Eigenstates of the Hamiltonian with spin-orbit couplings, within the states of the dynamics. \newline
-	If istate\_basis is not the basis of the method, istate is projected onto the states of the method basis at the initial geometry, and the initial active state $a$ is drawn with probability $|\langle i | a \rangle|^2$ (as in zagpy sample state). For LZSH, a diabatic state is projected through its spin-free state. With effective spin states, a diabatic spin component of the source is mapped to its effective state. If the dynamics runs on a subset of the states of the potential (nstate), a diabatic state is only partly in the states of the dynamics: the probabilities are divided by their sum, which is printed, and a state without weight in the states of the dynamics is an error. Not used on restart.  \\
+	If istate\_basis is not the basis of the method, istate is projected onto the states of the method basis at the initial geometry, and the initial active state $a$ is drawn with probability $|\langle i | a \rangle|^2$ (as in zagpy sample state). For LZSH, whose basis (mch\_sf) has one state for each multiplet, istate can be a diabatic or an adiabatic state: it is projected onto the MCH states with their spin components, and the probability of a multiplet is the sum over its components. With effective spin states, a diabatic spin component of the source is mapped to its effective state. If the dynamics runs on a subset of the states of the potential (nstate), a diabatic state is only partly in the states of the dynamics: the probabilities are divided by their sum, which is printed, and a state without weight in the states of the dynamics is an error. Not used on restart.  \\
 
 geometry 		&
     \textbf{geom} \newline
@@ -154,11 +154,12 @@ results\_dir &
 	\tabitem [7]   overlap, overlap matrix for each step. \newline
 	\tabitem [10]  oscill.dat, QM oscillator strengths. \newline
 	\tabitem [11]  qm\_traj.xyz, XYZ file containing only QM atoms. \newline
-	\tabitem [20]  trans\_ldiab, the orthogonalised overlaps between the adiabatic states of the previous and of the current step. \newline
+	\tabitem [20]  trans\_ldiab, the orthogonalised overlaps between the states of the previous and of the current step, in the basis of the dynamics (the adiabatic basis for FSSH). Not written at the first step. \newline
 	\tabitem [21]  trans\_diab, the adiabatic states in the diabatic basis. One line for each adiabatic state, with its coefficients in all diabatic states of the potential, also when the dynamics runs on a subset of the states (nstate). \newline
 	\tabitem [22]  trans\_adiab, the adiabatic states in the adiabatic basis (unit matrix). \newline
-	\tabitem [30]  cstate\_ldiab, [31] cstate\_diab, [32] cstate\_adiab: the active state in the same bases. cstate\_diab has all diabatic states of the potential and is normalised. \newline
-	The file states.json in the results directory gives the number of states of each basis and the multiplicities of the states of the dynamics and of all states of the potential (model). \\
+	\tabitem [30]  cstate\_ldiab, [31] cstate\_diab, [32] cstate\_adiab: the active state in the same bases. cstate\_diab has all diabatic states of the potential and is normalised. For dynamics with one state for each multiplet (LZSH, sh\_basis mch\_sf), cstate\_diab has one column for each spin-free diabatic state, and cstate\_adiab is not available. \newline
+	\tabitem [41]  qpop\_diab, [42] qpop\_adiab, [43] qpop\_mch: populations $|c|^2$ of the states of each basis, computed from the coefficients of the electronic wave function (one line per printed step). Each file has one column for each state of its basis with its spin components: qpop\_diab for all diabatic states of the potential, qpop\_adiab and qpop\_mch for the states of the dynamics. The populations of the components of an MCH state depend on the choice of the components; their sum does not (zagpy ensemble population -{}-sum-mult). Only for surface hopping methods with coefficients (LD-FSSH), and for potentials which give the basis: an external program (qm) gives only the adiabatic and MCH bases, which are the same. \newline
+	The file states.json in the results directory gives the basis of the dynamics, the number of states of each basis (diabatic, mch and adiabatic with the spin components; diabatic\_sf and mch\_sf with one state for each multiplet) and the multiplicities of the states of the dynamics and of all states of the potential (model). \\
 
 printerval \#	&
 	\textbf{1} \newline
@@ -243,10 +244,11 @@ Possible methods: \newline
 \begin{tabularx}{\textwidth}{ m{2.5cm} X }
 sh\_basis	&
 	\textbf{adiabatic}	\newline
-	Off only. Basis of the state on which the dynamics are performed. The initial state (istate) is a state of this basis. Possible options: \newline
+	Off only. Basis of the state on which the dynamics are performed. The initial state (istate) is a state of this basis, and energy.dat has the energies of its states. Possible options: \newline
 	\tabitem [adiabatic] Eigenstates of the Hamiltonian with spin-orbit couplings, within the states of the dynamics (the diagonal representation of SHARC). \newline
 	\tabitem [diabatic] Diabatic states of the potential. All states of the potential, also when the dynamics runs on a subset of the states (nstate). \newline
-	\tabitem [mch] Eigenstates of the spin-free Hamiltonian (molecular Coulomb Hamiltonian, MCH) within each multiplicity, one state for each spin-free state of the dynamics. Unlike in the MCH representation of SHARC, the spin components of a multiplet are not separate states. This basis was called spin\_free in earlier versions. \\
+	\tabitem [mch] Eigenstates of the spin-free Hamiltonian (molecular Coulomb Hamiltonian, MCH) within each multiplicity, with a state for each spin component (the MCH representation of SHARC): the singlets, then the states of the first component of each higher multiplicity, of the second component, and so on. All components of a multiplet have the same energy and gradient. \newline
+	\tabitem [mch\_sf] The MCH states with one state for each multiplet (spin-free state) of the dynamics. This is the basis of LZSH. It was called mch, and before that spin\_free, in earlier versions. \\
 
 tdse\_steps \#	&
 	\textbf{1}	\newline

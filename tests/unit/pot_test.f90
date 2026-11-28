@@ -115,6 +115,8 @@ program pot_test
         call get_command_argument(1, arg)
         if (index(arg, 'external_') == 1) then
             call external_error(trim(arg))
+        else if (index(arg, 'transform_') == 1) then
+            call transform_error(trim(arg))
         else
             call effective_error(trim(arg))
         end if
@@ -236,7 +238,477 @@ program pot_test
         stop ret
     end if
 
+    ret = basis_test()
+    if (ret /= 0) then
+        write(*,*) "Error in basis_test."
+        stop ret
+    end if
+
+    ret = populations_test()
+    if (ret /= 0) then
+        write(*,*) "Error in populations_test."
+        stop ret
+    end if
+
+    ret = transform_test()
+    if (ret /= 0) then
+        write(*,*) "Error in transform_test."
+        stop ret
+    end if
+
+    ! A test which stops in the tested code ends the program with exit status 0. This line is
+    ! required by tests/unit/run_cases.cmake.
+    write(*, *) 'All tests passed.'
+
     contains
+
+
+    !> Populations from the coefficients, |transform(from, to, c)|**2.
+    !! - Singlet and two triplets of mch_test, with spin-orbit couplings: from normalised
+    !!   adiabatic coefficients c, the populations of the adiabatic, mch and diabatic bases sum to
+    !!   1, the adiabatic ones are |c|**2 and the diabatic ones |U c|**2. From the diabatic
+    !!   coefficients U c, the populations are the same.
+    !! - The mch populations summed over the spin components (sum_components) are
+    !!   sum_c |sum_k mch_trans(k, a) d(k, c)|**2, with d the diabatic coefficients.
+    !! - The same without spin-orbit couplings: the adiabatic states are the MCH states, so the
+    !!   summed populations of both bases are the same for each MCH state.
+    !! - A rotation of the triplet components of the diabatic coefficients changes the mch
+    !!   populations of the components, but not their sums.
+    !! - S1 and T1 of the linear model (subset): the populations of all bases sum to 1.
+    !! - Effective spin states: the mch populations are those of the spin-free states.
+    integer function populations_test() result(ret)
+        use global_defs, only : dp
+        use pot_test_mod, only : group_evaluator, linear_evaluator
+        type(group_evaluator) :: pot, pot0, pot_eff
+        type(linear_evaluator) :: sub
+        real(dp) :: h(2, 3), r(3, 3), h0(3, 2, 2), h1(3, 2, 2, 2), x0(3, 3), x1(3, 3, 2)
+        real(dp), allocatable :: u(:, :), p_ad(:), p_di(:), p_mch(:), p_sf(:), p_ref(:)
+        real(dp), allocatable :: e_ad(:), e_mch(:), sum_ad(:)
+        complex(dp), allocatable :: c(:), d(:), d_rot(:)
+        complex(dp) :: amp
+        real(dp), parameter :: tol = 1.0e-12_dp
+        integer :: i, k, cc, a
+
+        h = reshape([1.0e-4_dp, 2.0e-4_dp, -3.0e-4_dp, 0.5e-4_dp, 0.0_dp, 4.0e-4_dp], [2, 3])
+
+        ! Sums, adiabatic and diabatic populations.
+        ret = 1
+        call set_st_model(pot, 'components', 0.03_dp, h)
+        c = test_coefficients(7)
+        u = pot%get_transformation('diabatic', 'adiabatic')
+        p_ad = abs(pot%transform('adiabatic', 'adiabatic', c))**2
+        p_di = abs(pot%transform('adiabatic', 'diabatic', c))**2
+        p_mch = abs(pot%transform('adiabatic', 'mch', c))**2
+        if (size(p_ad) /= 7 .or. size(p_di) /= 7 .or. size(p_mch) /= 7) return
+        if (abs(sum(p_ad) - 1.0_dp) > tol .or. abs(sum(p_di) - 1.0_dp) > tol) return
+        if (abs(sum(p_mch) - 1.0_dp) > tol) return
+        if (any(abs(p_ad - abs(c)**2) > tol)) return
+        d = matmul(u, c)
+        if (any(abs(p_di - abs(d)**2) > tol)) return
+        ret = 2
+        if (any(abs(abs(pot%transform('diabatic', 'adiabatic', d))**2 - p_ad) > tol)) return
+        if (any(abs(abs(pot%transform('diabatic', 'diabatic', d))**2 - p_di) > tol)) return
+        if (any(abs(abs(pot%transform('diabatic', 'mch', d))**2 - p_mch) > tol)) return
+
+        ! Summed over the components (state 1 + (c - 1) * 2 + k is component c of T_k).
+        ret = 3
+        p_sf = pot%states%sum_components(p_mch)
+        allocate(p_ref(3), source=0.0_dp)
+        p_ref(1) = abs(d(1))**2
+        do a = 2, 3
+            do cc = 1, 3
+                amp = sum(pot%mch_trans(2:3, a) * d(1 + (cc - 1) * 2 + [1, 2]))
+                p_ref(a) = p_ref(a) + abs(amp)**2
+            end do
+        end do
+        if (size(p_sf) /= 3 .or. any(abs(p_sf - p_ref) > tol)) return
+        if (abs(sum(p_sf) - 1.0_dp) > tol) return
+
+        ! Without spin-orbit couplings, the adiabatic states are the MCH states.
+        ret = 4
+        call set_st_model(pot0, 'components', 0.03_dp, 0.0_dp * h)
+        p_ad = abs(pot0%transform('adiabatic', 'adiabatic', c))**2
+        p_sf = pot0%states%sum_components(abs(pot0%transform('adiabatic', 'mch', c))**2)
+        e_ad = pot0%get_energy('adiabatic')
+        e_mch = pot0%get_energy('mch_sf')
+        allocate(sum_ad(3), source=0.0_dp)
+        do i = 1, 7
+            a = minloc(abs(e_mch - e_ad(i)), dim=1)
+            if (abs(e_mch(a) - e_ad(i)) > 1.0e-10_dp) return
+            sum_ad(a) = sum_ad(a) + p_ad(i)
+        end do
+        if (any(abs(p_sf - sum_ad) > tol)) return
+
+        ! Rotation of the triplet components.
+        ret = 5
+        r = reshape([0.6_dp, 0.8_dp, 0.0_dp, -0.8_dp, 0.6_dp, 0.0_dp, 0.0_dp, 0.0_dp, 1.0_dp],    &
+        &           [3, 3])
+        r = matmul(r, reshape([1.0_dp, 0.0_dp, 0.0_dp, 0.0_dp, 0.28_dp, 0.96_dp, 0.0_dp,          &
+        &                      -0.96_dp, 0.28_dp], [3, 3]))
+        d = test_coefficients(7)
+        d_rot = d
+        do k = 1, 2
+            do cc = 1, 3
+                d_rot(1 + (cc - 1) * 2 + k) = sum(r(cc, :) * d(1 + [0, 2, 4] + k))
+            end do
+        end do
+        if (abs(sum(abs(d_rot)**2) - 1.0_dp) > tol) return
+        p_mch = abs(pot%transform('diabatic', 'mch', d))**2
+        p_ref = abs(pot%transform('diabatic', 'mch', d_rot))**2
+        if (all(abs(p_ref - p_mch) < 1.0e-3_dp)) return
+        if (any(abs(pot%states%sum_components(p_ref) - pot%states%sum_components(p_mch))         &
+        &       > tol)) return
+
+        ! Subset: 4 adiabatic states, 8 diabatic states, 4 MCH states (2 multiplets).
+        ret = 6
+        call general_couplings(h0, h1, x0, x1)
+        call set_linear_model(sub, h0, h1, x0, x1)
+        call sub%select_states([1, 1], [1, 3])
+        call sub%update_geometry(reshape([0.1_dp, 0.2_dp], [1, 2]), 'model')
+        call sub%eval()
+        c = test_coefficients(4)
+        p_di = abs(sub%transform('adiabatic', 'diabatic', c))**2
+        p_mch = abs(sub%transform('adiabatic', 'mch', c))**2
+        if (size(p_di) /= 8 .or. size(p_mch) /= 4) return
+        if (abs(sum(p_di) - 1.0_dp) > tol .or. abs(sum(p_mch) - 1.0_dp) > tol) return
+        if (size(sub%states%sum_components(p_mch)) /= 2) return
+        d = matmul(sub%get_transformation('diabatic', 'adiabatic'), c)
+        if (any(abs(abs(sub%transform('diabatic', 'adiabatic', d))**2 - abs(c)**2) > tol)) return
+
+        ! Effective spin states: one state for each multiplet in both spaces.
+        ret = 7
+        call set_st_model(pot_eff, 'effective_rss', 0.03_dp, h)
+        c = test_coefficients(3)
+        p_mch = abs(pot_eff%transform('adiabatic', 'mch', c))**2
+        if (size(p_mch) /= 3 .or. abs(sum(p_mch) - 1.0_dp) > tol) return
+        if (any(pot_eff%states%sum_components(p_mch) /= p_mch)) return
+        ret = 0
+    end function populations_test
+
+
+    !----------------------------------------------------------------------------------------------
+    !> Transformations between the bases (can_transform, get_transformation, transform).
+    !! - can_transform for the singlet and two triplets of mch_test (all states selected), the
+    !!   linear model with S1 and T1 selected, effective spin states and an external program:
+    !!   only within a space, and without the diabatic bases for the external program.
+    !!   get_transformation gives a matrix with the sizes of the two bases for each pair where
+    !!   can_transform is true.
+    !! - Composition: diabatic -> adiabatic is adiab_trans of the evaluator and the product of
+    !!   diabatic -> mch and mch -> adiabatic; the columns of each are orthonormal, also for the
+    !!   subset (rectangular); diabatic_sf -> mch_sf is the same for every component of diabatic
+    !!   -> mch.
+    !! - Coefficients: transform gives T^T c, also for the subset. Coefficients in the adiabatic
+    !!   states, transformed to the diabatic or mch basis and back, are unchanged.
+    !! - Operators: the Hamiltonians of the diabatic and mch bases are diagonal in the adiabatic
+    !!   basis, with the adiabatic energies (U^T H U = V^T H_sub V), and the spin-free Hamiltonian
+    !!   is diagonal in the mch_sf basis. The Hamiltonian of the mch basis has the energies of the
+    !!   spin-free states on the diagonal.
+    !! - Without spin-orbit couplings, mch -> adiabatic takes each adiabatic state to one MCH
+    !!   state of the same energy.
+    !! - Equal bases: both specifics return their argument. Effective spin states: the
+    !!   transformations of both spaces are the same.
+    !----------------------------------------------------------------------------------------------
+    integer function transform_test() result(ret)
+        use global_defs, only : dp
+        use pot_test_mod, only : group_evaluator, linear_evaluator
+        use external_json_mod, only : external_json_evaluator
+        use matrix_mod, only : diag, unit_mat
+        type(group_evaluator) :: pot, pot0, pot_eff
+        type(linear_evaluator) :: sub
+        type(external_json_evaluator) :: ext
+        !> can_transform(bases(i), bases(j)) for the bases diabatic, mch, adiabatic, diabatic_sf,
+        !! mch_sf: for potentials with diabatic states, and for the external evaluator.
+        logical, parameter :: y = .true., n = .false.
+        logical, parameter :: diab_table(5, 5) = reshape([y, y, y, n, n,                         &
+        &                                                 y, y, y, n, n,                         &
+        &                                                 y, y, y, n, n,                         &
+        &                                                 n, n, n, y, y,                         &
+        &                                                 n, n, n, y, y], [5, 5])
+        logical, parameter :: ext_table(5, 5) = reshape([n, n, n, n, n,                          &
+        &                                                n, y, y, n, n,                          &
+        &                                                n, y, y, n, n,                          &
+        &                                                n, n, n, n, n,                          &
+        &                                                n, n, n, n, y], [5, 5])
+        integer, parameter :: sel(4) = [1, 3, 5, 7] !< S1 and the three components of T1.
+        real(dp) :: h(2, 3), h0(3, 2, 2), h1(3, 2, 2, 2), x0(3, 3), x1(3, 3, 2)
+        real(dp), allocatable :: u(:, :), p(:, :), v(:, :), p_sf(:, :), w(:, :), e(:), e_sf(:)
+        complex(dp), allocatable :: c(:), d(:)
+        real(dp), parameter :: tol = 1.0e-12_dp
+        integer :: i
+
+        h = reshape([1.0e-4_dp, 2.0e-4_dp, -3.0e-4_dp, 0.5e-4_dp, 0.0_dp, 4.0e-4_dp], [2, 3])
+        call set_st_model(pot, 'components', 0.03_dp, h)
+        call set_st_model(pot0, 'components', 0.03_dp, 0.0_dp * h)
+        call set_st_model(pot_eff, 'effective_rss', 0.03_dp, h)
+        call general_couplings(h0, h1, x0, x1)
+        call set_linear_model(sub, h0, h1, x0, x1)
+        call sub%select_states([1, 1], [1, 3])
+        call sub%update_geometry(reshape([0.1_dp, 0.2_dp], [1, 2]), 'model')
+        call sub%eval()
+        call setup_external(ext, 'true')
+
+        ! Available transformations.
+        ret = 1
+        if (.not. pot%has_diabatic() .or. ext%has_diabatic()) return
+        if (.not. transform_table_ok(pot, diab_table, .true.)) return
+        if (.not. transform_table_ok(sub, diab_table, .true.)) return
+        if (.not. transform_table_ok(pot_eff, diab_table, .true.)) return
+        if (.not. transform_table_ok(ext, ext_table, .false.)) return
+        if (pot%can_transform('mch', 'spin_free') .or. pot%can_transform('x', 'x')) return
+
+        ! Composition, all states.
+        ret = 2
+        u = pot%get_transformation('diabatic', 'adiabatic')
+        p = pot%get_transformation('diabatic', 'mch')
+        v = pot%get_transformation('mch', 'adiabatic')
+        p_sf = pot%get_transformation('diabatic_sf', 'mch_sf')
+        if (any(u /= pot%adiab_trans) .or. any(u /= matmul(p, v))) return
+        if (any(v /= pot%adiab_vec) .or. any(p_sf /= pot%mch_trans)) return
+        if (any(p /= pot%model_states%expand(pot%mch_trans))) return
+        if (any(abs(matmul(transpose(v), v) - unit_mat(7)) > tol)) return
+        if (any(abs(matmul(transpose(p), p) - unit_mat(7)) > tol)) return
+        if (any(pot%get_transformation('adiabatic', 'mch') /= transpose(v))) return
+        if (any(pot%get_transformation('mch', 'diabatic') /= transpose(p))) return
+        if (any(pot%get_transformation('mch_sf', 'diabatic_sf') /= transpose(p_sf))) return
+
+        ! Composition, subset: S1 and T1 of two singlets and two triplets.
+        ret = 3
+        u = sub%get_transformation('diabatic', 'adiabatic')
+        p = sub%get_transformation('diabatic', 'mch')
+        v = sub%get_transformation('mch', 'adiabatic')
+        p_sf = sub%get_transformation('diabatic_sf', 'mch_sf')
+        if (any(shape(u) /= [8, 4]) .or. any(shape(p) /= [8, 4])) return
+        if (any(shape(v) /= [4, 4]) .or. any(shape(p_sf) /= [4, 2])) return
+        if (any(u /= sub%adiab_trans) .or. any(u /= matmul(p, v))) return
+        if (any(p_sf /= sub%mch_trans(:, [1, 3]))) return
+        w = sub%model_states%expand(sub%mch_trans)
+        if (any(p /= w(:, sel))) return
+        if (any(abs(matmul(transpose(v), v) - unit_mat(4)) > tol)) return
+        if (any(abs(matmul(transpose(p), p) - unit_mat(4)) > tol)) return
+        if (any(abs(matmul(transpose(p_sf), p_sf) - unit_mat(2)) > tol)) return
+
+        ! Coefficients.
+        ret = 4
+        c = test_coefficients(7)
+        u = pot%get_transformation('diabatic', 'adiabatic')
+        v = pot%get_transformation('mch', 'adiabatic')
+        d = pot%transform('adiabatic', 'diabatic', c)
+        if (any(abs(d - matmul(u, c)) > tol)) return
+        if (any(abs(pot%transform('diabatic', 'adiabatic', d) - c) > tol)) return
+        d = pot%transform('adiabatic', 'mch', c)
+        if (any(abs(d - matmul(v, c)) > tol)) return
+        if (any(abs(pot%transform('mch', 'adiabatic', d) - c) > tol)) return
+        c = test_coefficients(4)
+        u = sub%get_transformation('diabatic', 'adiabatic')
+        d = sub%transform('adiabatic', 'diabatic', c)
+        if (size(d) /= 8 .or. any(abs(d - matmul(u, c)) > tol)) return
+        if (any(abs(sub%transform('diabatic', 'adiabatic', d) - c) > tol)) return
+        d = test_coefficients(8)
+        c = sub%transform('diabatic', 'adiabatic', d)
+        if (size(c) /= 4 .or. any(abs(c - matmul(transpose(u), d)) > tol)) return
+        c = test_coefficients(4)
+        d = sub%transform('diabatic_sf', 'mch_sf', c)
+        if (size(d) /= 2) return
+
+        ! Operators.
+        ret = 5
+        e = pot%get_energy('adiabatic')
+        w = pot%transform('diabatic', 'adiabatic', pot%diab_w)
+        if (any(shape(w) /= [7, 7]) .or. any(abs(w - diag(e)) > tol)) return
+        w = pot%get_Hamiltonian('mch')
+        e_sf = pot%get_energy('mch_sf')
+        if (any(shape(w) /= [7, 7])) return
+        if (any(abs(diag(w) - e_sf([1, 2, 3, 2, 3, 2, 3])) > tol)) return
+        if (any(abs(w - pot%transform('diabatic', 'mch', pot%diab_w)) > tol)) return
+        if (any(abs(pot%transform('mch', 'adiabatic', w) - diag(e)) > tol)) return
+        w = pot%transform('diabatic_sf', 'mch_sf', pot%sf_w)
+        if (any(abs(w - diag(e_sf)) > tol)) return
+        if (any(abs(pot%get_Hamiltonian('mch_sf') - diag(e_sf)) > tol)) return
+        if (any(pot%get_Hamiltonian('diabatic_sf') /= pot%sf_w)) return
+        e = sub%get_energy('adiabatic')
+        w = sub%transform('diabatic', 'adiabatic', sub%diab_w)
+        if (any(shape(w) /= [4, 4]) .or. any(abs(w - diag(e)) > tol)) return
+        if (any(abs(sub%transform('adiabatic', 'diabatic', w)                                   &
+        &           - matmul(matmul(u, w), transpose(u))) > tol)) return
+        w = sub%get_Hamiltonian('mch')
+        if (any(shape(w) /= [4, 4])) return
+        if (any(abs(sub%transform('mch', 'adiabatic', w) - diag(e)) > tol)) return
+        if (any(abs(w - sub%transform('diabatic', 'mch', sub%diab_w)) > tol)) return
+
+        ! Without spin-orbit couplings, each adiabatic state is one MCH state, with its energy
+        ! (the adiabatic states are in the order of their energies, the MCH states in that of
+        ! the spin components).
+        ret = 6
+        v = pot0%get_transformation('mch', 'adiabatic')
+        e = pot0%get_energy('adiabatic')
+        e_sf = pot0%get_energy('mch')
+        do i = 1, 7
+            if (count(abs(abs(v(:, i)) - 1.0_dp) < tol) /= 1) return
+            if (count(abs(v(:, i)) < tol) /= 6) return
+            if (abs(e_sf(maxloc(abs(v(:, i)), dim=1)) - e(i)) > tol) return
+        end do
+        if (any(abs(pot0%get_Hamiltonian('mch') - diag(pot0%get_energy('mch'))) > tol)) return
+
+        ! Equal bases, and effective spin states.
+        ret = 7
+        c = test_coefficients(7)
+        if (any(pot%transform('adiabatic', 'adiabatic', c) /= c)) return
+        if (any(pot%transform('diabatic', 'diabatic', pot%diab_w) /= pot%diab_w)) return
+        c = test_coefficients(4)
+        if (any(sub%transform('mch', 'mch', c) /= c)) return
+        c = test_coefficients(2)
+        if (any(sub%transform('mch_sf', 'mch_sf', c) /= c)) return
+        if (any(pot_eff%get_transformation('diabatic', 'mch')                                    &
+        &       /= pot_eff%get_transformation('diabatic_sf', 'mch_sf'))) return
+        ret = 0
+    end function transform_test
+
+
+    !> can_transform(bases(i), bases(j)) of p is table(i, j) for the bases diabatic, mch,
+    !! adiabatic, diabatic_sf and mch_sf. With evaluated, get_transformation gives a matrix with
+    !! the sizes of the two bases for each pair where it is true.
+    logical function transform_table_ok(p, table, evaluated) result(ok)
+        use evaluator_base_mod, only : potential_evaluator
+        class(potential_evaluator), intent(in) :: p
+        logical, intent(in) :: table(5, 5)
+        logical, intent(in) :: evaluated
+        character(len=11), parameter :: bases(5) = [character(len=11) :: 'diabatic', 'mch',      &
+        &   'adiabatic', 'diabatic_sf', 'mch_sf']
+        character(len=:), allocatable :: from, to
+        integer :: i, j
+
+        ok = .false.
+        do j = 1, 5
+            do i = 1, 5
+                from = trim(bases(i))
+                to = trim(bases(j))
+                if (p%can_transform(from, to) .neqv. table(i, j)) return
+                if (.not. table(i, j) .or. .not. evaluated) cycle
+                if (any(shape(p%get_transformation(from, to))                                    &
+                &       /= [p%basis_size(from), p%basis_size(to)])) return
+            end do
+        end do
+        ok = .true.
+    end function transform_table_ok
+
+
+    !> Names of the bases (basis_mod) and the number of states of each basis: one singlet and two
+    !! triplets with components and as effective states, S1 and T1 of two singlets and two
+    !! triplets, and three singlets of an external program.
+    integer function basis_test() result(ret)
+        use basis_mod, only : basis_known, basis_is_spin_free, basis_full, basis_like
+        use pot_test_mod, only : group_evaluator, linear_evaluator
+        use external_json_mod, only : external_json_evaluator
+        use global_defs, only : dp
+        type(group_evaluator) :: pot, pot_eff
+        type(linear_evaluator) :: sub
+        type(external_json_evaluator) :: ext
+        real(dp) :: h0(3, 2, 2), h1(3, 2, 2, 2), x0(3, 3), x1(3, 3, 2)
+
+        ret = 1
+        if (.not. (basis_known('diabatic') .and. basis_known('mch') .and. basis_known('adiabatic') &
+        &          .and. basis_known('diabatic_sf') .and. basis_known('mch_sf'))) return
+        if (basis_known('spin_free') .or. basis_known('adiabatic_sf') .or. basis_known('')) return
+        if (.not. (basis_is_spin_free('diabatic_sf') .and. basis_is_spin_free('mch_sf'))) return
+        if (basis_is_spin_free('diabatic') .or. basis_is_spin_free('mch')) return
+        if (basis_is_spin_free('adiabatic')) return
+        ret = 2
+        if (basis_full('mch_sf') /= 'mch' .or. basis_full('diabatic_sf') /= 'diabatic') return
+        if (basis_full('mch') /= 'mch' .or. basis_full('adiabatic') /= 'adiabatic') return
+        if (basis_like('diabatic', 'mch_sf') /= 'diabatic_sf') return
+        if (basis_like('diabatic', 'adiabatic') /= 'diabatic') return
+        if (basis_like('diabatic_sf', 'mch') /= 'diabatic') return
+        if (basis_like('mch', 'diabatic_sf') /= 'mch_sf') return
+        if (basis_like('adiabatic', 'mch') /= 'adiabatic') return
+
+        ret = 3
+        call pot%set_model_states([1, 2], [1, 3], 'components')
+        if (any(basis_sizes(pot) /= [7, 7, 7, 3, 3])) return
+        call pot_eff%set_model_states([1, 2], [1, 3], 'effective_rss')
+        if (any(basis_sizes(pot_eff) /= [3, 3, 3, 3, 3])) return
+        call general_couplings(h0, h1, x0, x1)
+        call set_linear_model(sub, h0, h1, x0, x1)
+        call sub%select_states([1, 1], [1, 3])
+        if (any(basis_sizes(sub) /= [8, 4, 4, 4, 2])) return
+        call setup_external(ext, 'true')
+        if (any(basis_sizes(ext) /= [3, 3, 3, 3, 3])) return
+        ret = 0
+    end function basis_test
+
+
+    !> Sizes of the bases diabatic, mch, adiabatic, diabatic_sf and mch_sf.
+    function basis_sizes(p) result(n)
+        use evaluator_base_mod, only : potential_evaluator
+        class(potential_evaluator), intent(in) :: p
+        integer :: n(5)
+
+        n = [p%basis_size('diabatic'), p%basis_size('mch'), p%basis_size('adiabatic'),           &
+        &    p%basis_size('diabatic_sf'), p%basis_size('mch_sf')]
+    end function basis_sizes
+
+
+    !----------------------------------------------------------------------------------------------
+    ! SUBROUTINE: transform_error
+    !> @brief Transformations which should stop with an error.
+    !> @details
+    !! - transform_spaces - Between a basis with one state for each multiplet and a basis with
+    !!   the spin components.
+    !! - transform_no_diabatic - To the diabatic basis of an external program.
+    !! - transform_wrong_point - From the states of a point which is not the previous point.
+    !! - transform_no_link - From the states of another point, at a first point.
+    !----------------------------------------------------------------------------------------------
+    subroutine transform_error(case)
+        use global_defs, only : dp
+        use pot_test_mod, only : group_evaluator, linear_evaluator
+        use external_json_mod, only : external_json_evaluator
+        character(len=*), intent(in) :: case
+        type(group_evaluator) :: pot
+        type(linear_evaluator) :: pot1, pot2, pot3
+        type(external_json_evaluator) :: ext
+        real(dp) :: h(2, 3), h0(3, 2, 2), h1(3, 2, 2, 2), x0(3, 3), x1(3, 3, 2)
+        real(dp), allocatable :: t(:, :)
+        complex(dp), allocatable :: c(:)
+
+        select case(case)
+        case('transform_spaces')
+            h = 1.0e-4_dp
+            call set_st_model(pot, 'components', 0.03_dp, h)
+            t = pot%get_transformation('mch_sf', 'adiabatic')
+        case('transform_no_diabatic')
+            call setup_external(ext, 'true')
+            c = ext%transform('adiabatic', 'diabatic', test_coefficients(3))
+        case('transform_wrong_point', 'transform_no_link')
+            call general_couplings(h0, h1, x0, x1)
+            call set_linear_model(pot1, h0, h1, x0, x1)
+            call pot1%update_geometry(reshape([0.1_dp, 0.2_dp], [1, 2]), 'model')
+            call pot1%eval()
+            if (case == 'transform_no_link') then
+                t = pot1%get_transformation('adiabatic', 'adiabatic', from_point=pot1%id + 100)
+                return
+            end if
+            pot2 = pot1
+            call pot2%eval(pot1)
+            pot3 = pot2
+            call pot3%eval(pot2)
+            t = pot3%get_transformation('adiabatic', 'adiabatic', from_point=pot1%id)
+        case default
+            write(*, *) 'Unknown case: ', case
+        end select
+    end subroutine transform_error
+
+
+    !> Normalised complex coefficients with all elements different from zero.
+    function test_coefficients(n) result(c)
+        use global_defs, only : dp
+        integer, intent(in) :: n
+        complex(dp) :: c(n)
+        integer :: k
+
+        do k = 1, n
+            c(k) = cmplx(cos(0.7_dp * k) + 1.5_dp, sin(1.3_dp * k), kind=dp)
+        end do
+        c = c / norm2(abs(c))
+    end function test_coefficients
 
 
     !> A point saved with save_state and loaded into a new evaluator gives the same state, and the
@@ -442,10 +914,11 @@ program pot_test
     integer function link_test() result(ret)
         use global_defs, only : dp
         use matrix_mod, only : unit_mat
+        use evaluator_base_mod, only : new_request
         use pot_test_mod, only : linear_evaluator
         type(linear_evaluator) :: pot1, pot2, pot3
-        real(dp) :: h0(3, 2, 2), h1(3, 2, 2, 2), x0(3, 3), x1(3, 3, 2)
-        real(dp), allocatable :: s(:, :)
+        real(dp) :: h0(3, 2, 2), h1(3, 2, 2, 2), x0(3, 3), x1(3, 3, 2), x(1, 2)
+        real(dp), allocatable :: s(:, :), t(:, :), u(:, :)
         real(dp), parameter :: tol = 1.0e-12_dp
         integer :: i
 
@@ -454,7 +927,9 @@ program pot_test
         call pot1%update_geometry(reshape([0.1_dp, 0.2_dp], [1, 2]), 'model')
         call pot1%eval()
         ret = 1
-        if (pot1%id <= 0 .or. pot1%link%valid()) return
+        if (pot1%id <= 0 .or. pot1%link%valid() .or. pot1%previous_point() /= 0) return
+        if (pot1%id_diab <= 0 .or. pot1%id_diab == pot1%id) return
+        if (.not. pot1%diab%matches(pot1%id_diab, 'diabatic_sf', pot1%id, 'mch_sf')) return
 
         ! The next point, as in the trajectory data a copy of the previous one, after a small step.
         ret = 2
@@ -463,7 +938,10 @@ program pot_test
         &                         'model')
         call pot2%eval(pot1)
         if (pot2%id == pot1%id) return
-        if (.not. pot2%link%matches(pot1%id, pot2%id, 'adiabatic')) return
+        if (.not. pot2%link%matches(pot1%id, 'adiabatic', pot2%id, 'adiabatic')) return
+        if (pot2%link%matches(pot1%id, 'mch', pot2%id, 'mch')) return
+        if (pot2%id_diab /= pot1%id_diab) return
+        if (.not. pot2%diab%matches(pot1%id_diab, 'diabatic_sf', pot2%id, 'mch_sf')) return
         s = matmul(transpose(pot1%adiab_trans), pot2%adiab_trans)
         if (any(pot2%link%s /= s)) return
         if (any(abs(pot2%link%t - s) > tol)) return
@@ -484,8 +962,59 @@ program pot_test
         pot3 = pot2
         call pot3%update_geometry(reshape([0.1_dp + 2.0e-6_dp, 0.2_dp], [1, 2]), 'model')
         call pot3%eval(pot2)
-        if (.not. pot3%link%matches(pot2%id, pot3%id, 'adiabatic')) return
-        if (pot3%link%matches(pot1%id, pot3%id, 'adiabatic')) return
+        if (.not. pot3%link%matches(pot2%id, 'adiabatic', pot3%id, 'adiabatic')) return
+        if (pot3%link%matches(pot1%id, 'adiabatic', pot3%id, 'adiabatic')) return
+
+        ! The states of the previous point through get_transformation: the orthogonalised
+        ! overlaps, their transpose in the other direction, and followed by the transformation
+        ! to another basis of this point. The id of the point itself gives its own states.
+        ret = 5
+        if (pot2%previous_point() /= pot1%id) return
+        t = pot2%get_transformation('adiabatic', 'adiabatic', from_point=pot1%id)
+        if (any(t /= pot2%link%t)) return
+        if (any(pot2%get_transformation('adiabatic', 'adiabatic', to_point=pot1%id)              &
+        &       /= transpose(t))) return
+        u = pot2%get_transformation('diabatic', 'adiabatic')
+        if (any(abs(pot2%get_transformation('adiabatic', 'diabatic', from_point=pot1%id)         &
+        &           - matmul(t, transpose(u))) > tol)) return
+        if (any(abs(pot2%get_transformation('diabatic', 'adiabatic', to_point=pot1%id)           &
+        &           - matmul(u, transpose(t))) > tol)) return
+        if (any(pot2%get_transformation('diabatic', 'adiabatic', from_point=pot2%id,             &
+        &                               to_point=pot2%id) /= u)) return
+        if (any(abs(pot2%transform('adiabatic', 'adiabatic', pot1%adiab_w, from_point=pot1%id)   &
+        &           - matmul(matmul(transpose(t), pot1%adiab_w), t)) > tol)) return
+
+        ! The link is in the basis of the request (the basis of the dynamics): the overlaps of
+        ! the MCH vectors of each manifold for mch_sf, the same for every component for mch, and
+        ! the unit matrix for the diabatic states, which are the same at all points.
+        ret = 6
+        x = reshape([0.1_dp + 1.0e-6_dp, 0.2_dp - 1.0e-6_dp], [1, 2])
+        pot3 = pot1
+        call pot3%set_request(new_request('mch_sf'))
+        call pot3%update_geometry(x, 'model')
+        call pot3%eval(pot1)
+        if (.not. pot3%link%matches(pot1%id, 'mch_sf', pot3%id, 'mch_sf')) return
+        s = matmul(transpose(pot1%mch_trans), pot3%mch_trans)
+        if (any(shape(pot3%link%s) /= [4, 4]) .or. any(pot3%link%s /= s)) return
+        if (any(pot3%link%s(1:2, 3:4) /= 0.0_dp)) return
+        if (any(pot3%get_transformation('mch_sf', 'mch_sf', from_point=pot1%id)                  &
+        &       /= pot3%link%t)) return
+        if (any(pot3%adiab_w /= pot2%adiab_w) .or. any(pot3%adiab_trans /= pot2%adiab_trans))    &
+        &   return
+        ret = 7
+        pot3 = pot1
+        call pot3%set_request(new_request('mch'))
+        call pot3%update_geometry(x, 'model')
+        call pot3%eval(pot1)
+        if (.not. pot3%link%matches(pot1%id, 'mch', pot3%id, 'mch')) return
+        if (any(pot3%link%s /= pot1%model_states%expand(s))) return
+        ret = 8
+        pot3 = pot1
+        call pot3%set_request(new_request('diabatic'))
+        call pot3%update_geometry(x, 'model')
+        call pot3%eval(pot1)
+        if (.not. pot3%link%matches(pot1%id, 'diabatic', pot3%id, 'diabatic')) return
+        if (any(pot3%link%s /= unit_mat(8)) .or. any(pot3%link%t /= unit_mat(8))) return
         ret = 0
     end function link_test
 
@@ -524,13 +1053,16 @@ program pot_test
         if (loc%group /= 4 .or. loc%manifold /= 2 .or. loc%mult /= 3) return
         if (loc%component /= 3 .or. loc%index /= 3 .or. loc%sf /= 7) return
 
-        ! The mch basis has one state for each spin-free state. Summed over the components,
-        ! a matrix of ones counts the component pairs.
+        ! The mch_sf basis has one state for each spin-free state. Summed over the components,
+        ! a matrix of ones counts the component pairs, and a vector of ones the components.
         ret = 3
-        if (pot%basis_size('mch') /= 7 .or. pot%basis_size('diabatic') /= 13) return
+        if (pot%basis_size('mch_sf') /= 7 .or. pot%basis_size('diabatic') /= 13) return
         sf_ones = pot%model_states%sum_components(ones)
         if (sf_ones(1, 4) /= 1.0_dp .or. sf_ones(2, 5) /= 3.0_dp .or. sf_ones(7, 3) /= 3.0_dp) return
         if (sf_ones(5, 7) /= 9.0_dp .or. sum(sf_ones) /= 13.0_dp**2) return
+        if (pot%basis_size('mch') /= 13 .or. pot%basis_size('diabatic_sf') /= 7) return
+        if (any(pot%model_states%sum_components(ones(:, 1))                                      &
+        &       /= [1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp, 3.0_dp, 3.0_dp, 3.0_dp])) return
         ret = 0
     end function group_test
 
@@ -581,15 +1113,17 @@ program pot_test
     end function vc_group_test
 
 
-    !> The mch basis of one singlet and two triplets, with couplings h(k, c) between the
-    !! singlet and component c of triplet k, and the coupling mix between the two triplets.
+    !> The mch_sf and mch bases of one singlet and two triplets, with couplings h(k, c) between
+    !! the singlet and component c of triplet k, and the coupling mix between the two triplets.
     integer function mch_test() result(ret)
         use global_defs, only : dp
         use pot_test_mod, only : group_evaluator
         type(group_evaluator) :: pot
         type(group_evaluator) :: pot_eff
         real(dp) :: h(2, 3), r(3, 3), s2(3, 3), s2_ref(3, 3), u(3, 3)
+        real(dp), allocatable :: s2_c(:, :), w(:, :), e_c(:)
         real(dp), parameter :: tiny = 1.0e-14_dp
+        integer, parameter :: sf(7) = [1, 2, 3, 2, 3, 2, 3] !< Spin-free state of each state.
         integer :: k
 
         h = reshape([1.0e-4_dp, 2.0e-4_dp, -3.0e-4_dp, 0.5e-4_dp, 0.0_dp, 4.0e-4_dp], [2, 3])
@@ -597,10 +1131,10 @@ program pot_test
         ! Without mixing, the squared coupling of the singlet and triplet k is sum_c h(k, c)**2.
         ret = 1
         call set_st_model(pot, 'components', 0.0_dp, h)
-        if (pot%basis_size('mch') /= 3 .or. pot%basis_size('adiabatic') /= 7) return
-        if (size(pot%get_energy('mch')) /= 3) return
-        if (any(abs(pot%get_energy('mch') - [0.0_dp, 0.1_dp, 0.2_dp]) > tiny)) return
-        s2 = pot%get_soc2('mch')
+        if (pot%basis_size('mch_sf') /= 3 .or. pot%basis_size('adiabatic') /= 7) return
+        if (size(pot%get_energy('mch_sf')) /= 3) return
+        if (any(abs(pot%get_energy('mch_sf') - [0.0_dp, 0.1_dp, 0.2_dp]) > tiny)) return
+        s2 = pot%get_soc2('mch_sf')
         do k = 1, 2
             if (abs(s2(1, k + 1) - sum(h(k, :)**2)) > tiny) return
         end do
@@ -610,14 +1144,14 @@ program pot_test
         ! sum over the triplets does not change.
         ret = 2
         call set_st_model(pot, 'components', 0.03_dp, h)
-        s2 = pot%get_soc2('mch')
-        u = pot%get_transformation('diabatic', 'mch')
+        s2 = pot%get_soc2('mch_sf')
+        u = pot%get_transformation('diabatic_sf', 'mch_sf')
         if (any(shape(u) /= [3, 3]) .or. any(u /= pot%mch_trans)) return
         do k = 1, 2
             if (abs(s2(1, k + 1) - sum(matmul(u(2:3, k + 1), h)**2)) > tiny) return
         end do
         if (abs(s2(1, 2) + s2(1, 3) - sum(h**2)) > tiny) return
-        if (abs(pot%get_energy('mch', 3) - pot%get_energy('mch', 2)                  &
+        if (abs(pot%get_energy('mch_sf', 3) - pot%get_energy('mch_sf', 2)                  &
         &       - 2 * sqrt(0.05_dp**2 + 0.03_dp**2)) > tiny) return
 
         ! A rotation of the triplet components does not change the couplings.
@@ -628,19 +1162,40 @@ program pot_test
         r = matmul(r, reshape([1.0_dp, 0.0_dp, 0.0_dp, 0.0_dp, 0.28_dp, 0.96_dp, 0.0_dp,          &
         &                      -0.96_dp, 0.28_dp], [3, 3]))
         call set_st_model(pot, 'components', 0.03_dp, matmul(h, r))
-        if (any(abs(pot%get_soc2('mch') - s2_ref) > tiny)) return
+        if (any(abs(pot%get_soc2('mch_sf') - s2_ref) > tiny)) return
 
         ! Effective states with the root-sum-square couplings give the same couplings without
         ! mixing, and with mixing if the component couplings of the two triplets are parallel.
         ret = 4
         call set_st_model(pot, 'components', 0.0_dp, h)
         call set_st_model(pot_eff, 'effective_rss', 0.0_dp, h)
-        if (pot_eff%basis_size('mch') /= 3 .or. pot_eff%model_states%n_state /= 3) return
-        if (any(abs(pot_eff%get_soc2('mch') - pot%get_soc2('mch')) > tiny)) return
+        if (pot_eff%basis_size('mch_sf') /= 3 .or. pot_eff%model_states%n_state /= 3) return
+        if (any(abs(pot_eff%get_soc2('mch_sf') - pot%get_soc2('mch_sf')) > tiny)) return
         h(2, :) = 0.5_dp * h(1, :)
         call set_st_model(pot, 'components', 0.03_dp, h)
         call set_st_model(pot_eff, 'effective_rss', 0.03_dp, h)
-        if (any(abs(pot_eff%get_soc2('mch') - pot%get_soc2('mch')) > tiny)) return
+        if (any(abs(pot_eff%get_soc2('mch_sf') - pot%get_soc2('mch_sf')) > tiny)) return
+
+        ! The mch basis has the spin components of the MCH states: the energies of the spin-free
+        ! states, the spin-orbit couplings off the diagonal of its Hamiltonian, and their squares
+        ! summed over the components for the mch_sf basis.
+        ret = 5
+        h = reshape([1.0e-4_dp, 2.0e-4_dp, -3.0e-4_dp, 0.5e-4_dp, 0.0_dp, 4.0e-4_dp], [2, 3])
+        call set_st_model(pot, 'components', 0.03_dp, h)
+        e_c = pot%get_energy('mch')
+        if (size(e_c) /= 7) return
+        do k = 1, 7
+            if (e_c(k) /= pot%get_energy('mch_sf', sf(k))) return
+            if (pot%get_energy('mch', k) /= e_c(k)) return
+        end do
+        w = pot%get_Hamiltonian('mch')
+        s2_c = pot%get_soc2('mch')
+        do k = 1, 7
+            if (w(k, k) /= e_c(k)) return
+            w(k, k) = 0.0_dp
+        end do
+        if (any(shape(s2_c) /= [7, 7]) .or. any(abs(s2_c - w**2) > tiny)) return
+        if (any(abs(pot%states%sum_components(s2_c) - pot%get_soc2('mch_sf')) > tiny)) return
         ret = 0
     end function mch_test
 
@@ -729,7 +1284,7 @@ program pot_test
             &       matmul(src%diab_dw(n, :, :), eff%proj))) > tol)) return
         end do
         if (any(eff%sf_w /= src%sf_w) .or. any(eff%sf_dw /= src%sf_dw)) return
-        if (any(abs(eff%get_energy('mch') - src%get_energy('mch')) > tol)) return
+        if (any(abs(eff%get_energy('mch_sf') - src%get_energy('mch_sf')) > tol)) return
         if (allocated(eff%source%adiab_w) .or. allocated(eff%source%mch_trans)) return
         if (abs(eff%min_fraction - min(eff%fraction, 1.0_dp)) > tol) return
 
@@ -754,7 +1309,7 @@ program pot_test
         if (any(abs(eff_p%u - u0) > tol) .or. abs(eff_p%ref_fraction - 1.0_dp) > tol) return
         call src%update_geometry(geom, 'model')
         call src%eval()
-        e_sf = src%get_energy('mch')
+        e_sf = src%get_energy('mch_sf')
         e_src = src%get_energy('adiabatic')
         call eff_p%update_geometry(geom, 'model')
         call eff_p%eval()
@@ -1177,7 +1732,9 @@ program pot_test
         if (jstr(json, root, 'spin_states') /= 'components') return
         if (jint(json, root, 'n_state.diabatic') /= 4) return
         if (jint(json, root, 'n_state.adiabatic') /= 4) return
-        if (jint(json, root, 'n_state.mch') /= 2) return
+        if (jint(json, root, 'n_state.mch') /= 4) return
+        if (jint(json, root, 'n_state.mch_sf') /= 2) return
+        if (jint(json, root, 'n_state.diabatic_sf') /= 2) return
         if (jint(json, root, 'manifolds(1).multiplicity') /= 1) return
         if (jint(json, root, 'manifolds(1).n') /= 1) return
         if (jint(json, root, 'manifolds(2).multiplicity') /= 3) return
@@ -1194,6 +1751,7 @@ program pot_test
         if (jstr(json, root, 'spin_states') /= 'effective_rss') return
         if (jint(json, root, 'n_state.diabatic') /= 3) return
         if (jint(json, root, 'n_state.mch') /= 3) return
+        if (jint(json, root, 'n_state.mch_sf') /= 3) return
         if (jint(json, root, 'manifolds(2).n') /= 2) return
         if (jint(json, root, 'manifolds(2).n_comp') /= 1) return
         call json%destroy(root)
@@ -1221,7 +1779,9 @@ program pot_test
         call sst%add_state_layout(json, root)
         if (jint(json, root, 'n_state.diabatic') /= 5) return
         if (jint(json, root, 'n_state.adiabatic') /= 4) return
-        if (jint(json, root, 'n_state.mch') /= 2) return
+        if (jint(json, root, 'n_state.mch') /= 4) return
+        if (jint(json, root, 'n_state.mch_sf') /= 2) return
+        if (jint(json, root, 'n_state.diabatic_sf') /= 3) return
         if (jint(json, root, 'manifolds(1).n') /= 1) return
         if (jint(json, root, 'manifolds(2).first_state') /= 2) return
         if (jstr(json, root, 'model.spin_states') /= 'components') return
@@ -1274,12 +1834,17 @@ program pot_test
 
 
     !> Subsets of a state_layout: the first spin-free states of each multiplicity, in every
-    !! component, and their positions in the full layout.
+    !! component, and their positions in the full layout. A matrix with the rows over the
+    !! spin-free states of the full layout and the columns over those of the subset is expanded
+    !! to the selected columns of the expanded square matrix.
     integer function layout_subset_test() result(ret)
+        use global_defs, only : dp
         use state_layout_mod, only : state_layout
         type(state_layout) :: full, sub
         integer, allocatable :: idx(:), idx_sf(:), rest(:)
-        integer :: i
+        real(dp) :: sq(7, 7)
+        real(dp), allocatable :: m(:, :), m_sub(:, :)
+        integer :: i, j
 
         ! Four singlets and three triplets: S1-S4, then T1-T3 for each component.
         ret = 1
@@ -1290,6 +1855,16 @@ program pot_test
         call full%subset_index(sub, idx, idx_sf, rest)
         if (any(idx /= [1, 2, 5, 8, 11]) .or. any(idx_sf /= [1, 2, 5])) return
         if (any(rest /= [3, 4, 6, 7, 9, 10, 12, 13])) return
+        do j = 1, 7
+            do i = 1, 7
+                sq(i, j) = real(i + 10 * j, dp)
+            end do
+        end do
+        m = full%expand(sq)
+        m_sub = full%expand(sq(:, idx_sf), sub)
+        if (any(shape(m) /= [13, 13]) .or. any(shape(m_sub) /= [13, 5])) return
+        if (any(m_sub /= m(:, idx))) return
+        if (any(sub%expand(sq(idx_sf, :), full) /= m(idx, :))) return
 
         ! The manifolds keep the order of the full layout.
         ret = 2
@@ -1303,6 +1878,8 @@ program pot_test
         call full%subset_index(sub, idx, idx_sf, rest)
         if (any(idx /= [5, 6, 8, 9, 11, 12]) .or. any(idx_sf /= [5, 6])) return
         if (size(rest) /= 7) return
+        m_sub = full%expand(sq(:, idx_sf), sub)
+        if (any(shape(m_sub) /= [13, 6]) .or. any(m_sub /= m(:, idx))) return
 
         ! All states, and effective states.
         ret = 4
@@ -1356,7 +1933,7 @@ program pot_test
         call sub%update_geometry(x, 'model')
         call sub%eval()
         if (sub%basis_size('diabatic') /= 8 .or. sub%basis_size('adiabatic') /= 4) return
-        if (sub%basis_size('mch') /= 2) return
+        if (sub%basis_size('mch_sf') /= 2) return
         if (any(sub%sel /= sel) .or. any(sub%sel_mch /= [1, 3])) return
         if (any(sub%uns /= [2, 4, 6, 8])) return
         u = sub%get_transformation('diabatic', 'adiabatic')
@@ -1385,20 +1962,43 @@ program pot_test
 
         ! The mch basis is a part of that of the full model.
         ret = 4
-        e_mch = full%get_energy('mch')
-        if (any(sub%get_energy('mch') /= e_mch([1, 3]))) return
-        if (sub%get_energy('mch', 2) /= e_mch(3)) return
-        if (any(sub%get_gradient('mch', 2) /= full%get_gradient('mch', 3))) return
-        if (any(sub%get_nadv('mch', 1, 2) /= full%get_nadv('mch', 1, 3))) return
-        s2 = full%get_soc2('mch')
-        if (any(sub%get_soc2('mch') /= s2([1, 3], [1, 3]))) return
-        tr = full%get_transformation('diabatic', 'mch')
-        if (any(sub%get_transformation('diabatic', 'mch') /= tr(:, [1, 3]))) return
+        e_mch = full%get_energy('mch_sf')
+        if (any(sub%get_energy('mch_sf') /= e_mch([1, 3]))) return
+        if (sub%get_energy('mch_sf', 2) /= e_mch(3)) return
+        if (any(sub%get_gradient('mch_sf', 2) /= full%get_gradient('mch_sf', 3))) return
+        if (any(sub%get_nadv('mch_sf', 1, 2) /= full%get_nadv('mch_sf', 1, 3))) return
+        s2 = full%get_soc2('mch_sf')
+        if (any(sub%get_soc2('mch_sf') /= s2([1, 3], [1, 3]))) return
+        tr = full%get_transformation('diabatic_sf', 'mch_sf')
+        if (any(shape(sub%get_transformation('diabatic_sf', 'mch_sf')) /= [4, 2])) return
+        if (any(sub%get_transformation('diabatic_sf', 'mch_sf') /= tr(:, [1, 3]))) return
         if (any(shape(sub%get_soc2('diabatic')) /= [8, 8])) return
+
+        ! The mch basis: S1 and the three components of T1 (full model: S1, S2, then T1 and T2
+        ! for each component). Gradients and couplings are those of the spin-free states, with
+        ! no coupling between different components or multiplicities.
+        ret = 5
+        if (sub%basis_size('mch') /= 4 .or. full%basis_size('mch') /= 8) return
+        if (any(sub%get_energy('mch') /= e_mch([1, 3, 3, 3]))) return
+        if (any(full%get_energy('mch') /= e_mch([1, 2, 3, 4, 3, 4, 3, 4]))) return
+        if (any(sub%get_gradient('mch', 3) /= full%get_gradient('mch_sf', 3))) return
+        if (any(full%get_gradient('mch', 6) /= full%get_gradient('mch_sf', 4))) return
+        if (any(full%get_nadv('mch', 5, 6) /= full%get_nadv('mch_sf', 3, 4))) return
+        if (any(full%get_nadv('mch', 1, 2) /= full%get_nadv('mch_sf', 1, 2))) return
+        if (all(full%get_nadv('mch', 5, 6) == 0.0_dp)) return
+        if (any(full%get_nadv('mch', 3, 6) /= 0.0_dp)) return
+        if (any(full%get_nadv('mch', 2, 3) /= 0.0_dp)) return
+        if (any(full%get_nadv('diabatic_sf', 1, 2) /= 0.0_dp)) return
+        if (any(full%get_gradient('diabatic_sf', 3) /= full%sf_dw(:, 3, 3))) return
+        if (any(full%get_energy('diabatic_sf') /= [(full%sf_w(n, n), n = 1, 4)])) return
+        s2 = full%get_soc2('mch')
+        if (any(sub%get_soc2('mch') /= s2(sel, sel))) return
+        if (any(abs(sub%states%sum_components(sub%get_soc2('mch')) - sub%get_soc2('mch_sf'))     &
+        &       > tol)) return
 
         ! Without spin-orbit couplings, the adiabatic states are the selected MCH states: T1 three
         ! times and S1, with the gradients of the MCH states.
-        ret = 5
+        ret = 6
         h0 = 0.0_dp
         h1 = 0.0_dp
         x0 = 0.0_dp
@@ -1407,13 +2007,13 @@ program pot_test
         call nosoc%select_states([1, 1], [1, 3])
         call nosoc%update_geometry(x, 'model')
         call nosoc%eval()
-        e_mch = nosoc%get_energy('mch')
+        e_mch = nosoc%get_energy('mch_sf')
         if (e_mch(1) >= e_mch(2)) return
         if (any(abs(nosoc%get_energy('adiabatic') - e_mch([1, 2, 2, 2])) > tol)) return
-        if (any(abs(nosoc%get_gradient('adiabatic', 1) - nosoc%get_gradient('mch', 1))           &
+        if (any(abs(nosoc%get_gradient('adiabatic', 1) - nosoc%get_gradient('mch_sf', 1))        &
         &       > tol)) return
         do n = 2, 4
-            if (any(abs(nosoc%get_gradient('adiabatic', n) - nosoc%get_gradient('mch', 2))       &
+            if (any(abs(nosoc%get_gradient('adiabatic', n) - nosoc%get_gradient('mch_sf', 2))    &
             &       > tol)) return
         end do
         ret = 0
@@ -1536,7 +2136,7 @@ program pot_test
 
         ret = 1
         if (eff%basis_size('diabatic') /= 4 .or. eff%basis_size('adiabatic') /= 2) return
-        if (eff%basis_size('mch') /= 2 .or. eff%exact_gradient) return
+        if (eff%basis_size('mch_sf') /= 2 .or. eff%exact_gradient) return
         if (any(shape(eff%proj) /= [8, 4]) .or. any(abs(eff%u - u0) > tol)) return
 
         ret = 2
@@ -1545,11 +2145,11 @@ program pot_test
         call src%eval()
         call eff%update_geometry(geom, 'model')
         call eff%eval()
-        e_mch = src%get_energy('mch')
+        e_mch = src%get_energy('mch_sf')
         e_src = src%get_energy('adiabatic')
         e_eff = eff%get_energy('adiabatic')
         if (size(e_src) /= 4 .or. size(e_eff) /= 2) return
-        if (any(abs(eff%get_energy('mch') - e_mch) > tol)) return
+        if (any(abs(eff%get_energy('mch_sf') - e_mch) > tol)) return
         if (any(abs(sorted([e_eff, e_mch(2), e_mch(2)]) - e_src) > tol)) return
         if (any(shape(eff%get_transformation('diabatic', 'adiabatic')) /= [4, 2])) return
         ret = 0
@@ -1618,7 +2218,8 @@ program pot_test
     !! Three states of two atoms. The program is 'cp' of a response written by the test.
     !! - Point A: energies, the requested gradient, wave functions, no link.
     !! - Point B (a copy of A): state 2 returned with the opposite sign. The sign is matched to
-    !!   A, so link%s has a positive diagonal and the coupling of 1 and 2 changes sign.
+    !!   A, so link%s has a positive diagonal and the coupling of 1 and 2 changes sign. The
+    !!   adiabatic, mch and mch_sf bases are the same states, and there is no diabatic basis.
     !! - complete on B: a missing gradient, and the coupling of 2 and 3 from a recalculation in
     !!   which state 3 has the opposite sign; the stored states keep their signs and the coupling
     !!   gets the sign of the stored states.
@@ -1658,6 +2259,10 @@ program pot_test
         if (any(abs(a%get_gradient('adiabatic', 1) - reshape(g1, [6])) > tol)) return
         if (a%have_grad(2) .or. any(a%have_nadv)) return
         if (any(abs(a%get_Hamiltonian('mch') - diag3(e)) > tol)) return
+        if (any(a%get_energy('mch_sf') /= a%get_energy('adiabatic'))) return
+        if (any(a%get_transformation('mch', 'adiabatic') /= unit3())) return
+        if (any(a%transform('mch', 'adiabatic', diag3(e)) /= diag3(e))) return
+        if (a%previous_point() /= 0 .or. a%id_diab /= 0 .or. a%diab%valid()) return
 
         ! Point B: a small rotation of the states, with state 2 of the opposite sign.
         ret = 2
@@ -1675,8 +2280,11 @@ program pot_test
         call b%update_geometry(geom + 0.01_dp, 'cartesian')
         call b%set_request(new_request('adiabatic', gradient=[2], nadv=reshape([1, 2], [2, 1])))
         call b%eval(a)
-        if (.not. b%link%matches(a%id, b%id, 'adiabatic')) return
+        if (.not. b%link%matches(a%id, 'adiabatic', b%id, 'adiabatic')) return
         if (any(abs(b%link%s - r) > tol)) return
+        if (any(b%get_transformation('adiabatic', 'adiabatic', from_point=a%id) /= b%link%t))    &
+        &   return
+        if (any(abs(b%get_transformation('adiabatic', 'mch', from_point=a%id) - r) > tol)) return
         if (any(abs(b%wf - r) > tol)) return
         if (any(abs(b%get_nadv('adiabatic', 1, 2) + reshape(v12, [6])) > tol)) return
         if (any(abs(b%get_nadv('adiabatic', 2, 1) - reshape(v12, [6])) > tol)) return
@@ -1696,7 +2304,7 @@ program pot_test
         if (any(abs(b%get_nadv('adiabatic', 1, 2) + reshape(v12, [6])) > tol)) return
         ! Nothing missing: no calculation (the scripted response is for another point).
         call write_scripted(b%id + 100, e, 1, g1, reshape([0], [2, 0]), v12, r)
-        call b%complete(new_request('mch', gradient=[2], nadv=reshape([3, 2], [2, 1])))
+        call b%complete(new_request('mch_sf', gradient=[2], nadv=reshape([3, 2], [2, 1])))
 
         ! Save and load.
         ret = 4
@@ -1706,8 +2314,10 @@ program pot_test
         call setup_external(c, 'false')
         call c%load_state(json, root)
         call json%destroy(root)
-        if (c%id /= b%id .or. .not. c%link%matches(a%id, b%id, 'adiabatic')) return
+        if (c%id /= b%id) return
+        if (.not. c%link%matches(a%id, 'adiabatic', b%id, 'adiabatic')) return
         if (any(c%link%t /= b%link%t) .or. any(c%wf /= b%wf)) return
+        if (any(c%adiab_vec /= b%adiab_vec)) return
         if (any(c%energy /= b%energy) .or. any(c%grad /= b%grad) .or. any(c%nadv /= b%nadv)) return
         if (any(c%have_grad .neqv. b%have_grad) .or. any(c%have_nadv .neqv. b%have_nadv)) return
         if (any(c%geometry /= b%geometry) .or. c%coordinates /= b%coordinates) return

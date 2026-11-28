@@ -236,13 +236,19 @@ project(ZagHop LANGUAGES Fortran)
     CASE external_exit "External program failed: false"
     CASE external_point_id "qm_out.json: response for point [0-9]+, expected point [0-9]+"
     CASE external_missing_gradient "Missing gradient of a requested state"
-    CASE external_not_computed "Gradient of state 2 was not computed at this point")
+    CASE external_not_computed "Gradient of state 2 was not computed at this point"
+    # Transformations between the bases.
+    CASE transform_spaces "No transformation from the mch_sf to the adiabatic basis"
+    CASE transform_no_diabatic "The diabatic basis is not available for this potential"
+    CASE transform_wrong_point "do not link the requested point"
+    CASE transform_no_link "No overlaps with a previous point are stored")
 
   add_executable(sh_test tests/unit/sh_test.f90)
   target_link_libraries(sh_test zagcore)
   zaghop_add_unit_test(sh_unit_test sh_test
     # Cases which should stop with an error.
-    CASE ld_wrong_link "do not link the last point"
+    CASE ld_wrong_link "do not link the requested point"
+    CASE ld_same_point "was already processed"
     CASE initial_no_weight "has no weight in the states of the adiabatic basis"
     # A warning, not an error.
     CASE subset_crossing "Smallest singular value of the overlaps")

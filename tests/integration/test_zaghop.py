@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 ''' Program tests. '''
+import json
 import os
 import re
 import shutil
@@ -83,6 +84,34 @@ class ZagHopTest(unittest.TestCase):
             subprocess.call("zaghop", stdout=out, stderr=err)
         os.chdir(self.cwd)
         self.stdout_contains("Restarting trajectory from backup file")
+
+    def input_error(self, old, new, message):
+        """ Run zaghop on a copy of the input of the current test with old replaced by new in
+        dynamics.in, and assert that it stops with message on standard error.
+
+        The copy is the subdirectory input_error of the trajectory directory, without results. """
+        tdir = os.path.join(self.rundir, self.trajdir)
+        edir = os.path.join(tdir, "input_error")
+        if os.path.isdir(edir):
+            shutil.rmtree(edir)
+        shutil.copytree(tdir, edir, ignore=shutil.ignore_patterns(
+            "input_error", "Results", "Reference", "backup*", "nad.std*"))
+        path = os.path.join(edir, "dynamics.in")
+        with open(path) as f:
+            text = f.read()
+        self.assertIn(old, text, "Text to replace not found in dynamics.in.")
+        with open(path, "w") as f:
+            f.write(text.replace(old, new))
+        with open(os.path.join(edir, "nad.stdout"), "w") as out, \
+             open(os.path.join(edir, "nad.stderr"), "w") as err:
+            subprocess.call("zaghop", stdout=out, stderr=err, cwd=edir)
+        with open(os.path.join(edir, "nad.stderr")) as f:
+            self.assertIn(message, f.read(), f"Error message not found: {message!r}")
+
+    def load_states(self):
+        """ Load the layout of the states from Results/states.json. """
+        with open(os.path.join(self.rundir, self.trajdir, "Results", "states.json")) as f:
+            return json.load(f)
 
     def compare_energy(self):
         """ Compare full contents of the energy.dat file. """

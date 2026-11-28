@@ -4,9 +4,13 @@
 !> @details
 !! Each set of states (for example, the electronic states computed at one geometry) gets an id
 !! from request_id, unique within the program. A state_overlap holds the overlaps between a set
-!! of bra states and a set of ket states, s(i, j) = <bra_i|ket_j>, together with the ids of the
-!! two sets and the basis of the states. Users check the ids and the basis (matches) before using
+!! of bra states and a set of ket states, s(i, j) = <bra_i|ket_j>, together with the id and the
+!! basis (see basis_mod) of each set. Users check the ids and the bases (matches) before using
 !! the overlaps, so overlaps computed for states other than the expected ones are never used.
+!!
+!! The two sets can be the states of one basis at two points (the link between consecutive
+!! points of a trajectory), or the states of two bases, such as a fixed set of reference states
+!! and the states of a point.
 !!
 !! The overlaps refer to the states as they are when they are set, including their phases. A
 !! change of the states afterwards, such as a change of sign, makes them invalid.
@@ -15,7 +19,9 @@
 !! closest to s. For orthonormal states spanning the same space, s is already orthogonal. For
 !! states which span only a part of the space (a subset of the states of a model, or the states
 !! computed on the fly), s is not orthogonal, and its smallest singular value measures how much
-!! of the space of the bra states is left in the ket states.
+!! of the space of the bra states is left in the ket states. For overlaps which are known to
+!! have orthonormal columns, set takes t = s without the decomposition (orthonormal), since the
+!! orthogonalisation would return s only to rounding.
 !!
 !! match_phase chooses the signs of a set of real states so that they follow those of another
 !! set, from the overlaps between the two.
@@ -39,7 +45,8 @@ module state_overlap_mod
     type :: state_overlap
         integer :: id_bra = 0 !< Id of the bra states. 0 if the overlaps are not set.
         integer :: id_ket = 0 !< Id of the ket states.
-        character(len=:), allocatable :: basis !< Basis of both sets of states.
+        character(len=:), allocatable :: basis_bra !< Basis of the bra states.
+        character(len=:), allocatable :: basis_ket !< Basis of the ket states.
         real(dp), allocatable :: s(:, :) !< Overlaps <bra_i|ket_j>.
         real(dp), allocatable :: t(:, :) !< Lowdin orthogonalised s.
     contains
@@ -100,25 +107,36 @@ contains
     !> @details
     !! orthog_lowdin computes t from the singular value decomposition s = U Sigma V^t as U V^t,
     !! which equals s (s^t s)^(-1/2) for nonsingular s. The smallest singular value is returned in
-    !! sigma_min.
+    !! sigma_min. With orthonormal, the caller states that the columns of s are orthonormal: t is
+    !! then s itself, and sigma_min is 1.
     !----------------------------------------------------------------------------------------------
-    subroutine set(self, id_bra, id_ket, basis, s, sigma_min)
+    subroutine set(self, id_bra, basis_bra, id_ket, basis_ket, s, sigma_min, orthonormal)
         use orthog_mod, only : orthog_lowdin
         class(state_overlap), intent(inout) :: self
         integer, intent(in) :: id_bra !< Id of the bra states.
+        character(len=*), intent(in) :: basis_bra !< Basis of the bra states.
         integer, intent(in) :: id_ket !< Id of the ket states.
-        character(len=*), intent(in) :: basis !< Basis of both sets of states.
+        character(len=*), intent(in) :: basis_ket !< Basis of the ket states.
         real(dp), intent(in) :: s(:, :) !< Overlaps <bra_i|ket_j>.
         real(dp), intent(out), optional :: sigma_min !< Smallest singular value of s.
+        logical, intent(in), optional :: orthonormal !< The columns of s are orthonormal.
         real(dp), allocatable :: sigma(:)
+        logical :: skip
 
+        skip = .false.
+        if (present(orthonormal)) skip = orthonormal
         self%id_bra = id_bra
         self%id_ket = id_ket
-        self%basis = basis
+        self%basis_bra = basis_bra
+        self%basis_ket = basis_ket
         self%s = s
         self%t = s
-        call orthog_lowdin(self%t, sigma)
-        if (present(sigma_min)) sigma_min = minval(sigma)
+        if (skip) then
+            if (present(sigma_min)) sigma_min = 1.0_dp
+        else
+            call orthog_lowdin(self%t, sigma)
+            if (present(sigma_min)) sigma_min = minval(sigma)
+        end if
     end subroutine set
 
 
@@ -128,7 +146,8 @@ contains
 
         self%id_bra = 0
         self%id_ket = 0
-        if (allocated(self%basis)) deallocate(self%basis)
+        if (allocated(self%basis_bra)) deallocate(self%basis_bra)
+        if (allocated(self%basis_ket)) deallocate(self%basis_ket)
         if (allocated(self%s)) deallocate(self%s)
         if (allocated(self%t)) deallocate(self%t)
     end subroutine clear
@@ -142,16 +161,18 @@ contains
     end function valid
 
 
-    !> The overlaps are set, between the states with the given ids, in the given basis.
-    pure logical function matches(self, id_bra, id_ket, basis)
+    !> The overlaps are set, between the states with the given ids, in the given bases.
+    pure logical function matches(self, id_bra, basis_bra, id_ket, basis_ket)
         class(state_overlap), intent(in) :: self
         integer, intent(in) :: id_bra !< Id of the bra states.
+        character(len=*), intent(in) :: basis_bra !< Basis of the bra states.
         integer, intent(in) :: id_ket !< Id of the ket states.
-        character(len=*), intent(in) :: basis !< Basis of both sets of states.
+        character(len=*), intent(in) :: basis_ket !< Basis of the ket states.
 
         matches = .false.
         if (.not. self%valid()) return
-        matches = self%id_bra == id_bra .and. self%id_ket == id_ket .and. self%basis == basis
+        matches = self%id_bra == id_bra .and. self%id_ket == id_ket                              &
+        &         .and. self%basis_bra == basis_bra .and. self%basis_ket == basis_ket
     end function matches
 
 
@@ -169,7 +190,8 @@ contains
         call json%add(obj, 'id_bra', self%id_bra)
         call json%add(obj, 'id_ket', self%id_ket)
         if (.not. self%valid()) return
-        call json%add(obj, 'basis', self%basis)
+        call json%add(obj, 'basis_bra', self%basis_bra)
+        call json%add(obj, 'basis_ket', self%basis_ket)
         call json_add_array(json, obj, 's', self%s)
         call json_add_array(json, obj, 't', self%t)
     end subroutine save_state
@@ -195,7 +217,8 @@ contains
         if (id_bra <= 0) return
         self%id_bra = id_bra
         self%id_ket = id_ket
-        call json_get_required(json, obj, 'basis', self%basis)
+        call json_get_required(json, obj, 'basis_bra', self%basis_bra)
+        call json_get_required(json, obj, 'basis_ket', self%basis_ket)
         call json_get_required(json, obj, 's', self%s)
         call json_get_required(json, obj, 't', self%t, shape(self%s))
     end subroutine load_state

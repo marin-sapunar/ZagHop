@@ -15,4 +15,5 @@ $dynamics
 $output
  buinterval -1
  noprint 2,4,5,6,8-11
+ print 30,31
 $end

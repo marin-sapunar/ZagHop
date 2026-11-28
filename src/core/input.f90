@@ -21,6 +21,7 @@ module input_mod
     use vc_evaluator_mod, only : vc_evaluator
     use evaluator_effective_spin_mod, only : effective_spin_evaluator
     use evaluator_base_mod, only : potential_evaluator
+    use basis_mod, only : basis_is_spin_free
     use evaluator_diabatic_mod, only : diabatic_evaluator
     use external_json_mod, only : external_json_evaluator
     use tsh_method_mod, only : tsh_none
@@ -275,14 +276,10 @@ contains
             ! LZSH keeps the points of a gap minimum while it inserts points between them.
             n_point = max(memory, wf%max_points(ctrl%dt_0) + 1)
         end select
-        ! The mch basis is only given in the diabatic basis.
-        if (tr1%wf%basis == 'mch') then
-            ctrl%print(30) = .false.
-            ctrl%print(32) = .false.
-        end if
+        ! A basis with one state for each multiplet has no transformation to the adiabatic basis.
+        if (basis_is_spin_free(tr1%wf%basis)) ctrl%print(32) = .false.
         ! An external program gives no diabatic basis.
-        select type(p => tr1%pot)
-        type is (external_json_evaluator)
+        if (.not. tr1%pot%has_diabatic()) then
             if (ctrl%print(21) .or. ctrl%print(31) .or. ctrl%istate_basis == 'diabatic') then
                 write(stderr, *) 'Error in Input module, read_input subroutine.'
                 write(stderr, *) '  The diabatic basis is not available for potentials computed ', &
@@ -290,7 +287,25 @@ contains
                 write(stderr, *) '  Remove print options 21 and 31 and istate_basis diabatic.'
                 stop
             end if
-        end select
+        end if
+        ! Populations from the coefficients need a method with coefficients and a potential with
+        ! a transformation from the basis of the dynamics to the basis of the populations.
+        do i = 41, 43
+            if (.not. ctrl%print(i)) cycle
+            if (.not. tr1%wf%has_coefficients()) then
+                write(stderr, *) 'Error in Input module, read_input subroutine.'
+                write(stderr, '(3x,a,i0,a)') 'Print option ', i, ' needs the coefficients of '// &
+                &   'the electronic wave function, which this surface hopping method does not have.'
+                stop
+            end if
+            if (.not. tr1%pot%can_transform(tr1%wf%basis, qpop_basis(i))) then
+                write(stderr, *) 'Error in Input module, read_input subroutine.'
+                write(stderr, '(3x,a,i0,5a)') 'Print option ', i, ': populations of the ',        &
+                &   qpop_basis(i), ' states are not available from coefficients in the ',          &
+                &   tr1%wf%basis, ' basis for this potential.'
+                stop
+            end if
+        end do
         call allocate_trajectory_data(n_point)
         if (ctrl%orientlvl < 0 .or. ctrl%orientlvl > 2) then
             write(stderr, *) 'Error in Input module, read_input subroutine.'
@@ -1301,12 +1316,12 @@ contains
                 select type(wf => tr1%wf)
                 type is (tsh_none)
                     select case(tolower(readf%args(2)%s))
-                    case('adiabatic', 'diabatic', 'mch')
+                    case('adiabatic', 'diabatic', 'mch', 'mch_sf')
                         wf%basis = tolower(readf%args(2)%s)
                     case default
                         write(stderr, *) 'Error in Input module, read_surfhop_options subroutine.'
                         write(stderr, *) '  Unrecognized sh_basis option. Expected adiabatic, ',  &
-                        &                'diabatic or mch.'
+                        &                'diabatic, mch or mch_sf.'
                         write(stderr, '(2x,a)') readf%line
                         stop
                     end select

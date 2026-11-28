@@ -13,8 +13,8 @@ $dynamics
 $output
  buinterval = -1
  printerval = 5
- noprint  2,3,4,5,6
- print 7,31
+ noprint  2,3,4,5
+ print 6,7,31,41,42,43
 $method
  qlib vibronic_coupling LVC.template
  seed 8987550

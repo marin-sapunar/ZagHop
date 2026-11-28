@@ -5,10 +5,12 @@
 !> @brief Potentials defined by a Hamiltonian in a diabatic basis.
 !> @details
 !! The model gives the spin-free part of the Hamiltonian and the spin-orbit couplings in its
-!! diabatic states. The names of the variables give their basis (see evaluator_base_mod):
+!! diabatic states. The names of the variables give their basis (see basis_mod):
 !! - sf_, soc_ - The two parts of the Hamiltonian of the model in the diabatic basis.
 !! - diab_ - The full Hamiltonian of the model in the diabatic basis.
 !! - mch_ - MCH states of the model: eigenstates of the spin-free part within each multiplicity.
+!!   These arrays are over the spin-free states of the model (the 'mch_sf' basis has the selected
+!!   ones, and the 'mch' basis the selected ones with their spin components).
 !! - adiab_ - Adiabatic states of the dynamics.
 !!
 !! The dynamics can run on a subset of the states of the model (select_states). With P the MCH
@@ -16,7 +18,11 @@
 !! multiplicity, the adiabatic states are the eigenstates of the Hamiltonian in the selected MCH
 !! states,
 !!     H_sub = [P^T (H_sf + H_soc) P](sel, sel) = diag(e)(sel) + [P^T H_soc P](sel, sel),
-!! with eigenvectors V and U = P(:, sel) V in the diabatic basis (adiab_trans). This is the
+!! with eigenvectors V and U = P(:, sel) V in the diabatic basis (adiab_trans). The evaluator
+!! gives mch_trans(:, sel_mch) (diab of the base class) and V (adiab_vec), from which the base
+!! class builds the transformations between all bases: P(:, sel) from 'diabatic' to 'mch', V
+!! from 'mch' to 'adiabatic' and U from 'diabatic' to 'adiabatic'. H_sub is the Hamiltonian in
+!! the 'mch' basis. This is the
 !! construction of on-the-fly dynamics, where only some MCH states are computed and the
 !! spin-orbit couplings are diagonalised between them (Mai, Marquetand and Gonzalez, WIREs Comput.
 !! Mol. Sci. 8, e1370 (2018), doi: 10.1002/wcms.1370, eqs. 7 and 8, where V is called U). With
@@ -50,8 +56,6 @@ module evaluator_diabatic_mod
 
     real(dp), parameter :: gap_tol = 1.0e-8_dp !< Smallest magnitude of an energy gap in the
                                                !! denominator of a derivative coupling (Eh).
-    real(dp), parameter :: overlap_warn_tol = 0.9_dp !< Smallest singular value of the overlaps
-    !! between the adiabatic states of two points without a warning.
 
 
     !----------------------------------------------------------------------------------------------
@@ -60,10 +64,12 @@ module evaluator_diabatic_mod
     !> @details
     !! The spin-free Hamiltonian (sf_w) and the spin-orbit couplings (soc_w) along with their
     !! derivatives (sf_dw and soc_dw) are given by eval_hamiltonian, for all states of the model.
-    !! The full diabatic Hamiltonian is assembled from the two. The 'mch' basis has one state for
-    !! each spin-free state of the dynamics. Its energies, gradients and couplings come from the
-    !! spin-free Hamiltonian alone. The spin-orbit couplings between its states are only given as
-    !! squared magnitudes, summed over the components.
+    !! The full diabatic Hamiltonian is assembled from the two. The energies, gradients and
+    !! nonadiabatic couplings of the MCH states come from the spin-free Hamiltonian alone, for
+    !! each spin-free state of the dynamics ('mch_sf') or each of its spin components ('mch').
+    !! The spin-orbit couplings are the off-diagonal part of the Hamiltonian in the 'mch' basis.
+    !! Between the states of the 'mch_sf' basis they are only given as squared magnitudes, summed
+    !! over the components (get_soc2).
     !----------------------------------------------------------------------------------------------
     type, abstract, extends(potential_evaluator) :: diabatic_evaluator
         integer :: ndof = 0
@@ -81,7 +87,8 @@ module evaluator_diabatic_mod
         real(dp), allocatable :: mch_dw(:, :, :) !< Derivatives of sf_w in the MCH states of the
                                                  !! model.
         real(dp), allocatable :: adiab_trans(:, :) !< Adiabatic states of the dynamics in the
-                                                   !! diabatic states (model states, states).
+        !! diabatic states, U (model states, states). Work array of eval_states, the same as
+        !! get_transformation('diabatic', 'adiabatic').
         real(dp), allocatable :: adiab_w(:, :) !< Hamiltonian in the adiabatic states.
         real(dp), allocatable :: adiab_dw(:, :, :) !< Derivatives of the Hamiltonian in the
         !! adiabatic states, with the term from the change of the selected MCH states.
@@ -97,10 +104,9 @@ module evaluator_diabatic_mod
         procedure :: allocate_bases
         procedure :: split_hamiltonian
         procedure :: set_full_hamiltonian
-        procedure :: in_basis
         procedure :: mch_soc
         procedure :: get_Hamiltonian => get_Hamiltonian
-        procedure :: get_transformation => get_transformation
+        procedure :: has_diabatic => diabatic_has_diabatic
         procedure :: get_energy_single => get_energy_single
         procedure :: get_energy_all => get_energy_all
         procedure :: get_gradient => get_gradient
@@ -130,8 +136,8 @@ contains
     !> @details
     !! With prev, the evaluator of the previous point, the phases of the MCH states of the model
     !! and of the adiabatic states are matched to those of prev, and link holds the overlaps
-    !! between the adiabatic states of prev and of this point, U(prev)^T U. Without prev, the
-    !! signs of the states are fixed by fix_sign.
+    !! between the states of prev and of this point in the basis of the link (set_link; for the
+    !! adiabatic basis, U(prev)^T U). Without prev, the signs of the states are fixed by fix_sign.
     !----------------------------------------------------------------------------------------------
     subroutine eval_all(self, prev)
         class(diabatic_evaluator), intent(inout) :: self
@@ -193,7 +199,8 @@ contains
     !! See the module description for the adiabatic states of a subset of the states of the model
     !! and their derivatives. The spin-free part of H_sub is the diagonal matrix of the
     !! eigenvalues of the MCH states, so without spin-orbit couplings the adiabatic states are
-    !! exactly the selected MCH states.
+    !! exactly the selected MCH states. The relations between the bases (diab, adiab_vec and,
+    !! with prev, link of the base class) are set here.
     !----------------------------------------------------------------------------------------------
     subroutine eval_states(self, prev)
         use matrix_mod, only : unitary_transform
@@ -209,8 +216,7 @@ contains
         real(dp), allocatable :: soc(:, :) !< Spin-orbit couplings in the states p.
         real(dp), allocatable :: h_sub(:, :) !< Hamiltonian in the selected MCH states.
         real(dp), allocatable :: v(:, :) !< Adiabatic states in the selected MCH states.
-        real(dp), allocatable :: s(:, :) !< Overlaps between the adiabatic states of prev and self.
-        real(dp) :: sigma_min !< Smallest singular value of s.
+        integer, allocatable :: phase(:) !< Sign applied to each adiabatic state.
 
         ! MCH states of the model.
         allocate(e(self%model_states%n_sf))
@@ -227,6 +233,9 @@ contains
         end do
         ! First point, without states to match the phase to.
         if (.not. present(prev)) call fix_sign(self%mch_trans)
+        ! The vectors are orthonormal, so they are the transformation as they are.
+        call self%diab%set(self%id_diab, 'diabatic_sf', self%id, 'mch_sf',                       &
+        &                  self%mch_trans(:, self%sel_mch), orthonormal=.true.)
 
         ! The spin-free quantities come from the spin-free Hamiltonian alone.
         self%mch_w = self%sf_w
@@ -253,26 +262,33 @@ contains
         self%adiab_trans = matmul(p(:, self%sel), v)
 
         if (present(prev)) then
-            call match_phase(prev%adiab_trans, self%adiab_trans, s)
-            call self%link%set(prev%id, self%id, 'adiabatic', s, sigma_min)
-            if (sigma_min < overlap_warn_tol) then
-                write(stderr, *) 'Warning in evaluator_diabatic_mod, eval_states subroutine.'
-                write(stderr, '(3x,a,f8.5,a)') 'Smallest singular value of the overlaps '//       &
-                &   'between the adiabatic states of two points: ', sigma_min, '.'
-                write(stderr, *) '  A state of the dynamics changed character, for example at '//  &
-                &                'a crossing with a state which is not selected.'
-            end if
+            call match_phase(prev%adiab_trans, self%adiab_trans, phase=phase)
         else
-            call fix_sign(self%adiab_trans)
+            call fix_sign(self%adiab_trans, phase)
         end if
+        ! V with the signs of U.
+        do i = 1, size(v, 2)
+            if (phase(i) == -1) v(:, i) = -v(:, i)
+        end do
+        self%adiab_vec = v
+        if (present(prev)) call self%set_link(prev, 'diabatic')
 
-        self%adiab_w = self%in_basis('adiabatic', self%diab_w)
+        self%adiab_w = to_adiabatic(self%diab_w)
         do imode = 1, self%ndof
-            self%adiab_dw(imode, :, :) = self%in_basis('adiabatic', self%diab_dw(imode, :, :))
+            self%adiab_dw(imode, :, :) = to_adiabatic(self%diab_dw(imode, :, :))
         end do
         if (self%exact_gradient .and. size(self%uns) > 0) call add_subspace_term()
 
     contains
+
+        !> Matrix U^T mat U in the adiabatic states of an operator given in the diabatic states
+        !! (transform('diabatic', 'adiabatic', mat), with U already at hand).
+        function to_adiabatic(mat) result(res)
+            real(dp), intent(in) :: mat(:, :) !< Matrix over the diabatic states.
+            real(dp), allocatable :: res(:, :)
+
+            res = matmul(matmul(transpose(self%adiab_trans), mat), self%adiab_trans)
+        end function to_adiabatic
 
         !> Add the term from the change of the selected MCH states with the geometry,
         !! V^T (C_x + C_x^T) V, to adiab_dw.
@@ -469,10 +485,20 @@ contains
 
     end subroutine split_hamiltonian
 
+    !----------------------------------------------------------------------------------------------
+    ! FUNCTION: get_Hamiltonian
+    !> @brief Hamiltonian in the states of a basis.
+    !> @details
+    !! In the 'mch' basis, the Hamiltonian in the selected MCH states with their spin components
+    !! (H_sub of the module description; H^MCH of Mai et al., doi: 10.1002/wcms.1370, eq. 7): the
+    !! spin-free energies on the diagonal and the spin-orbit couplings. The bases of the
+    !! spin-free space have the spin-free Hamiltonian.
+    !----------------------------------------------------------------------------------------------
     function get_Hamiltonian(self, basis) result(H)
         class(diabatic_evaluator), intent(in) :: self
         character(len=*), intent(in) :: basis
         real(dp), allocatable :: H(:, :)
+        integer :: i, k
 
         select case(basis)
         case('diabatic')
@@ -480,10 +506,16 @@ contains
         case('adiabatic')
             H = self%adiab_w
         case('mch')
-            write(stderr, *) 'Error in evaluator_diabatic_mod, get_Hamiltonian function.'
-            write(stderr, *) '  No Hamiltonian in the mch basis. The spin-orbit couplings ', &
-            &                'between its states are only given by get_soc2.'
-            stop
+            H = self%mch_soc()
+            H = H(self%sel, self%sel)
+            do i = 1, size(self%sel)
+                k = mch_index(self, basis, i)
+                H(i, i) = H(i, i) + self%mch_w(k, k)
+            end do
+        case('diabatic_sf')
+            H = self%sf_w
+        case('mch_sf')
+            H = self%mch_w(self%sel_mch, self%sel_mch)
         case default
             write(stderr, *) 'Error in evaluator_diabatic_mod, get_Hamiltonian function.'
             write(stderr, *) '  Unknown basis: ', basis
@@ -492,61 +524,38 @@ contains
     end function get_Hamiltonian
 
 
-    !----------------------------------------------------------------------------------------------
-    ! FUNCTION: get_transformation
-    !> @brief Matrix whose columns are the states of to_basis in the states of from_basis.
-    !> @details
-    !! The diabatic basis has all states of the model, and the adiabatic and mch bases the states
-    !! of the dynamics, so a transformation from or to the diabatic basis is not square when the
-    !! dynamics runs on a subset of the states. The 'mch' basis has one state for each spin-free
-    !! state. It is only given in the spin-free diabatic states (from 'diabatic', with a row for
-    !! each spin-free state of the model), and back.
-    !----------------------------------------------------------------------------------------------
-    function get_transformation(self, from_basis, to_basis) result(trans)
-        use matrix_mod, only : unit_mat
+    !> The potential has diabatic states: those of its model.
+    pure function diabatic_has_diabatic(self) result(has)
         class(diabatic_evaluator), intent(in) :: self
-        character(len=*), intent(in) :: from_basis, to_basis
-        real(dp), allocatable :: trans(:, :)
+        logical :: has
 
-        select case(from_basis)
-        case('diabatic', 'adiabatic', 'mch')
-        case default
-            write(stderr, *) 'Error in evaluator_diabatic_mod, get_transformation function.'
-            write(stderr, *) '  Unknown basis: ', from_basis
-            stop
-        end select
+        has = .true.
+    end function diabatic_has_diabatic
 
-        if (from_basis == to_basis) then
-            trans = unit_mat(self%basis_size(to_basis))
-            return
+
+    !> Spin-free MCH state of the model of state istate of the 'mch' or 'mch_sf' basis.
+    pure function mch_index(self, basis, istate) result(k)
+        class(diabatic_evaluator), intent(in) :: self
+        character(len=*), intent(in) :: basis
+        integer, intent(in) :: istate
+        integer :: k
+        type(state_location) :: loc
+
+        if (basis == 'mch') then
+            loc = self%states%locate_state(istate)
+            k = self%sel_mch(loc%sf)
+        else
+            k = self%sel_mch(istate)
         end if
-
-        select case(from_basis//' '//to_basis)
-        case('diabatic adiabatic')
-            trans = self%adiab_trans
-        case('adiabatic diabatic')
-            trans = transpose(self%adiab_trans)
-        case('diabatic mch')
-            trans = self%mch_trans(:, self%sel_mch)
-        case('mch diabatic')
-            trans = transpose(self%mch_trans(:, self%sel_mch))
-        case('adiabatic mch', 'mch adiabatic')
-            write(stderr, *) 'Error in evaluator_diabatic_mod, get_transformation function.'
-            write(stderr, *) '  The mch basis is only given in the diabatic basis.'
-            write(stderr, *) '  Requested: ', from_basis, ' to ', to_basis
-            stop
-        case default
-            write(stderr, *) 'Error in evaluator_diabatic_mod, get_transformation function.'
-            write(stderr, *) '  Unknown basis: ', to_basis
-            stop
-        end select
-    end function get_transformation
+    end function mch_index
 
 
     !----------------------------------------------------------------------------------------------
     ! FUNCTION: get_gradient
     !> @brief Gradient of a state, flat, in the coordinates of the last geometry passed to
     !! update_geometry.
+    !> @details
+    !! The gradient of an MCH state is that of its spin-free state, for all of its components.
     !----------------------------------------------------------------------------------------------
     function get_gradient(self, basis, istate) result(grad)
         class(diabatic_evaluator), intent(in) :: self
@@ -554,14 +563,18 @@ contains
         integer, intent(in) :: istate
         real(dp), allocatable :: grad(:)
         real(dp), allocatable :: d(:)
+        integer :: k
 
         select case(basis)
         case('diabatic')
             d = self%diab_dw(:, istate, istate)
         case('adiabatic')
             d = self%adiab_dw(:, istate, istate)
-        case('mch')
-            d = self%mch_dw(:, self%sel_mch(istate), self%sel_mch(istate))
+        case('mch', 'mch_sf')
+            k = mch_index(self, basis, istate)
+            d = self%mch_dw(:, k, k)
+        case('diabatic_sf')
+            d = self%sf_dw(:, istate, istate)
         case default
             write(stderr, *) 'Error in evaluator_diabatic_mod, get_gradient function.'
             write(stderr, *) '  Unknown basis: ', basis
@@ -576,14 +589,18 @@ contains
         character(len=*), intent(in) :: basis
         integer, intent(in) :: state
         real(dp) :: energy
+        integer :: k
 
         select case(basis)
         case('diabatic')
             energy = self%diab_w(state, state)
         case('adiabatic')
             energy = self%adiab_w(state, state)
-        case('mch')
-            energy = self%mch_w(self%sel_mch(state), self%sel_mch(state))
+        case('mch', 'mch_sf')
+            k = mch_index(self, basis, state)
+            energy = self%mch_w(k, k)
+        case('diabatic_sf')
+            energy = self%sf_w(state, state)
         case default
             error stop 'Error in evaluator_diabatic_mod, get_energy_single function. Unknown basis.'
         end select
@@ -594,6 +611,7 @@ contains
         class(diabatic_evaluator), intent(in) :: self
         character(len=*), intent(in) :: basis
         real(dp), allocatable :: energy(:)
+        integer :: i, k
 
         select case(basis)
         case('diabatic')
@@ -601,8 +619,16 @@ contains
         case('adiabatic')
             energy = diag(self%adiab_w)
         case('mch')
+            allocate(energy(self%states%n_state))
+            do i = 1, self%states%n_state
+                k = mch_index(self, basis, i)
+                energy(i) = self%mch_w(k, k)
+            end do
+        case('mch_sf')
             energy = diag(self%mch_w)
             energy = energy(self%sel_mch)
+        case('diabatic_sf')
+            energy = diag(self%sf_w)
         case default
             error stop 'Error in evaluator_diabatic_mod, get_energy_all function. Unknown basis.'
         end select
@@ -615,7 +641,9 @@ contains
     !! geometry passed to update_geometry.
     !> @details
     !! With a subset of the states of the model, the couplings of the adiabatic states are those
-    !! within the states of the dynamics (see the module description).
+    !! within the states of the dynamics (see the module description). The diabatic states have
+    !! no couplings. In the 'mch' basis, the coupling is that of the spin-free states for two
+    !! states of the same spin component, and zero between different components.
     !----------------------------------------------------------------------------------------------
     function get_nadv(self, basis, istate1, istate2) result(nadv)
         class(diabatic_evaluator), intent(in) :: self
@@ -626,11 +654,13 @@ contains
         integer :: imode, k1, k2
         real(dp) :: edif
         logical :: clamped
+        logical :: coupled
+        type(state_location) :: loc1, loc2
 
         allocate(d(self%ndof), source=0.0_dp)
         clamped = .false.
         select case(basis)
-        case('diabatic')
+        case('diabatic', 'diabatic_sf')
             continue
         case('adiabatic')
             edif = clamped_gap(self%adiab_w(istate2, istate2) - self%adiab_w(istate1, istate1),   &
@@ -638,13 +668,21 @@ contains
             do imode = 1, self%ndof
                 d(imode) = self%adiab_dw(imode, istate1, istate2) / edif
             end do
-        case('mch')
-            k1 = self%sel_mch(istate1)
-            k2 = self%sel_mch(istate2)
-            edif = clamped_gap(self%mch_w(k2, k2) - self%mch_w(k1, k1), clamped)
-            do imode = 1, self%ndof
-                d(imode) = self%mch_dw(imode, k1, k2) / edif
-            end do
+        case('mch', 'mch_sf')
+            coupled = .true.
+            if (basis == 'mch') then
+                loc1 = self%states%locate_state(istate1)
+                loc2 = self%states%locate_state(istate2)
+                coupled = (loc1%group == loc2%group)
+            end if
+            if (coupled) then
+                k1 = mch_index(self, basis, istate1)
+                k2 = mch_index(self, basis, istate2)
+                edif = clamped_gap(self%mch_w(k2, k2) - self%mch_w(k1, k1), clamped)
+                do imode = 1, self%ndof
+                    d(imode) = self%mch_dw(imode, k1, k2) / edif
+                end do
+            end if
         case default
             write(stderr, *) 'Error in evaluator_diabatic_mod, get_nadv function.'
             write(stderr, *) '  Unknown basis: ', basis
@@ -692,8 +730,9 @@ contains
     ! FUNCTION: get_soc2
     !> @brief Squared magnitudes of the spin-orbit couplings between all states of a basis.
     !> @details
-    !! In the 'mch' basis, element (a, b) is the sum of the squared couplings between all
-    !! components of the spin-free states a and b. For two manifolds of components, this is the
+    !! In the 'mch_sf' basis, element (a, b) is the sum of the squared couplings between all
+    !! components of the spin-free states a and b, the couplings of the 'mch' basis summed over
+    !! the components (sum_components). For two manifolds of components, this is the
     !! root-sum-square coupling, squared. It depends neither on the signs of mch_trans nor on the
     !! basis of the components.
     !----------------------------------------------------------------------------------------------
@@ -706,6 +745,9 @@ contains
         case('diabatic')
             s2 = abs(self%soc_w)**2
         case('mch')
+            s2 = abs(self%mch_soc())**2
+            s2 = s2(self%sel, self%sel)
+        case('mch_sf')
             s2 = self%model_states%sum_components(abs(self%mch_soc())**2)
             s2 = s2(self%sel_mch, self%sel_mch)
         case default
@@ -725,13 +767,20 @@ contains
     !! with rounding differences in the matrix, which depend on the compiler options and the
     !! linear algebra library.
     !----------------------------------------------------------------------------------------------
-    subroutine fix_sign(vec)
+    subroutine fix_sign(vec, phase)
         real(dp), intent(inout) :: vec(:, :)
+        integer, allocatable, intent(out), optional :: phase(:) !< Sign applied to each vector.
+        integer, allocatable :: ph(:)
         integer :: i
 
+        allocate(ph(size(vec, 2)), source=1)
         do i = 1, size(vec, 2)
-            if (vec(maxloc(abs(vec(:, i)), dim=1), i) < 0.0_dp) vec(:, i) = -vec(:, i)
+            if (vec(maxloc(abs(vec(:, i)), dim=1), i) < 0.0_dp) then
+                vec(:, i) = -vec(:, i)
+                ph(i) = -1
+            end if
         end do
+        if (present(phase)) call move_alloc(ph, phase)
     end subroutine fix_sign
 
 
@@ -748,31 +797,6 @@ contains
         call syev(eigv, wrk_e, jobz='V', uplo='U')
         if (present(e)) e = wrk_e
     end function get_eigvec
-
-
-    !----------------------------------------------------------------------------------------------
-    ! FUNCTION: in_basis
-    !> @brief Matrix over the diabatic states of the model, in the states of another basis.
-    !> @details
-    !! In the adiabatic basis, the result is U^T mat U for the states of the dynamics.
-    !----------------------------------------------------------------------------------------------
-    function in_basis(self, basis, mat) result(res)
-        class(diabatic_evaluator), intent(in) :: self
-        character(len=*), intent(in) :: basis
-        real(dp), intent(in) :: mat(:, :) !< Matrix over the diabatic states.
-        real(dp), allocatable :: res(:, :)
-
-        select case(basis)
-        case('diabatic')
-            res = mat
-        case('adiabatic')
-            res = matmul(matmul(transpose(self%adiab_trans), mat), self%adiab_trans)
-        case default
-            write(stderr, *) 'Error in evaluator_diabatic_mod, in_basis function.'
-            write(stderr, *) '  Unknown basis: ', basis
-            stop
-        end select
-    end function in_basis
 
 
     !----------------------------------------------------------------------------------------------

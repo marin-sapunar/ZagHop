@@ -95,10 +95,13 @@ class TullyTest(ZagHopTest):
         """ test_ldsh with the potential computed by eval_point (qm keyword).
 
         The gradient of the new state and the coupling vector for the velocity rescaling come from
-        one more calculation at the point of the hop."""
+        one more calculation at the point of the hop. An external program gives no diabatic
+        basis for the populations of print option 41."""
         self.run_traj()
         self.assert_hops_computed()
         self.compare_energy()
+        self.input_error("  noprint 2,4-11", "  noprint 2,4-11\n print 41",
+                         "populations of the diabatic states are not available")
 
     def test_lzsh_external(self):
         """ test_lzsh with the potential computed by eval_point (qm keyword). """

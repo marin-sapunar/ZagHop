@@ -16,7 +16,7 @@ def add_subparser(subparsers):
         "file",
         type=str,
         metavar="FILE",
-        help="Population file (e.g., pop_adiabatic.dat or pop_diabatic.dat).")
+        help="Population file (e.g., pop_active_adiabatic.dat or pop_quantum_diabatic.dat).")
     parser.add_argument(
         "--threshold",
         type=float,

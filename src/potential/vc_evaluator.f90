@@ -229,7 +229,7 @@ contains
         n = self%basis_size(basis)
         allocate(dm_bas(3, n, n))
         do i = 1, 3
-            dm_bas(i, :, :) = self%in_basis(basis, self%dm(i, :, :))
+            dm_bas(i, :, :) = self%transform('diabatic', basis, self%dm(i, :, :))
         end do
         edif = self%get_energy(basis)
         edif = edif - edif(istate)

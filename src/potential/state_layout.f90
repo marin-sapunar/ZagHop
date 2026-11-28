@@ -55,7 +55,9 @@ module state_layout_mod
         procedure :: subset_index
         procedure :: locate_state
         procedure :: expand
-        procedure :: sum_components
+        procedure :: sum_components_vec
+        procedure :: sum_components_mat
+        generic :: sum_components => sum_components_vec, sum_components_mat
         procedure :: to_rss_couplings
         procedure :: max_soc_in_groups
         procedure :: add_to_json
@@ -292,14 +294,25 @@ contains
     !> @details
     !! Elements between manifolds of the spin-free matrix are not copied, and the elements between
     !! groups of the result are zero.
+    !!
+    !! With cols, the columns of the matrix follow another layout: sf_mat has a row for each
+    !! spin-free state of this layout and a column for each spin-free state of cols, and the
+    !! result a row for each state of this layout and a column for each state of cols. The
+    !! manifolds are matched by their multiplicity and must have the same number of groups. A
+    !! manifold which is in only one of the two layouts gives no elements.
     !----------------------------------------------------------------------------------------------
-    pure function expand(self, sf_mat) result(mat)
+    pure function expand(self, sf_mat, cols) result(mat)
         class(state_layout), intent(in) :: self
         real(dp), intent(in) :: sf_mat(:, :) !< Matrix over the spin-free states.
-        real(dp) :: mat(self%n_state, self%n_state)
+        type(state_layout), intent(in), optional :: cols !< Layout of the columns.
+        real(dp), allocatable :: mat(:, :)
         integer :: m, c, i0, s0, n
 
-        mat = 0.0_dp
+        if (present(cols)) then
+            mat = expand_rect(self, sf_mat, cols)
+            return
+        end if
+        allocate(mat(self%n_state, self%n_state), source=0.0_dp)
         do m = 1, size(self%manifold)
             n = self%manifold(m)%n
             s0 = self%manifold(m)%sf0
@@ -311,14 +324,64 @@ contains
     end function expand
 
 
+    !> Expand a matrix whose rows follow the layout rows and whose columns follow the layout cols
+    !! (see expand).
+    pure function expand_rect(rows, sf_mat, cols) result(mat)
+        class(state_layout), intent(in) :: rows
+        real(dp), intent(in) :: sf_mat(:, :) !< (n_sf of rows, n_sf of cols).
+        type(state_layout), intent(in) :: cols
+        real(dp), allocatable :: mat(:, :)
+        integer :: mr, mc, c, i0, j0
+
+        allocate(mat(rows%n_state, cols%n_state), source=0.0_dp)
+        do mr = 1, size(rows%manifold)
+            mc = findloc(cols%manifold%mult, rows%manifold(mr)%mult, dim=1)
+            if (mc == 0) cycle
+            associate(r => rows%manifold(mr), k => cols%manifold(mc))
+                if (r%n_comp /= k%n_comp) then
+                    error stop 'Error in state_layout_mod, expand. Different spin components.'
+                end if
+                do c = 1, r%n_comp
+                    i0 = r%i0 + (c - 1) * r%n
+                    j0 = k%i0 + (c - 1) * k%n
+                    mat(i0:i0+r%n-1, j0:j0+k%n-1) = sf_mat(r%sf0:r%sf0+r%n-1, k%sf0:k%sf0+k%n-1)
+                end do
+            end associate
+        end do
+    end function expand_rect
+
+
     !----------------------------------------------------------------------------------------------
-    ! FUNCTION: sum_components
+    ! FUNCTION: sum_components_vec
+    !> @brief Sum a vector over the states to a vector over the spin-free states.
+    !> @details
+    !! Element a of the result is the sum of the elements of all components of spin-free state a.
+    !! For populations or weights of the states of a basis of the full space, this gives those of
+    !! the multiplets (the basis of the spin-free space, see basis_mod).
+    !----------------------------------------------------------------------------------------------
+    pure function sum_components_vec(self, vec) result(sf_vec)
+        class(state_layout), intent(in) :: self
+        real(dp), intent(in) :: vec(:) !< Vector over the states.
+        real(dp) :: sf_vec(self%n_sf)
+        type(state_location) :: loc
+        integer :: i
+
+        sf_vec = 0.0_dp
+        do i = 1, self%n_state
+            loc = self%locate_state(i)
+            sf_vec(loc%sf) = sf_vec(loc%sf) + vec(i)
+        end do
+    end function sum_components_vec
+
+
+    !----------------------------------------------------------------------------------------------
+    ! FUNCTION: sum_components_mat
     !> @brief Sum a matrix over the states to a matrix over the spin-free states.
     !> @details
     !! Element (a, b) of the result is the sum of the elements (i, j) for all components i of
     !! spin-free state a and all components j of spin-free state b.
     !----------------------------------------------------------------------------------------------
-    pure function sum_components(self, mat) result(sf_mat)
+    pure function sum_components_mat(self, mat) result(sf_mat)
         class(state_layout), intent(in) :: self
         real(dp), intent(in) :: mat(:, :) !< Matrix over the states.
         real(dp) :: sf_mat(self%n_sf, self%n_sf)
@@ -336,7 +399,7 @@ contains
                 sf_mat(sf(i), sf(j)) = sf_mat(sf(i), sf(j)) + mat(i, j)
             end do
         end do
-    end function sum_components
+    end function sum_components_mat
 
 
     !----------------------------------------------------------------------------------------------

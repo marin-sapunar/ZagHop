@@ -108,6 +108,18 @@ program sh_test
         stop ret
     end if
 
+    ret = initial_state_mch_test()
+    if (ret /= 0) then
+        write(*,*) "Error in initial_state_mch_test."
+        stop ret
+    end if
+
+    ret = coefficients_test()
+    if (ret /= 0) then
+        write(*,*) "Error in coefficients_test."
+        stop ret
+    end if
+
     ret = trajectory_buffer_test()
     if (ret /= 0) then
         write(*,*) "Error in trajectory_buffer_test."
@@ -149,6 +161,10 @@ program sh_test
         write(*,*) "Error in save_state_test."
         stop ret
     end if
+
+    ! A test which stops in the tested code ends the program with exit status 0. This line is
+    ! required by tests/unit/run_cases.cmake.
+    write(*, *) 'All tests passed.'
 
     contains
 
@@ -283,9 +299,10 @@ program sh_test
 
 
     !----------------------------------------------------------------------------------------------
-    !> LD-FSSH propagates with the transformation T of the link of the potential. With one
-    !! substep, the coefficients after a step are T^t exp(-i dt (H1 + T H2 T^t) / 2) c, and their
-    !! norm is conserved. Two states whose adiabatic states rotate during the step.
+    !> LD-FSSH propagates with the transformation T from the adiabatic states of the previous
+    !! point to those of the current point (the link of the potential). With one substep, the
+    !! coefficients after a step are T^t exp(-i dt (H1 + T H2 T^t) / 2) c, and their norm is
+    !! conserved. Two states whose adiabatic states rotate during the step.
     !----------------------------------------------------------------------------------------------
     integer function ld_link_test() result(ret)
         use global_defs, only : dp
@@ -312,8 +329,10 @@ program sh_test
         ret = 1
         pot2 = pot1
         call pot2%set_hamiltonian(reshape([0.0_dp, 0.02_dp, 0.02_dp, 0.01_dp], [2, 2]), pot1)
-        if (.not. pot2%link%matches(pot1%id, pot2%id, 'adiabatic')) return
-        t = pot2%link%t
+        if (.not. pot2%link%matches(pot1%id, 'adiabatic', pot2%id, 'adiabatic')) return
+        if (pot2%previous_point() /= pot1%id) return
+        t = pot2%get_transformation('adiabatic', 'adiabatic', from_point=pot1%id)
+        if (any(t /= pot2%link%t)) return
         if (abs(t(1, 2)) < 0.1_dp) return
 
         ret = 2
@@ -363,9 +382,9 @@ program sh_test
         pot2 = pot1
         call pot2%set_hamiltonian(reshape([0.0_dp, 0.02_dp, 0.0_dp, 0.02_dp, 0.01_dp, 0.03_dp,   &
         &                                  0.0_dp, 0.03_dp, 0.04_dp], [3, 3]), pot1)
-        if (.not. pot2%link%matches(pot1%id, pot2%id, 'adiabatic')) return
+        if (.not. pot2%link%matches(pot1%id, 'adiabatic', pot2%id, 'adiabatic')) return
         s = pot2%link%s
-        t = pot2%link%t
+        t = pot2%get_transformation('adiabatic', 'adiabatic', from_point=pot1%id)
         if (maxval(abs(matmul(transpose(s), s) - unit_mat(2))) < 1.0e-3_dp) return
         if (any(abs(matmul(transpose(t), t) - unit_mat(2)) > tol)) return
 
@@ -426,9 +445,161 @@ program sh_test
 
 
     !----------------------------------------------------------------------------------------------
+    !> Initial state of another basis with LZSH, which runs in the mch_sf basis. Two singlets and
+    !! two triplets, with the components of the triplets as diabatic states 3-4, 5-6 and 7-8. The
+    !! weight of an MCH state is the sum over its spin components:
+    !! - Diabatic state without couplings within the manifolds: the active state is the MCH state
+    !!   equal to it.
+    !! - Diabatic state with mixed spin-free states: the frequencies of the active states over
+    !!   many draws match mch_trans(sf, :)**2, and all components of a triplet give the same draws.
+    !! - Adiabatic state with spin-orbit couplings: the frequencies match the squared coefficients
+    !!   of the state in the MCH states, summed over the components of each.
+    !----------------------------------------------------------------------------------------------
+    integer function initial_state_mch_test() result(ret)
+        use global_defs, only : stdp1
+        logical :: stdp1_in
+
+        stdp1_in = stdp1
+        stdp1 = .false.
+        ret = initial_state_mch_cases()
+        stdp1 = stdp1_in
+    end function initial_state_mch_test
+
+
+    !> The cases of initial_state_mch_test, run without printing the initial state of each draw.
+    integer function initial_state_mch_cases() result(ret)
+        use global_defs, only : dp
+        use sh_test_mod, only : scripted_evaluator
+        use sh_lz_mod, only : tsh_lz
+        use random_mod, only : rng_type
+        use random_pcg_mod, only : rng_pcg_xsh_rr
+        type(scripted_evaluator) :: pot
+        type(tsh_lz) :: lz
+        class(rng_type), pointer :: rng
+        integer, parameter :: n_draw = 20000
+        integer, parameter :: sf_of_diab(8) = [1, 2, 3, 4, 3, 4, 3, 4] !< Spin-free state of
+                                                                        !! each diabatic state.
+        integer, parameter :: diab(4) = [1, 2, 3, 6] !< A diabatic state of each spin-free state.
+        real(dp) :: freq(4), weight(4), tol, soc(8, 8)
+        real(dp), allocatable :: v(:, :)
+        integer :: i, k, m, first(50)
+
+        allocate(rng_pcg_xsh_rr :: rng)
+        call rng%init(3)
+        call pot%setup([2, 2], [1, 3])
+        call lz%initialize(rng, pot, 1)
+
+        ! Uncoupled spin-free states.
+        ret = 1
+        if (lz%n_state /= 4 .or. pot%model_states%n_state /= 8) return
+        call pot%set_energies([0.0_dp, 0.1_dp, 0.05_dp, 0.2_dp])
+        do i = 1, 8
+            call lz%set_initial_state(pot, i, 'diabatic')
+            if (lz%active_state /= sf_of_diab(i)) return
+        end do
+
+        ! Mixed spin-free states.
+        ret = 2
+        call pot%set_hamiltonian(reshape([0.0_dp, 0.02_dp, 0.0_dp, 0.0_dp,                      &
+        &                                 0.02_dp, 0.05_dp, 0.0_dp, 0.0_dp,                      &
+        &                                 0.0_dp, 0.0_dp, 0.03_dp, 0.015_dp,                     &
+        &                                 0.0_dp, 0.0_dp, 0.015_dp, 0.06_dp], [4, 4]))
+        ! Five standard deviations of a frequency.
+        tol = 5.0_dp * sqrt(0.25_dp / n_draw)
+        do k = 1, 4
+            weight = pot%mch_trans(sf_of_diab(diab(k)), pot%sel_mch)**2
+            if (minval(weight, mask=(weight > 1.0e-12_dp)) < 0.05_dp) return
+            freq = 0.0_dp
+            do i = 1, n_draw
+                call lz%set_initial_state(pot, diab(k), 'diabatic')
+                freq(lz%active_state) = freq(lz%active_state) + 1.0_dp
+            end do
+            freq = freq / n_draw
+            if (any(abs(freq - weight) > tol)) return
+        end do
+
+        ! All components of a triplet give the same draws from the same random numbers.
+        ret = 3
+        call rng%init(11)
+        do i = 1, size(first)
+            call lz%set_initial_state(pot, 4, 'diabatic')
+            first(i) = lz%active_state
+        end do
+        if (all(first == first(1))) return
+        do k = 6, 8, 2
+            call rng%init(11)
+            do i = 1, size(first)
+                call lz%set_initial_state(pot, k, 'diabatic')
+                if (lz%active_state /= first(i)) return
+            end do
+        end do
+
+        ! Adiabatic state, with spin-orbit couplings between all manifolds and components.
+        ret = 4
+        soc = 0.0_dp
+        soc(1, 3:8) = [0.02_dp, 0.01_dp, -0.015_dp, 0.02_dp, 0.01_dp, 0.025_dp]
+        soc(2, 3:8) = [-0.01_dp, 0.02_dp, 0.02_dp, 0.005_dp, -0.02_dp, 0.01_dp]
+        soc = soc + transpose(soc)
+        call pot%set_soc(soc)
+        call pot%eval()
+        v = pot%get_transformation('mch', 'adiabatic')
+        do k = 2, 5, 3
+            weight = 0.0_dp
+            do m = 1, 8
+                weight(sf_of_diab(m)) = weight(sf_of_diab(m)) + v(m, k)**2
+            end do
+            if (abs(sum(weight) - 1.0_dp) > 1.0e-12_dp) return
+            if (count(weight > 0.05_dp) < 2) return
+            freq = 0.0_dp
+            do i = 1, n_draw
+                call lz%set_initial_state(pot, k, 'adiabatic')
+                freq(lz%active_state) = freq(lz%active_state) + 1.0_dp
+            end do
+            freq = freq / n_draw
+            if (any(abs(freq - weight) > tol)) return
+        end do
+        ret = 0
+    end function initial_state_mch_cases
+
+
+    !> Coefficients of the electronic wave function: LD-FSSH has them, in the adiabatic basis;
+    !! LZSH and dynamics without hopping have none.
+    integer function coefficients_test() result(ret)
+        use global_defs, only : dp
+        use sh_test_mod, only : scripted_evaluator
+        use tsh_method_mod, only : tsh_none
+        use sh_ld_mod, only : tsh_ld
+        use sh_lz_mod, only : tsh_lz
+        use random_mod, only : rng_type
+        use random_pcg_mod, only : rng_pcg_xsh_rr
+        type(scripted_evaluator) :: pot
+        type(tsh_ld) :: ld
+        type(tsh_lz) :: lz
+        type(tsh_none) :: off
+        class(rng_type), pointer :: rng
+        complex(dp), allocatable :: c(:)
+
+        ret = 1
+        if (lz%has_coefficients() .or. off%has_coefficients()) return
+        if (.not. ld%has_coefficients()) return
+        ret = 2
+        allocate(rng_pcg_xsh_rr :: rng)
+        call rng%init(1)
+        call pot%setup([3], [1])
+        call ld%initialize(rng, pot, 2)
+        c = ld%get_coefficients()
+        if (size(c) /= 3) return
+        if (any(c /= [cmplx(0.0_dp, 0.0_dp, kind=dp), cmplx(1.0_dp, 0.0_dp, kind=dp),            &
+        &             cmplx(0.0_dp, 0.0_dp, kind=dp)])) return
+        ret = 0
+    end function coefficients_test
+
+
+    !----------------------------------------------------------------------------------------------
     !> Cases which should stop with an error:
     !! - ld_wrong_link - LD-FSSH propagates to a point whose link starts at another evaluation
     !!   than the last point of the method (here at the same geometry, as after a step back).
+    !! - ld_same_point - LD-FSSH propagates to the point it processed last.
     !! - initial_no_weight - The initial diabatic state has no weight in the states of the
     !!   dynamics (the two lowest of three uncoupled states).
     !! The case subset_crossing does not stop, but gives a warning: the second and third of three
@@ -460,6 +631,14 @@ program sh_test
             call pot2%set_hamiltonian(reshape([0.0_dp, 0.02_dp, 0.02_dp, 0.01_dp], [2, 2]),     &
             &                         pot1b)
             call ld%propagate(10.0_dp, pot2)
+        case('ld_same_point')
+            allocate(rng_pcg_xsh_rr :: rng)
+            call rng%init(1)
+            call pot1%setup([2], [1])
+            call ld%initialize(rng, pot1, 2)
+            call pot1%set_hamiltonian(reshape([0.0_dp, 0.01_dp, 0.01_dp, 0.02_dp], [2, 2]))
+            call ld%start(0.0_dp, pot1)
+            call ld%propagate(10.0_dp, pot1)
         case('initial_no_weight')
             allocate(rng_pcg_xsh_rr :: rng)
             call rng%init(1)

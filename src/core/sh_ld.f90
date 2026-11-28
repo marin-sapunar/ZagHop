@@ -42,6 +42,8 @@ module sh_ld_mod
         procedure :: propagate => ld_propagate
         procedure :: decohere => ld_decohere
         procedure :: write_coefficients => ld_write_coefficients
+        procedure :: has_coefficients => ld_has_coefficients
+        procedure :: get_coefficients => ld_get_coefficients
         procedure :: save_state => ld_save_state
         procedure :: load_state => ld_load_state
     end type tsh_ld
@@ -113,9 +115,10 @@ contains
     !! once, from the coefficients at the start and end of the step and P (or T).
     !!
     !! T is the Lowdin orthogonalised overlap matrix S_KL = <psi_K(t)|psi_L(t2)> between the
-    !! adiabatic states at the start and end of the step (Granucci et al., eqs. 15, B5 and B6),
-    !! from the link of the potential (a state_overlap). The link must be between the last
-    !! processed point and the current one; otherwise the program stops. S is orthogonal when the
+    !! adiabatic states at the start and end of the step (Granucci et al., eqs. 15, B5 and B6):
+    !! the transformation of the potential from the adiabatic states of the last processed point
+    !! to those of the current point (get_transformation with from_point). The potential must hold
+    !! the overlaps between these two points; otherwise the program stops. S is orthogonal when the
     !! dynamics runs on all states of a model potential. On a subset of the states, the adiabatic
     !! states of the two points do not span the same space and S is not orthogonal. T is
     !! orthogonal in both cases, so the norm of the coefficients is conserved.
@@ -136,18 +139,16 @@ contains
         complex(dp) :: c_propagation(self%n_state) !< Coefficients in the LD basis.
         complex(dp) :: c_t2(self%n_state) !< Coefficients at t2 in the adiabatic basis at t2.
 
-        if (.not. potential%link%matches(self%id_t1, potential%id, 'adiabatic')) then
+        if (potential%id == self%id_t1) then
             write(stderr, *) 'Error in sh_ld_mod, ld_propagate subroutine.'
-            write(stderr, *) '  The overlaps of the potential do not link the last point of the ', &
-            &                'method to the current point.'
-            write(stderr, '(3x,a,i0,a,i0,a,i0,a,i0,a)') 'Expected points ', self%id_t1, ' -> ',  &
-            &   potential%id, ', given ', potential%link%id_bra, ' -> ', potential%link%id_ket, '.'
+            write(stderr, '(3x,a,i0,a)') 'Point ', self%id_t1, ' was already processed.'
             stop
         end if
 
         cstate = self%active_state
         h_t2 = potential%get_Hamiltonian('adiabatic')
-        t = potential%link%t ! Orthogonalised U(t)^t . U(t+dt)
+        ! Orthogonalised U(t)^t . U(t+dt), from the states of the last processed point.
+        t = potential%get_transformation('adiabatic', 'adiabatic', from_point=self%id_t1)
 
         dh = matmul(matmul(t, h_t2), transpose(t)) ! H(t+dt) = T.H(t+dt).T^t
         dh = dh - self%h_t1
@@ -222,6 +223,24 @@ contains
 
         write(unit, '(1x,1000e22.12)') real(self%coeff), aimag(self%coeff)
     end subroutine ld_write_coefficients
+
+
+    !> The method has coefficients of the electronic wave function.
+    pure function ld_has_coefficients(self) result(has)
+        class(tsh_ld), intent(in) :: self
+        logical :: has
+
+        has = .true.
+    end function ld_has_coefficients
+
+
+    !> Coefficients of the electronic wave function in the adiabatic basis.
+    function ld_get_coefficients(self) result(c)
+        class(tsh_ld), intent(in) :: self
+        complex(dp), allocatable :: c(:)
+
+        c = self%coeff
+    end function ld_get_coefficients
 
 
     !----------------------------------------------------------------------------------------------

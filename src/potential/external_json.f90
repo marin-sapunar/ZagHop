@@ -18,7 +18,9 @@
 !! same signs. At the first point, the signs are taken as returned.
 !!
 !! Only singlet states are supported: the states of the program are then the adiabatic states,
-!! and the 'mch' and 'adiabatic' bases are the same. The diabatic basis is not available.
+!! and the 'mch_sf', 'mch' and 'adiabatic' bases are the same (adiab_vec of the base class is the
+!! unit matrix). The diabatic bases are not available. The overlaps between the states of two
+!! points are given to the base class as those of the MCH states (set_link).
 !!
 !! Protocol (version 1). All quantities are in atomic units, indices start at 1, and geometries,
 !! gradients and nonadiabatic coupling vectors are nested arrays with one inner array per atom
@@ -58,8 +60,6 @@ module external_json_mod
     character(len=*), parameter :: response_file = 'qm_out.json' !< Response of the program.
     character(len=*), parameter :: protocol_name = 'zaghop'
     integer, parameter :: protocol_version = 1
-    real(dp), parameter :: overlap_warn_tol = 0.9_dp !< Smallest singular value of the overlaps
-    !! between the states of two points without a warning.
     real(dp), parameter :: energy_warn_tol = 1.0e-6_dp !< Largest change of an energy in a
     !! same_point calculation without a warning (Eh).
 
@@ -91,7 +91,6 @@ module external_json_mod
         procedure :: eval => external_eval
         procedure :: complete => external_complete
         procedure :: get_Hamiltonian => external_get_Hamiltonian
-        procedure :: get_transformation => external_get_transformation
         procedure :: get_energy_single => external_get_energy_single
         procedure :: get_energy_all => external_get_energy_all
         procedure :: get_gradient => external_get_gradient
@@ -203,6 +202,7 @@ contains
     !----------------------------------------------------------------------------------------------
     subroutine external_eval(self, prev)
         use state_overlap_mod, only : match_phase
+        use matrix_mod, only : unit_mat
         class(external_json_evaluator), intent(inout) :: self
         class(potential_evaluator), intent(in), optional :: prev
         type(eval_request) :: req
@@ -210,7 +210,6 @@ contains
         integer :: n
         integer, allocatable :: phase(:)
         real(dp), allocatable :: s(:, :)
-        real(dp) :: sigma_min
 
         call self%new_point()
         if (.not. allocated(self%geometry)) then
@@ -241,6 +240,8 @@ contains
         self%energy = res%energy
         self%wf_format = res%wf_format
         self%wf = res%wf
+        ! Singlets only: the adiabatic states are the MCH states.
+        self%adiab_vec = unit_mat(n)
         allocate(phase(n), source=1)
 
         if (present(prev)) then
@@ -259,14 +260,7 @@ contains
                     stop
                 end if
                 call match_phase(prev%wf, self%wf, s, phase)
-                call self%link%set(prev%id, self%id, 'adiabatic', s, sigma_min)
-                if (sigma_min < overlap_warn_tol) then
-                    write(stderr, *) 'Warning in external_json_mod, eval subroutine.'
-                    write(stderr, '(3x,a,f8.5,a)') 'Smallest singular value of the overlaps '//   &
-                    &   'between the states of two points: ', sigma_min, '.'
-                    write(stderr, *) '  A state changed character, for example at a crossing ',   &
-                    &                'with a state which is not computed.'
-                end if
+                call self%set_link(prev, 'mch', s)
             class default
                 write(stderr, *) 'Error in external_json_mod, eval subroutine.'
                 write(stderr, *) '  The previous point is not computed by an external program.'
@@ -632,18 +626,18 @@ contains
     end function read_response
 
 
-    !> Stop unless basis is one of the bases of the potential ('adiabatic' or 'mch').
+    !> Stop unless basis is one of the bases of the potential ('adiabatic', 'mch' or 'mch_sf').
     subroutine check_basis(self, basis, caller)
         class(external_json_evaluator), intent(in) :: self
         character(len=*), intent(in) :: basis
         character(len=*), intent(in) :: caller
 
         select case(basis)
-        case('adiabatic', 'mch')
+        case('adiabatic', 'mch', 'mch_sf')
         case default
             write(stderr, *) 'Error in external_json_mod, ', caller, '.'
             write(stderr, *) '  Basis "', basis, '" is not available for potentials computed by ', &
-            &                'an external program. Expected adiabatic or mch.'
+            &                'an external program. Expected adiabatic, mch or mch_sf.'
             stop
         end select
     end subroutine check_basis
@@ -661,19 +655,6 @@ contains
     end function external_get_Hamiltonian
 
 
-    !> Transformation between the 'adiabatic' and 'mch' bases: the unit matrix.
-    function external_get_transformation(self, from_basis, to_basis) result(trans)
-        use matrix_mod, only : unit_mat
-        class(external_json_evaluator), intent(in) :: self
-        character(len=*), intent(in) :: from_basis, to_basis
-        real(dp), allocatable :: trans(:, :)
-
-        call self%check_basis(from_basis, 'get_transformation')
-        call self%check_basis(to_basis, 'get_transformation')
-        trans = unit_mat(self%states%n_state)
-    end function external_get_transformation
-
-
     pure function external_get_energy_single(self, basis, state) result(energy)
         class(external_json_evaluator), intent(in) :: self
         character(len=*), intent(in) :: basis
@@ -681,7 +662,7 @@ contains
         real(dp) :: energy
 
         select case(basis)
-        case('adiabatic', 'mch')
+        case('adiabatic', 'mch', 'mch_sf')
             energy = self%energy(state)
         case default
             error stop 'Error in external_json_mod, get_energy_single function. Unknown basis.'
@@ -695,7 +676,7 @@ contains
         real(dp), allocatable :: energy(:)
 
         select case(basis)
-        case('adiabatic', 'mch')
+        case('adiabatic', 'mch', 'mch_sf')
             energy = self%energy
         case default
             error stop 'Error in external_json_mod, get_energy_all function. Unknown basis.'

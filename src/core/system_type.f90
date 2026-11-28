@@ -11,6 +11,7 @@ module system_type_mod
     use global_defs
     use constants
     use string_mod, only : pad_right
+    use basis_mod, only : basis_like
     use tsh_method_mod, only : tsh_method
     use vc_evaluator_mod
     use vc_model_mod
@@ -33,6 +34,7 @@ module system_type_mod
     public :: trajectory_load_state
     public :: output_options
     public :: output_file_name
+    public :: qpop_basis
     public :: ekin
 
     !----------------------------------------------------------------------------------------------
@@ -532,12 +534,41 @@ contains
             fname = 'cstate_diab'
         case(32)
             fname = 'cstate_adiab'
+        case(41)
+            fname = 'qpop_diab'
+        case(42)
+            fname = 'qpop_adiab'
+        case(43)
+            fname = 'qpop_mch'
         case(50)
             fname = 'mm.dat'
         case default
             fname = ''
         end select
     end function output_file_name
+
+
+    !----------------------------------------------------------------------------------------------
+    ! FUNCTION: qpop_basis
+    !> @brief Basis of the populations written by print option i (41, 42 or 43).
+    !> @details
+    !! 41 and 42 match the bases of cstate_diab and cstate_adiab (31 and 32).
+    !----------------------------------------------------------------------------------------------
+    pure function qpop_basis(i) result(basis)
+        integer, intent(in) :: i
+        character(len=:), allocatable :: basis
+
+        select case(i)
+        case(41)
+            basis = 'diabatic'
+        case(42)
+            basis = 'adiabatic'
+        case(43)
+            basis = 'mch'
+        case default
+            basis = ''
+        end select
+    end function qpop_basis
 
 
 
@@ -605,11 +636,12 @@ contains
             write(punit(7), 1006) t%wf%prob
         end if
 
-        ! The locally diabatic basis is that of the propagation: the orthogonalised overlaps with
-        ! the states of the previous point, from the link of the potential.
-        if (popt(20) .and. t%pot%link%valid()) then
+        ! The locally diabatic basis: the states of the basis of the dynamics at the previous
+        ! point. Nothing is written at a point without a previous point.
+        if (popt(20) .and. t%pot%previous_point() > 0) then
             write(punit(20), *) '# t= ', time_fs, 'fs, state=', t%wf%active_state
-            wrk = t%pot%link%t
+            wrk = t%pot%get_transformation(t%wf%basis, t%wf%basis,                              &
+            &                              from_point=t%pot%previous_point())
             do i = 1, size(wrk, 2)
                 write(punit(20), 1006) wrk(:, i)
             end do
@@ -631,14 +663,16 @@ contains
             end do
         end if
 
-        if (popt(30) .and. t%pot%link%valid()) then
-            if (t%pot%link%basis == t%wf%basis) then
-                write(punit(30), 1006) t%pot%link%t(:, t%wf%active_state)
-            end if
+        if (popt(30) .and. t%pot%previous_point() > 0) then
+            wrk = t%pot%get_transformation(t%wf%basis, t%wf%basis,                              &
+            &                              from_point=t%pot%previous_point())
+            write(punit(30), 1006) wrk(:, t%wf%active_state)
         end if
 
         if (popt(31)) then
-            wrk = t%pot%get_transformation('diabatic', t%wf%basis)
+            ! The diabatic basis of the space of the dynamics: with the spin components, or with
+            ! one state for each multiplet.
+            wrk = t%pot%get_transformation(basis_like('diabatic', t%wf%basis), t%wf%basis)
             write(punit(31), 1006) wrk(:, t%wf%active_state)
         end if
 
@@ -646,6 +680,14 @@ contains
             wrk = t%pot%get_transformation('adiabatic', t%wf%basis)
             write(punit(32), 1006) wrk(:, t%wf%active_state)
         end if
+
+        ! Populations from the coefficients, in the states of each basis.
+        do i = 41, 43
+            if (popt(i)) then
+                write(punit(i), 1006) abs(t%pot%transform(t%wf%basis, qpop_basis(i),               &
+                &                                         t%wf%get_coefficients()))**2
+            end if
+        end do
         
 
 1001 format (f12.5,1x,i4)
@@ -688,6 +730,13 @@ contains
                 write(punit(50), *)
             end if
         end if
+
+        do i = 41, 43
+            if (popt(i)) then
+                write(punit(i), '(5a)') '# Populations |c|**2 of the ', qpop_basis(i),           &
+                &   ' states, from the coefficients in the ', t%wf%basis, ' basis.'
+            end if
+        end do
     end subroutine traj_writeheader
 
 
@@ -703,7 +752,7 @@ contains
         use json_module, only : json_core, json_value
         class(system_type), intent(in) :: t
         character(len=*), intent(in) :: res_dir !< Directory for writing results.
-        integer, parameter :: format_version = 2
+        integer, parameter :: format_version = 3
         type(json_core) :: json
         type(json_value), pointer :: root
 

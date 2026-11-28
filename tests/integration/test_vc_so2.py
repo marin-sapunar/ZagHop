@@ -10,11 +10,44 @@ class VcSo2Test(ZagHopTest):
 
 
     def test_ldsh_isc_nm(self):
-        """ Test diabatic basis FSSH on SO2 model."""
+        """ Test diabatic basis FSSH on SO2 model, with the populations from the coefficients
+        (print 41-43).
+
+        The populations of each basis (13 states with their spin components) sum to 1, the
+        adiabatic ones are |c|**2 of cwf.dat and the diabatic ones at t = 0 those of the initial
+        active state (cstate_diab). The MCH states mix only diabatic states of the same
+        multiplicity and spin component, so the singlets and each component of the triplets
+        have the same total population in the MCH and diabatic bases. states.json gives the
+        number of states of each basis."""
         self.run_traj()
         self.compare_energy()
         self.compare_results("prob")
         self.compare_results("cstate_diab")
+        n_row = len(self.load_results("energy.dat"))
+        qpop = {b: self.load_results(f"qpop_{b}") for b in ("adiab", "diab", "mch")}
+        for b in ("adiab", "diab", "mch"):
+            self.assertEqual(qpop[b].shape, (n_row, 13), f"Shape of qpop_{b}.")
+            self.assertTrue(np.allclose(qpop[b].sum(axis=1), 1.0), f"qpop_{b} not normalised.")
+        cwf = self.load_results("cwf.dat")
+        self.assertTrue(np.allclose(qpop["adiab"], cwf[:, :13]**2 + cwf[:, 13:]**2),
+                        "Adiabatic populations differ from |c|**2.")
+        cstate = self.load_results("cstate_diab")
+        self.assertTrue(np.allclose(qpop["diab"][0], cstate[0]**2),
+                        "Initial diabatic populations differ from the active state.")
+        for first in (0, 4, 7, 10):
+            n = 4 if first == 0 else 3
+            self.assertTrue(np.allclose(qpop["mch"][:, first:first+n].sum(axis=1),
+                                        qpop["diab"][:, first:first+n].sum(axis=1)),
+                            f"Populations of the group of states from {first + 1} differ between "
+                            "the MCH and diabatic bases.")
+        self.assertFalse(np.allclose(qpop["mch"], qpop["diab"]), "MCH = diabatic populations.")
+        for b in ("adiab", "diab", "mch"):
+            self.compare_results(f"qpop_{b}")
+        states = self.load_states()
+        self.assertEqual(states["format_version"], 3)
+        self.assertEqual(states["dynamics_basis"], "adiabatic")
+        self.assertEqual(states["n_state"], {"diabatic": 13, "adiabatic": 13, "mch": 13,
+                                             "diabatic_sf": 7, "mch_sf": 7})
 
     def test_ldsh_isc_cart(self):
         """ Test diabatic basis FSSH on SO2 model in Cartesian coordinates."""
@@ -126,12 +159,19 @@ class VcSo2Test(ZagHopTest):
         The combination of the triplet components is computed at a given reference geometry.
         The spin-orbit couplings of the model are constant, so it is the same as at the default
         reference. The trajectory is run up to 59 fs and restarted from its backup, shortly
-        before a hop."""
+        before a hop. LZSH runs in the mch_sf basis, which is the mch basis for effective spin
+        states, and has no coefficients for the populations of print option 43."""
         self.run_traj()
+        self.input_error(" noprint  2,3,4,5,6", " noprint  2,3,4,5,6\n print 43",
+                         "needs the coefficients of the electronic wave function")
         self.restart_traj(100.0)
         self.stdout_contains("Reading reference geometry file ref_geom.")
         self.stdout_contains("ISC probability evaluated")
         self.compare_energy()
+        states = self.load_states()
+        self.assertEqual(states["dynamics_basis"], "mch_sf")
+        self.assertEqual(states["n_state"], {"diabatic": 7, "adiabatic": 7, "mch": 7,
+                                             "diabatic_sf": 7, "mch_sf": 7})
 
 
 if __name__ == '__main__':

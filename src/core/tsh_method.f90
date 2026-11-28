@@ -15,7 +15,8 @@
 !--------------------------------------------------------------------------------------------------
 module tsh_method_mod
     use global_defs, only : dp, stdout, stderr, stdp1, stdp2
-    use evaluator_base_mod, only : potential_evaluator, state_location
+    use evaluator_base_mod, only : potential_evaluator
+    use basis_mod, only : basis_full, basis_is_spin_free
     use random_mod, only : rng_type
     implicit none
 
@@ -67,6 +68,8 @@ module tsh_method_mod
         procedure :: hop_rejected
         procedure :: decohere
         procedure :: write_coefficients
+        procedure :: has_coefficients
+        procedure :: get_coefficients
         procedure :: select_state
         procedure :: rescale_velocity
         procedure :: save_state => method_save_state
@@ -144,8 +147,9 @@ contains
     !! method, the state becomes the active state. Otherwise, the active state a is drawn with
     !! probability |T(i, a)|**2, where T is the transformation from basis to the basis of the
     !! method at the current point (the same weights as zagpy sample state). One random number is
-    !! drawn only in this case. With the 'mch' basis of the method, a diabatic state is
-    !! projected through its spin-free state.
+    !! drawn only in this case. If the basis of the method has one state for each multiplet
+    !! ('mch_sf'), T is the transformation to the basis with the spin components ('mch'), and the
+    !! weight of a multiplet is the sum over its components.
     !! If the dynamics runs on a subset of the states of the model, a diabatic state is only
     !! partly in the states of the method basis. The weights are then divided by their sum (the
     !! retained weight), and a state without weight in the states of the dynamics is an error.
@@ -165,7 +169,6 @@ contains
         real(dp), parameter :: weight_tol = 1.0e-12_dp !< Smallest retained weight.
         real(dp) :: cprob
         real(dp) :: rnum
-        type(state_location) :: loc
 
         select case(basis)
         case('diabatic')
@@ -195,20 +198,9 @@ contains
             return
         end if
 
-        if (self%basis == 'mch') then
-            if (basis /= 'diabatic') then
-                write(stderr, *) 'Error in tsh_method_mod, set_initial_state subroutine.'
-                write(stderr, *) '  The mch basis is only given in the diabatic basis.'
-                write(stderr, *) '  Basis of the initial state: ', basis
-                stop
-            end if
-            loc = potential%model_states%locate_state(i)
-            i = loc%sf
-            trans = potential%get_transformation('diabatic', 'mch')
-        else
-            trans = potential%get_transformation(basis, self%basis)
-        end if
+        trans = potential%get_transformation(basis, basis_full(self%basis))
         weight = trans(i, :)**2
+        if (basis_is_spin_free(self%basis)) weight = potential%states%sum_components(weight)
         retained = sum(weight)
         if (retained < weight_tol) then
             write(stderr, *) 'Error in tsh_method_mod, set_initial_state subroutine.'
@@ -277,6 +269,33 @@ contains
         class(tsh_method), intent(in) :: self
         integer, intent(in) :: unit
     end subroutine write_coefficients
+
+
+    !> Whether the method has coefficients of the electronic wave function (get_coefficients).
+    !! False by default.
+    pure function has_coefficients(self) result(has)
+        class(tsh_method), intent(in) :: self
+        logical :: has
+
+        has = .false.
+    end function has_coefficients
+
+
+    !----------------------------------------------------------------------------------------------
+    ! FUNCTION: get_coefficients
+    !> @brief Coefficients of the electronic wave function in the states of basis.
+    !> @details
+    !! Methods with coefficients override this and has_coefficients. Stops by default.
+    !----------------------------------------------------------------------------------------------
+    function get_coefficients(self) result(c)
+        class(tsh_method), intent(in) :: self
+        complex(dp), allocatable :: c(:)
+
+        allocate(c(0)) ! Added just to silence gfortran warning.
+        write(stderr, *) 'Error in tsh_method_mod, get_coefficients function.'
+        write(stderr, *) '  This surface hopping method has no wave function coefficients.'
+        stop
+    end function get_coefficients
 
 
     !----------------------------------------------------------------------------------------------
