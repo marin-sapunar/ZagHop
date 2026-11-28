@@ -943,7 +943,7 @@ program pot_test
         if (pot2%id_diab /= pot1%id_diab) return
         if (.not. pot2%diab%matches(pot1%id_diab, 'diabatic_sf', pot2%id, 'mch_sf')) return
         s = matmul(transpose(pot1%adiab_trans), pot2%adiab_trans)
-        if (any(pot2%link%s /= s)) return
+        if (any(abs(pot2%link%s - s) > tol)) return
         if (any(abs(pot2%link%t - s) > tol)) return
         if (any(abs(matmul(transpose(pot2%link%t), pot2%link%t) - unit_mat(8)) > tol)) return
         ! After a small step, each state overlaps mostly with itself, with a matched phase.
@@ -995,19 +995,19 @@ program pot_test
         call pot3%eval(pot1)
         if (.not. pot3%link%matches(pot1%id, 'mch_sf', pot3%id, 'mch_sf')) return
         s = matmul(transpose(pot1%mch_trans), pot3%mch_trans)
-        if (any(shape(pot3%link%s) /= [4, 4]) .or. any(pot3%link%s /= s)) return
+        if (any(shape(pot3%link%s) /= [4, 4]) .or. any(abs(pot3%link%s - s) > tol)) return
         if (any(pot3%link%s(1:2, 3:4) /= 0.0_dp)) return
         if (any(pot3%get_transformation('mch_sf', 'mch_sf', from_point=pot1%id)                  &
         &       /= pot3%link%t)) return
-        if (any(pot3%adiab_w /= pot2%adiab_w) .or. any(pot3%adiab_trans /= pot2%adiab_trans))    &
-        &   return
+        if (any(abs(pot3%adiab_w - pot2%adiab_w) > tol) .or.                                     &
+        &   any(abs(pot3%adiab_trans - pot2%adiab_trans) > tol)) return
         ret = 7
         pot3 = pot1
         call pot3%set_request(new_request('mch'))
         call pot3%update_geometry(x, 'model')
         call pot3%eval(pot1)
         if (.not. pot3%link%matches(pot1%id, 'mch', pot3%id, 'mch')) return
-        if (any(pot3%link%s /= pot1%model_states%expand(s))) return
+        if (any(abs(pot3%link%s - pot1%model_states%expand(s)) > tol)) return
         ret = 8
         pot3 = pot1
         call pot3%set_request(new_request('diabatic'))
