@@ -6,7 +6,8 @@
 !> @details
 !! The states of a potential are given in five bases, in two spaces (see basis_mod): 'diabatic',
 !! 'mch' and 'adiabatic' with the spin components of the states, and 'diabatic_sf' and 'mch_sf'
-!! with one state for each multiplet.
+!! with one state for each multiplet. The spin-orbit couplings are the difference between the
+!! Hamiltonians of the two spaces (get_soc2).
 !!
 !! An evaluator relates its sets of states by three quantities, which it fills when a point is
 !! evaluated:
@@ -129,7 +130,7 @@ module evaluator_base_mod
         procedure(get_energy_all), deferred :: get_energy_all
         procedure(get_gradient), deferred :: get_gradient
         procedure(get_nadv), deferred :: get_nadv
-        procedure(get_soc2), deferred :: get_soc2
+        procedure :: get_soc2
         procedure :: set_model_states => evaluator_set_model_states
         procedure :: select_states
         procedure :: basis_size
@@ -231,20 +232,6 @@ module evaluator_base_mod
             integer, intent(in) :: istate1, istate2
             real(dp), allocatable :: nadv(:)
         end function get_nadv
-    end interface
-
-
-    abstract interface
-        !> Squared magnitudes of the spin-orbit couplings between all states of a basis. In the
-        !! 'mch_sf' basis, the squares are summed over the components of each pair of
-        !! spin-free states.
-        function get_soc2(self, basis) result(s2)
-            use global_defs, only : dp
-            import potential_evaluator
-            class(potential_evaluator), intent(in) :: self
-            character(len=*), intent(in) :: basis
-            real(dp), allocatable :: s2(:, :)
-        end function get_soc2
     end interface
 
 
@@ -719,6 +706,63 @@ contains
         &                             to_basis, ' basis needs ', n_from, ' states.'
         stop
     end subroutine check_transform_size
+
+
+    !----------------------------------------------------------------------------------------------
+    ! FUNCTION: get_soc2
+    !> @brief Squared magnitudes of the spin-orbit couplings between all states of a basis.
+    !> @details
+    !! The full space has the Hamiltonian H_sf + H_soc and the spin-free space H_sf (see
+    !! basis_mod), so in a basis of the full space ('diabatic', 'mch') the spin-orbit couplings
+    !! are get_Hamiltonian of that basis minus the Hamiltonian of the spin-free basis of the same
+    !! kind, expanded to the spin components (expand of the layout). The spin-free part is
+    !! subtracted rather than the blocks within the groups set to zero, which holds for complex
+    !! couplings as well.
+    !!
+    !! In a basis of the spin-free space ('diabatic_sf', 'mch_sf'), element (a, b) is the sum of
+    !! the squared couplings between all components of the spin-free states a and b
+    !! (sum_components). For two manifolds of components, this is the root-sum-square coupling,
+    !! squared. It depends neither on the signs of the states nor on the basis of the components.
+    !!
+    !! Stops for the 'adiabatic' basis, whose states include the spin-orbit couplings.
+    !----------------------------------------------------------------------------------------------
+    function get_soc2(self, basis) result(s2)
+        class(potential_evaluator), intent(in) :: self
+        character(len=*), intent(in) :: basis
+        real(dp), allocatable :: s2(:, :)
+        character(len=:), allocatable :: full
+
+        if (.not. basis_known(basis)) then
+            write(stderr, *) 'Error in evaluator_base_mod, get_soc2 function.'
+            write(stderr, *) '  Unknown basis: ', basis
+            stop
+        end if
+        full = basis_full(basis)
+        select case(full)
+        case('diabatic')
+            s2 = squared_couplings(self%model_states)
+        case('mch')
+            s2 = squared_couplings(self%states)
+        case default
+            write(stderr, *) 'Error in evaluator_base_mod, get_soc2 function.'
+            write(stderr, *) '  No spin-orbit couplings in the ', basis, ' basis: its states ',  &
+            &                'include them.'
+            stop
+        end select
+
+    contains
+
+        !> Squared couplings in the basis, for the states of layout.
+        function squared_couplings(layout) result(s2)
+            type(state_layout), intent(in) :: layout
+            real(dp), allocatable :: s2(:, :)
+
+            s2 = abs(self%get_Hamiltonian(full)                                                  &
+            &        - layout%expand(self%get_Hamiltonian(basis_like(full, 'mch_sf'))))**2
+            if (basis_is_spin_free(basis)) s2 = layout%sum_components(s2)
+        end function squared_couplings
+
+    end function get_soc2
 
 
     !> Id of the previous point, to which link connects this point. 0 without a link.

@@ -117,6 +117,8 @@ program pot_test
             call external_error(trim(arg))
         else if (index(arg, 'transform_') == 1) then
             call transform_error(trim(arg))
+        else if (index(arg, 'soc2_') == 1) then
+            call soc2_error(trim(arg))
         else
             call effective_error(trim(arg))
         end if
@@ -697,6 +699,27 @@ program pot_test
     end subroutine transform_error
 
 
+    !> Squared spin-orbit couplings which should stop with an error:
+    !! - soc2_adiabatic - In the adiabatic basis, whose states include the couplings.
+    subroutine soc2_error(case)
+        use global_defs, only : dp
+        use pot_test_mod, only : group_evaluator
+        character(len=*), intent(in) :: case
+        type(group_evaluator) :: pot
+        real(dp) :: h(2, 3)
+        real(dp), allocatable :: s2(:, :)
+
+        select case(case)
+        case('soc2_adiabatic')
+            h = 1.0e-4_dp
+            call set_st_model(pot, 'components', 0.03_dp, h)
+            s2 = pot%get_soc2('adiabatic')
+        case default
+            write(*, *) 'Unknown case: ', case
+        end select
+    end subroutine soc2_error
+
+
     !> Normalised complex coefficients with all elements different from zero.
     function test_coefficients(n) result(c)
         use global_defs, only : dp
@@ -1115,8 +1138,10 @@ program pot_test
 
     !> The mch_sf and mch bases of one singlet and two triplets, with couplings h(k, c) between
     !! the singlet and component c of triplet k, and the coupling mix between the two triplets.
+    !! The squared couplings in all bases (get_soc2).
     integer function mch_test() result(ret)
         use global_defs, only : dp
+        use matrix_mod, only : diag
         use pot_test_mod, only : group_evaluator
         type(group_evaluator) :: pot
         type(group_evaluator) :: pot_eff
@@ -1196,6 +1221,24 @@ program pot_test
         end do
         if (any(shape(s2_c) /= [7, 7]) .or. any(abs(s2_c - w**2) > tiny)) return
         if (any(abs(pot%states%sum_components(s2_c) - pot%get_soc2('mch_sf')) > tiny)) return
+
+        ! The mch_sf Hamiltonian is the diagonal of the spin-free part of the mch Hamiltonian, so
+        ! the couplings within a group are exactly zero, with mixing. In the diabatic basis, the
+        ! couplings are those of the model, and in the diabatic_sf basis their squares summed
+        ! over the components. With effective states, the two spaces have the same states.
+        ret = 6
+        if (any(pot%get_Hamiltonian('mch_sf') /= diag(pot%get_energy('mch_sf')))) return
+        if (pot%states%max_soc_in_groups(s2_c) /= 0.0_dp) return
+        if (any(pot%get_soc2('diabatic') /= pot%soc_w**2)) return
+        if (any(pot%get_soc2('diabatic_sf')                                                     &
+        &       /= pot%model_states%sum_components(pot%get_soc2('diabatic')))) return
+        call set_st_model(pot, 'components', 0.0_dp, h)
+        s2 = pot%get_soc2('diabatic_sf')
+        do k = 1, 2
+            if (abs(s2(1, k + 1) - sum(h(k, :)**2)) > tiny) return
+        end do
+        call set_st_model(pot_eff, 'effective_rss', 0.03_dp, h)
+        if (any(pot_eff%get_soc2('mch') /= pot_eff%get_soc2('mch_sf'))) return
         ret = 0
     end function mch_test
 
@@ -2216,7 +2259,8 @@ program pot_test
     !> @brief The external_json evaluator with scripted responses of a program.
     !> @details
     !! Three states of two atoms. The program is 'cp' of a response written by the test.
-    !! - Point A: energies, the requested gradient, wave functions, no link.
+    !! - Point A: energies, the requested gradient, wave functions, no link, no spin-orbit
+    !!   couplings.
     !! - Point B (a copy of A): state 2 returned with the opposite sign. The sign is matched to
     !!   A, so link%s has a positive diagonal and the coupling of 1 and 2 changes sign. The
     !!   adiabatic, mch and mch_sf bases are the same states, and there is no diabatic basis.
@@ -2262,6 +2306,9 @@ program pot_test
         if (any(a%get_energy('mch_sf') /= a%get_energy('adiabatic'))) return
         if (any(a%get_transformation('mch', 'adiabatic') /= unit3())) return
         if (any(a%transform('mch', 'adiabatic', diag3(e)) /= diag3(e))) return
+        if (any(shape(a%get_soc2('mch')) /= [3, 3]) .or. any(a%get_soc2('mch') /= 0.0_dp)) return
+        if (any(shape(a%get_soc2('mch_sf')) /= [3, 3])) return
+        if (any(a%get_soc2('mch_sf') /= 0.0_dp)) return
         if (a%previous_point() /= 0 .or. a%id_diab /= 0 .or. a%diab%valid()) return
 
         ! Point B: a small rotation of the states, with state 2 of the opposite sign.

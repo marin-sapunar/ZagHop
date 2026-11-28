@@ -95,7 +95,6 @@ module external_json_mod
         procedure :: get_energy_all => external_get_energy_all
         procedure :: get_gradient => external_get_gradient
         procedure :: get_nadv => external_get_nadv
-        procedure :: get_soc2 => external_get_soc2
         procedure :: save_state => external_save_state
         procedure :: load_state => external_load_state
         procedure, private :: run_program
@@ -719,17 +718,6 @@ contains
         end if
         nadv = self%nadv(:, istate1, istate2)
     end function external_get_nadv
-
-
-    !> Squared spin-orbit couplings: zero, only singlet states are available.
-    function external_get_soc2(self, basis) result(s2)
-        class(external_json_evaluator), intent(in) :: self
-        character(len=*), intent(in) :: basis
-        real(dp), allocatable :: s2(:, :)
-
-        call self%check_basis(basis, 'get_soc2')
-        allocate(s2(self%states%n_state, self%states%n_state), source=0.0_dp)
-    end function external_get_soc2
 
 
     !----------------------------------------------------------------------------------------------

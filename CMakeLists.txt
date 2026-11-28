@@ -241,7 +241,9 @@ project(ZagHop LANGUAGES Fortran)
     CASE transform_spaces "No transformation from the mch_sf to the adiabatic basis"
     CASE transform_no_diabatic "The diabatic basis is not available for this potential"
     CASE transform_wrong_point "do not link the requested point"
-    CASE transform_no_link "No overlaps with a previous point are stored")
+    CASE transform_no_link "No overlaps with a previous point are stored"
+    # Squared spin-orbit couplings.
+    CASE soc2_adiabatic "No spin-orbit couplings in the adiabatic basis")
 
   add_executable(sh_test tests/unit/sh_test.f90)
   target_link_libraries(sh_test zagcore)

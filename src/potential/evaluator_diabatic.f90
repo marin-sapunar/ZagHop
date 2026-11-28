@@ -69,7 +69,7 @@ module evaluator_diabatic_mod
     !! each spin-free state of the dynamics ('mch_sf') or each of its spin components ('mch').
     !! The spin-orbit couplings are the off-diagonal part of the Hamiltonian in the 'mch' basis.
     !! Between the states of the 'mch_sf' basis they are only given as squared magnitudes, summed
-    !! over the components (get_soc2).
+    !! over the components (get_soc2 of the base class).
     !----------------------------------------------------------------------------------------------
     type, abstract, extends(potential_evaluator) :: diabatic_evaluator
         integer :: ndof = 0
@@ -104,14 +104,12 @@ module evaluator_diabatic_mod
         procedure :: allocate_bases
         procedure :: split_hamiltonian
         procedure :: set_full_hamiltonian
-        procedure :: mch_soc
         procedure :: get_Hamiltonian => get_Hamiltonian
         procedure :: has_diabatic => diabatic_has_diabatic
         procedure :: get_energy_single => get_energy_single
         procedure :: get_energy_all => get_energy_all
         procedure :: get_gradient => get_gradient
         procedure :: get_nadv => get_nadv
-        procedure :: get_soc2 => get_soc2
         procedure :: save_state => diabatic_save_state
         procedure :: load_state => diabatic_load_state
     end type diabatic_evaluator
@@ -248,7 +246,7 @@ contains
 
         ! Adiabatic states: eigenstates of the Hamiltonian in the selected MCH states.
         p = self%model_states%expand(self%mch_trans)
-        soc = self%mch_soc()
+        soc = mch_soc(self)
         allocate(e_c(self%model_states%n_state))
         do i = 1, self%model_states%n_state
             loc = self%model_states%locate_state(i)
@@ -492,9 +490,13 @@ contains
     !! In the 'mch' basis, the Hamiltonian in the selected MCH states with their spin components
     !! (H_sub of the module description; H^MCH of Mai et al., doi: 10.1002/wcms.1370, eq. 7): the
     !! spin-free energies on the diagonal and the spin-orbit couplings. The bases of the
-    !! spin-free space have the spin-free Hamiltonian.
+    !! spin-free space have the spin-free Hamiltonian. The 'mch_sf' states are its eigenstates,
+    !! so there it is the diagonal matrix of their energies (get_energy). The off-diagonal
+    !! elements of mch_w are rounding errors and are left out, as in the 'mch' basis, so the two
+    !! bases differ only by the spin-orbit couplings (get_soc2).
     !----------------------------------------------------------------------------------------------
     function get_Hamiltonian(self, basis) result(H)
+        use matrix_mod, only : diag
         class(diabatic_evaluator), intent(in) :: self
         character(len=*), intent(in) :: basis
         real(dp), allocatable :: H(:, :)
@@ -506,7 +508,7 @@ contains
         case('adiabatic')
             H = self%adiab_w
         case('mch')
-            H = self%mch_soc()
+            H = mch_soc(self)
             H = H(self%sel, self%sel)
             do i = 1, size(self%sel)
                 k = mch_index(self, basis, i)
@@ -515,7 +517,7 @@ contains
         case('diabatic_sf')
             H = self%sf_w
         case('mch_sf')
-            H = self%mch_w(self%sel_mch, self%sel_mch)
+            H = diag(self%get_energy(basis))
         case default
             write(stderr, *) 'Error in evaluator_diabatic_mod, get_Hamiltonian function.'
             write(stderr, *) '  Unknown basis: ', basis
@@ -714,7 +716,8 @@ contains
     ! FUNCTION: mch_soc
     !> @brief Spin-orbit couplings of the model in its MCH states, with all spin components.
     !> @details
-    !! The same vectors of mch_trans transform each component of a spin-free state.
+    !! The same vectors of mch_trans transform each component of a spin-free state. All MCH states
+    !! of the model, selected or not (eval_states needs both).
     !----------------------------------------------------------------------------------------------
     function mch_soc(self) result(soc)
         use matrix_mod, only : unitary_transform
@@ -724,38 +727,6 @@ contains
         soc = self%soc_w
         call unitary_transform(self%model_states%expand(self%mch_trans), soc, trans=.true.)
     end function mch_soc
-
-
-    !----------------------------------------------------------------------------------------------
-    ! FUNCTION: get_soc2
-    !> @brief Squared magnitudes of the spin-orbit couplings between all states of a basis.
-    !> @details
-    !! In the 'mch_sf' basis, element (a, b) is the sum of the squared couplings between all
-    !! components of the spin-free states a and b, the couplings of the 'mch' basis summed over
-    !! the components (sum_components). For two manifolds of components, this is the
-    !! root-sum-square coupling, squared. It depends neither on the signs of mch_trans nor on the
-    !! basis of the components.
-    !----------------------------------------------------------------------------------------------
-    function get_soc2(self, basis) result(s2)
-        class(diabatic_evaluator), intent(in) :: self
-        character(len=*), intent(in) :: basis
-        real(dp), allocatable :: s2(:, :)
-
-        select case(basis)
-        case('diabatic')
-            s2 = abs(self%soc_w)**2
-        case('mch')
-            s2 = abs(self%mch_soc())**2
-            s2 = s2(self%sel, self%sel)
-        case('mch_sf')
-            s2 = self%model_states%sum_components(abs(self%mch_soc())**2)
-            s2 = s2(self%sel_mch, self%sel_mch)
-        case default
-            write(stderr, *) 'Error in evaluator_diabatic_mod, get_soc2 function.'
-            write(stderr, *) '  Unsupported basis: ', basis
-            stop
-        end select
-    end function get_soc2
 
 
     !----------------------------------------------------------------------------------------------
